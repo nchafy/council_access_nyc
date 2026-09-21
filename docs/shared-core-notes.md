@@ -12,8 +12,7 @@ source of truth is unchanged: `council-access-project-outline.md` in council_acc
 `isochrone-project-outline.md` in timemap_nyc.
 
 Committed byte-identically to both repos, so either one cloned alone carries the whole picture.
-Edit both copies or neither — nothing checks this, and council_access has no remote, so nothing
-can. Throughout: **decided** means written in a CLAUDE.md or an outline; **candidate** means
+Edit both copies or neither — nothing checks this, and nothing does. Throughout: **decided** means written in a CLAUDE.md or an outline; **candidate** means
 observed but unsettled; **open** means no answer yet. Last verified 2026-09-21, against both
 working trees.
 
@@ -44,8 +43,8 @@ never be.
 
 ## 2. The two repos today
 
-**council_access_nyc** — `~/personal/council_access_nyc`, branch `mainline`, **no git remote
-configured**, so it exists on this machine only and there is no durable URL to cite. Seven
+**council_access_nyc** — `~/personal/council_access_nyc`, branch `mainline`, remote
+`git@github.com:nchafy/council_access_nyc.git` (public, created 2026-09-21). Seven
 tracked files, zero lines of Python. `council-access-project-outline.md` is the declared source
 of truth; `docs/exploration-2026-09-21.md` is the research behind it; a throwaway Node spike is
 preserved on `spike/node-etl`. Everything this file says about this repo's pipeline is
@@ -111,8 +110,9 @@ All seven are **decided** in one repo or both. They matter more than §3.
 5. **What "contract test" means.** See §3.
 6. **Data liveness.** timemap ingests one hand-exported private file. council_access ingests
    many live public sources that rot, several returning HTTP 200 carrying an error.
-7. **Consumption mechanics.** council_access has no git remote, so today there is no way to
-   publish a shared package, depend on one, or run any cross-repo automation. Default branches
+7. **Consumption mechanics.** Both repos now have public remotes, so a shared package is
+   *mechanically* possible; nothing about that makes it advisable, and §6's trigger is unchanged.
+   "Copy verbatim" remains the standing instruction. Default branches
    also differ (`mainline` vs `master`). This is the first mechanical fork any design hits —
    monorepo, submodule, path dependency, or copy — and the copy option is the one already in
    use, which means it has arguably been pre-decided by default rather than on purpose.

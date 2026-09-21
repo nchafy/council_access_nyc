@@ -5,9 +5,12 @@ do about their city government this week: which City Council hearings are
 happening, where the room is, how to get in, that they can walk in without
 registering, and how many hours are left to file written testimony.
 
-Read `council-access-project-outline.md` first — it is the source of truth for
-requirements, methodology, architecture, milestones, and the open decisions.
-This file carries only the working conventions and the settled calls.
+Read `product-brief.md` first — purpose, users, the ten product requirements, and
+the open product questions. Then `council-access-project-outline.md` for the
+engineering plan: methodology, architecture, data contracts, milestones, and the
+57 constraints that deliver those ten requirements. The brief governs *what*; the
+outline governs *how*. This file carries only the working conventions and the
+settled calls.
 
 ## Decisions already made — don't relitigate
 

@@ -1,7 +1,9 @@
 # Show Up NYC — project outline
 
 **Repository:** `~/personal/council_access_nyc` → `git@github.com:nchafy/council_access_nyc.git`, default branch `mainline`
-**This file:** `council-access-project-outline.md` (repo root). This document is the project's source of truth. `CLAUDE.md` carries the working conventions and a "Decisions already made — don't relitigate" section that mirrors §2 of this file.
+**Read `product-brief.md` first.** It states the purpose, who the product is for, and the ten product requirements, and it is the document to review or argue with. This file is the **engineering plan** underneath it: §3's 57 numbered constraints exist to deliver one of the brief's ten product requirements, and a constraint that cannot be traced to one should be cut. If the brief and this file disagree, the brief is what was agreed and this file is wrong.
+
+**This file:** `council-access-project-outline.md` (repo root). Source of truth for *how*. `CLAUDE.md` carries the working conventions and a "Decisions already made — don't relitigate" section that mirrors §2 of this file.
 **Status:** plan, not yet built. Written 2026-09-21 from a six-lens exploration, three competing designs, three judge panels and a completeness critique. All HTTP facts cited below were verified live on 2026-09-21 unless explicitly marked unverified.
 
 ---
@@ -44,7 +46,9 @@ Each line is settled. If you want to reopen one, write an ADR that cites new evi
 
 ## 3. Requirements
 
-`[USER]` = explicit in the user's ask. `[ADD]` = added during exploration; the owner can veto any `[ADD]` line without breaking the four user questions unless noted. The user explicitly asked for **four things** (R1, R6, R11, R15) and **two interactions** (R19, R20); everything else is flagged.
+**These are engineering constraints, not product requirements.** The product requirements are the ten in `product-brief.md` §4; every row below exists to deliver one of them. Read the brief to decide *what* the product is; read this section only when implementing. 57 rows is the right order of magnitude for a build spec and the wrong one for a product definition — do not review the product from here.
+
+`[USER]` = traces directly to the owner's ask. `[ADD]` = added during exploration; any `[ADD]` row can be vetoed without breaking a user-facing job unless noted. Of 57 rows, **8 are `[USER]`** (R1, R6, R9, R11, R15, R19, R20, R40a) and 49 are additions — which is the normal ratio between "what was asked for" and "what it takes", but means this table is not evidence about product scope.
 
 ### The four questions and two interactions
 

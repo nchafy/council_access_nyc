@@ -8,10 +8,10 @@ Inspired by [spatialequity.nyc](https://spatialequity.nyc/), but where that site
 is a *diagnosis* product, this is an *action* product: it is built to change what
 someone does this week, not to score their neighbourhood.
 
-See
-[council-access-project-outline.md](council-access-project-outline.md) for the
-full plan — requirements, methodology, architecture, milestones, and the
-decisions still open.
+Start with [product-brief.md](product-brief.md) — what the product is, who it is
+for, and the ten things it must do. [council-access-project-outline.md](council-access-project-outline.md)
+is the engineering plan underneath it: methodology, architecture, milestones, and
+the open decisions.
 
 ## What it answers
 

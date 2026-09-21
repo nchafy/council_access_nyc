@@ -145,7 +145,24 @@ Polite crawl rates — `council.nyc.gov` at 1 request / 10 s, honouring `Crawl-d
 guest on these servers, and hammering a city website is a security failure in the direction we
 control most easily.
 
-## 5. Exit criteria
+## 5. The SLA in Phase 1
+
+The outline's §6A budgets are written around a map click, which does not exist yet. They still
+apply, reassigned:
+
+- **Dropdown selection → page rendered: p95 ≤ 200 ms.** This inherits SLA-1 unchanged. It is
+  easier to hit than the map version, because the pages are pre-rendered and a selection is a
+  navigation to a static document. There is no geometry to hit-test and nothing to prefetch.
+- **Address submit → page rendered: p95 ≤ 1 s**, our own share ≤ 270 ms. Unchanged, and the
+  geocoder leg is still measured rather than promised.
+- **Autocomplete (SLA-3) does not apply.** Phase 1 is submit-only, by the privacy decision in
+  §4.4 — which removes the interaction the budget existed for.
+
+The consequence for §6A.3's design constraints: the inline 51-district index and the
+prefetch-on-hover machinery are **not needed in Phase 1**. Pre-rendering one page per district
+achieves the same latency more simply. Those constraints return when the map does.
+
+## 6. Exit criteria
 
 1. A live URL where picking any of the 51 districts from the dropdown, or typing any NYC address,
    renders all six blocks correctly.
@@ -159,7 +176,7 @@ control most easily.
    manifest is hand-aged.
 7. Every fact on the page carries its source link and fetch date.
 
-## 6. Open, for the owner
+## 7. Open, for the owner
 
 1. **Domain name**, and whether the site is publicly indexed at this phase.
 2. **Shortlist size confirmed at 5** for Phase 1 as "the next 5 meetings". When ranking arrives

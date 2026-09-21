@@ -1,0 +1,14 @@
+{
+  "name": "nyc-council-access",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "How to get involved with your NYC City Council district.",
+  "scripts": {
+    "fetch": "node etl/fetch.mjs",
+    "build": "node etl/build.mjs",
+    "etl": "node etl/fetch.mjs && node etl/build.mjs",
+    "serve": "node etl/serve.mjs"
+  },
+  "engines": { "node": ">=18" }
+}

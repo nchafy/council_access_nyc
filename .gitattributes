@@ -1,0 +1,17 @@
+* text=auto eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.geojson text eol=lf
+*.yaml text eol=lf
+*.csv text eol=lf
+*.pdf binary
+*.zip binary
+
+# Upstream HTML/PDF fixtures encode the exact bytes a parser must survive —
+# ASP.NET viewstate blobs, en-dashes, doubled inter-character spacing in
+# transcript APPEARANCES blocks. Normalising line endings would make the parser
+# tests pass vacuously on a fresh clone. Store them exactly as fetched.
+tests/fixtures/** -text

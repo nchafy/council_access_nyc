@@ -7,7 +7,15 @@ Decided by the owner 2026-09-21: barebones. One input — a dropdown or an addre
 page of information and links. No map. No analysis. Security is the top priority. P8, P9 and P10
 (never mislead / accessible and private / still true in two years) are all in.
 
-Estimated **10–13 days** for one person. It is a launchable product on its own.
+**Phase 1 runs locally only.** No domain, no hosting, no public deploy, nothing indexed. The
+`_headers` file and the Cloudflare Pages decision stay in the plan for later, but nothing is
+published in this phase and no deploy credential is created. Two consequences worth stating:
+the security posture improves (there is no production surface, and the build needs no secrets at
+all, so there is nothing for a malicious dependency or PR to exfiltrate), and the header work
+does **not** get deferred — a local dev server must apply the real headers, because a CSP that is
+not served is not a CSP and one discovered at deploy time is one rewritten under pressure.
+
+Estimated **8–11 days** for one person, down from 10–13 now that hosting and deploy are out.
 
 ---
 
@@ -110,9 +118,14 @@ this site ever hurts someone.
 - `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer`, HSTS with a long max-age, HTTPS only.
 - `rel="noopener noreferrer"` on every outbound link.
-- Cloudflare Pages via `_headers`, because these must be response headers; a meta tag cannot
-  deliver most of them. **A test asserts the deployed headers**, since a CSP that is not served
-  is not a CSP.
+- Committed as a `_headers` file for the eventual Cloudflare Pages deploy, because these must be
+  **response** headers and a meta tag cannot deliver most of them.
+- **Locally, a small stdlib dev server reads `_headers` and applies it** (`scripts/serve.py`, no
+  dependencies, matching the sibling project's stdlib-only preference). Developing against
+  `python -m http.server` would send no CSP at all, so every violation would surface for the
+  first time at deploy — which is exactly when it gets waived. A test asserts that the served
+  response carries the headers, run against the local server in Phase 1 and against the deploy
+  later.
 
 ### 4.3 Zero third parties
 
@@ -164,21 +177,26 @@ achieves the same latency more simply. Those constraints return when the map doe
 
 ## 6. Exit criteria
 
-1. A live URL where picking any of the 51 districts from the dropdown, or typing any NYC address,
-   renders all six blocks correctly.
+1. `scripts/serve.py` serves the built site locally, and picking any of the 51 districts from the
+   dropdown, or typing any NYC address, renders all six blocks correctly.
 2. An address outside NYC is refused by name ("that looks like Newark") rather than silently
    mis-assigned.
-3. Deployed response headers match §4.2, asserted by a test.
+3. Response headers from the local server match §4.2, asserted by a test. `_headers` is committed
+   for the later deploy and the test is written so it can be pointed at a real host unchanged.
 4. The hostile-content fixture renders inert, asserted by a test.
 5. axe clean on the two page types; full keyboard navigation; works with JavaScript disabled for
    everything except the address box.
-6. Refresh runs on a schedule, fails closed, and the staleness notice provably appears when the
-   manifest is hand-aged.
+6. The refresh is runnable as one local command, fails closed on a bad fetch, and the staleness
+   notice provably appears when `manifest.json` is hand-aged. Running it *on a schedule* is
+   deferred with hosting.
 7. Every fact on the page carries its source link and fetch date.
 
 ## 7. Open, for the owner
 
-1. **Domain name**, and whether the site is publicly indexed at this phase.
+1. ~~Domain name and indexing.~~ **Resolved 2026-09-21: neither.** Phase 1 is local only.
 2. **Shortlist size confirmed at 5** for Phase 1 as "the next 5 meetings". When ranking arrives
    in a later phase, is 5 still right, or does a ranked list want more?
-3. Project identity and the correction-contact address (brief §8.4).
+3. Project identity and the correction-contact address (brief §8.4) — deferred with publishing,
+   since nothing is public in Phase 1 and there is no one to receive a correction yet.
+4. Whether `council_access_nyc` should be a **public or private** GitHub repository. It has no
+   remote today, so nothing is published either way until one is added.

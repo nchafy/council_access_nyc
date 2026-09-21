@@ -11,17 +11,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No pyproject.toml exists yet — this repo is a plan, not an
+      # implementation. Every Python step below is gated on it appearing so that
+      # CI is honestly green (nothing to check) rather than permanently red for
+      # a reason nobody will keep looking at. M0 commits pyproject.toml and the
+      # gate opens by itself.
+      - name: Detect Python project
+        id: detect
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No pyproject.toml yet — skipping lint and tests (pre-M0)."
+          fi
+
       - uses: astral-sh/setup-uv@v5
+        if: steps.detect.outputs.present == 'true'
         with:
           enable-cache: true
 
       - name: Install dependencies
+        if: steps.detect.outputs.present == 'true'
         run: uv sync --frozen
 
       - name: Lint
+        if: steps.detect.outputs.present == 'true'
         run: uv run ruff check .
 
       - name: Format check
+        if: steps.detect.outputs.present == 'true'
         run: uv run ruff format --check .
 
       # Hermetic tests only: every parser test runs against a committed fixture
@@ -29,4 +48,5 @@ jobs:
       # or on a city dataset keeping its shape. The contract tests that DO hit
       # upstream run on a schedule (see refresh workflows) and are excluded here.
       - name: Tests
+        if: steps.detect.outputs.present == 'true'
         run: uv run pytest -m "not upstream"

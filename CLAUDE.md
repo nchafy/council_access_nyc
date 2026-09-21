@@ -136,3 +136,28 @@ get re-argued.
   reviewed YAML, so artifacts are byte-reproducible in CI at zero model cost.
 - `spike/node-etl` holds the throwaway Node spike that verified source
   availability. It is reference only — do not build on it.
+
+## Sibling project and shared-core intent
+
+`~/personal/timemap_nyc` (`git@github.com:nchafy/timemap_nyc.git`; this repo has
+no remote configured) is the same owner's transit-isochrone map. It matters
+because it already has working code for the pipeline shape this repo has only
+specified — `csv_source.py`/`geojson_source.py` → `normalize.py` → `writer.py` +
+`report.py`, on branch `001d-ingest-pipeline`, not on its default branch. A core
+both projects sit on is a someday goal, not a plan. `docs/shared-core-notes.md`
+holds the evidence, the candidate seams and the open questions; nothing in it is
+approved architecture and none of it overrides §2 of the outline.
+
+**Do not design the core, a plugin contract, or a shared interface.** No core
+package, shared library, third repository, or jurisdiction/city parameter that
+today takes exactly one value. Not adopting pluggy, entry points, or an ABC
+registry is a decision rather than an omission — adding one to be helpful is
+reopening it. No Boston or data.gov adapter or probe. When something is needed
+in both projects, copy it verbatim with a comment naming the source file, and
+keep the Legistar, Socrata and NYC names as they are: they mark where the domain
+leaks in, and neutral names erase that.
+
+Append one dated line to `docs/OBSERVATIONS.md` when an upstream lies or carries
+an error inside an HTTP 200, when you measure a number worth citing later, and
+when you copy something to or from timemap — including when you try and it does
+not fit. The format is in that file's header.

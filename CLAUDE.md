@@ -21,10 +21,17 @@ get re-argued.
 - **Static site, build-time ETL, no origin server.** Forced, not chosen:
   `nyc.legistar.com` and `council.nyc.gov` send no `Access-Control-Allow-Origin`,
   so a browser cannot read them directly.
-- **No composite "importance" / "salience" / "relevance" score, ever.** Its
-  heaviest proposed input varies 54.2x across equal-population districts, and
-  the rescale-to-100 step turned a measured gap of 0.000 into a 100-vs-99
+- **No composite "importance" / "salience" / "relevance" score for a
+  neighbourhood.** Its heaviest proposed input varies 54.2x across
+  equal-population districts and fell 58% during the eviction moratorium, at peak
+  need; the rescale-to-100 step turned a measured gap of 0.000 into a 100-vs-99
   headline. Separate, individually interpretable figures or nothing.
+  **This does not forbid the shortlist (P11).** Ranking what the *Council* is
+  demonstrably working on — upcoming agenda items, hearing counts, pipeline
+  stage, repeated lay-overs, divided votes — is measuring the institution's own
+  published record, and is in scope. Inferring what *residents* care about is
+  not, and no headline may imply it. v1 orders and explains in words; it does not
+  emit a 0-100 number. See `product-brief.md` §4 P11 and §7.
 - **No sentiment, support, opposition, controversy, or attendance metric.**
   Nothing the City publishes records who attended or testified at a hearing,
   what they said, or which side they took. Fabricating it is this product's

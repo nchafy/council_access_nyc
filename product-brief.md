@@ -48,6 +48,7 @@ Four sub-questions, which are the four you originally asked, restated as user ou
 |---|---|---|
 | **J1** | When and where is a meeting I could actually attend, and how do I get in the room? | **Yes, fully.** |
 | **J2** | What is being discussed, and does anyone disagree about it? | **Topics yes. Disagreement only as Council Members' recorded votes — never as public opinion.** |
+| **J2b** | There is far too much in motion. Which are the **big** items right now? | **Yes** — as a shortlist of what the Council is demonstrably spending its time on, ordered by its own observable activity. Not as a claim about what matters to a neighbourhood. See §4 P11 and §7. |
 | **J3** | How do I say something, and what is my deadline? | **Yes, fully — and this is the highest-value answer we have.** |
 | **J4** | Who else cares about this, and who do I call? | **Partly.** We can route you to institutions today. Naming the groups that show up depends on an unproven spike. |
 
@@ -68,9 +69,38 @@ to deliver one of these; if a constraint cannot be traced to one, it should be c
 | **P8** | Never mislead. Every date and number carries its source and when we fetched it. Where the City publishes nothing, say so and give the phone number instead of a guess. | The product is advice about deadlines. Being wrong is the worst outcome available. | added |
 | **P9** | Be usable by the people most likely to need it: works on a cheap phone and a screen reader, and never leaks the user's home address. | Our users disproportionately include disabled people, people with limited English, and people with safety reasons to hide an address. | added |
 | **P10** | Still be true in two years, or visibly say it is not. | A civic side project's normal death is going stale while looking authoritative. | added |
+| **P11** | **Shortlist the big items.** Cut "everything in motion" down to a readable few, ordered by what the Council itself is measurably doing — and make each one a doorway to reading further, not a verdict. | J2b. Too much is in play to follow. Triage is the product's second-sharpest edge after deadlines. | you |
 
-P1–P7 are yours. **P8, P9, P10 are the three additions worth arguing about** — each costs real
-time. If you veto them, say so and the outline gets much smaller.
+P1–P7 and P11 are yours. **P8, P9, P10 are the three additions worth arguing about** — each
+costs real time. If you veto them, say so and the outline gets much smaller.
+
+### P11 in more detail, because it replaces something that was cut
+
+The shortlist ranks **the institution's activity**, which is observable, and never **the
+public's interest**, which is not. Signals available from the Council's own record, all
+individually explainable to a reader:
+
+- **It is on an upcoming agenda.** The strongest and simplest signal, and the only one that is
+  also actionable — you can still show up.
+- **How many separate hearings it has received**, and how recently.
+- **Where it sits in the pipeline.** Introduced → heard → laid over → reported → voted →
+  enacted. "Reported out of committee" means a floor vote is close; that is urgency, measured.
+- **Whether it has been laid over repeatedly.** Persistence, and the honest proxy for friction.
+- **Whether the recorded vote was divided**, with the members named.
+- **How long it has been in play**, including re-introduction across sessions.
+- **How many members sponsor it** — *candidate only*; the open dataset carries a single bare
+  surname, so co-sponsor counts depend on Legistar pages that have not been verified yet.
+
+Two hard constraints on how it is presented:
+
+1. **Every item shows why it is on the list**, in words, next to it — "heard 3 times since
+   June, reported out of committee last week". A rank with no visible reason is the thing that
+   made the old score dishonest.
+2. **v1 orders and explains; it does not score.** Your own framing — surface the item and the
+   material to read further — is the right first step. A single 0-100 number is not needed to
+   make a shortlist useful, and adding one re-imports every problem in §5. If a composite is
+   ever wanted, it needs the sensitivity analysis the outline §5 describes, and it must still
+   show its components.
 
 ## 5. What the product refuses to do
 
@@ -81,6 +111,11 @@ want to challenge.
   available input varies 54x across districts of equal population and *fell 58% during the
   eviction moratorium* — i.e. it drops when need peaks. It measures how well a council office
   logs cases, not what a neighbourhood needs.
+  **This does not forbid P11.** The line is between measuring *the Council's activity*, which is
+  in its own published record, and inferring *residents' priorities*, which is not published
+  anywhere. A shortlist headed "what the Council is working on" is the first. The same list
+  headed "what matters in your district" is the second, and is banned. The wording is the
+  product decision, not a caption.
 - **No measure of public support or opposition.** No city dataset records who attended, who
   testified, or which side they took. Anything we showed would be invented.
 - **No ranking districts against each other.** A shaded map becomes "my district is worse"
@@ -101,37 +136,58 @@ Stated so it can fail.
 
 Not success: traffic, dashboards, or completeness of the archive.
 
-## 7. The product tension you should resolve first
+## 7. The shortlist, and at what level it exists
 
-**You asked for a per-district information portal with quantified topic importance. The evidence
-supports a citywide "what can I do this week" tool with the district as a filter.**
+**Resolved 2026-09-21.** The owner's reason for wanting an interest score was triage, not
+neighbourhood measurement: *"there are many many topics in motion during the city council, and it
+is difficult to understand all of them, so i want there to be a way where we can create a sort of
+shortlist of what are the big topics."* That is P11, it is buildable, and §5's ban does not touch
+it. The community-board point is accepted.
 
-Three findings drove that, all in the outline with their evidence:
+What remains is a level-of-detail question, because topics do not naturally live at the district
+level. Three levels are supportable, and they nest:
 
-- Committee hearings are **citywide**. They are not held per district and belong to no district.
-  A district page can tell you who represents you and what your board does; it cannot tell you
-  "your district's hearings", because there are none.
-- The genuinely local, human-reachable body is the **community board**, not the council district.
-  Residents routinely conflate them, and the board is often the right venue.
-- The data that would have made a district page rich — casework volume, discretionary funding —
-  is the data we cut, for the reasons in §5.
+1. **Per committee, and per session** — the native level. A topic *is* a thing a committee hears.
+   This is where the shortlist is strongest and where all the signals in §4 P11 exist.
+2. **Citywide right now** — "the big things in front of the Council this month", built by merging
+   the committee shortlists over the upcoming window. This is the front page.
+3. **Per district, via the member** — and this is the bridge that was missing. A district's
+   topics are the topics **its own member is working on**: the committees they sit on (and chair),
+   the bills they sponsor, and how they voted on divided questions. All of that is the Council's
+   own record, attributable to a district through the person who holds the seat, with no casework
+   data and no inference about residents. It is a real per-district answer to "what is being
+   worked on for me".
 
-So the map becomes a way in rather than the centre of the product. **That is a real reduction
-against what you asked for, and it is your call, not mine.** If you want the district to be the
-organising unit anyway, say so — it is buildable, it just cannot carry the analytics that would
-have justified it.
+So the district page is not thin after all — it is just built from the member's record rather than
+from neighbourhood statistics. Two genuine exceptions where a topic really is geographic:
+**Land Use items** (a rezoning happens at an address, so it can be placed in a district) and the
+**community board** calendar, which is local by construction.
+
+Still true, and unchanged: committee hearings themselves are citywide and open to anyone, so the
+site must not imply a hearing "belongs" to a district. The map is a way in; the citywide calendar
+is the front page.
+
+**Assumption flagged:** "the big topics for a specific council" reads as ambiguous between *the
+Council as a body*, *a session*, and *a council district*. The three levels above cover all three
+readings, and level 1 is the base the other two derive from — so no scope decision is blocked on
+disambiguating it. Correct me if you meant only one of them.
 
 ## 8. Open product questions
 
 Everything else in the outline's §11 is downstream of these.
 
-1. **Is the reduction in §7 acceptable?** District as filter, not organising key.
-2. **Which jobs are in v1?** J1 and J3 are fully supported and are ~4 weeks. J2 and J4's
-   routing half add ~1.5 weeks. J4's measured half is unproven. Recommendation: J1 + J3 + J4
-   routing at launch, J2 immediately after.
+1. ~~Is the reduction in §7 acceptable?~~ **Resolved 2026-09-21.** §4 accepted; the shortlist is
+   in as P11; community board accepted; the district page is built from the member's record.
+2. **Which jobs are in v1?** J1 and J3 are fully supported and are ~4 weeks. J2 + J2b and J4's
+   routing half add roughly 2 weeks. J4's measured half is unproven. Recommendation: J1 + J3 +
+   J4 routing at launch, J2/J2b immediately after — the shortlist needs agenda items, which is
+   the same work as J2, so they ship together.
 3. **Do P8, P9, P10 stay?** They are the three requirements you did not ask for and they carry
    most of the non-feature work.
 4. **Whose name is on it, and what happens when you stop maintaining it?**
+5. **How long is the shortlist, and over what window?** A shortlist of 30 is not a shortlist.
+   Suggest ~8 items over the next 30 days at the citywide level, but this is a judgement about
+   reading, not data, and it is yours.
 
 ---
 

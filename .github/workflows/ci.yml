@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [mainline]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      # Hermetic tests only: every parser test runs against a committed fixture
+      # under tests/fixtures/, so CI never depends on nyc.legistar.com being up
+      # or on a city dataset keeping its shape. The contract tests that DO hit
+      # upstream run on a schedule (see refresh workflows) and are excluded here.
+      - name: Tests
+        run: uv run pytest -m "not upstream"

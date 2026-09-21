@@ -445,6 +445,12 @@ No `degraded`, no `age_hours`. The client derives staleness.
 
 ## 8. Milestones
 
+> **Superseded for the near term by `docs/phase-1-scope.md`.** The owner scoped a barebones
+> Phase 1 on 2026-09-21: district dropdown or address input, one page of facts and links, **no
+> map and no analysis**, security first, ~10–13 days. It draws from M0–M2 and M4 and drops M3's
+> map, M6's parsing and analysis, and M7–M8 entirely. The M-table below remains the right
+> sequence for everything after Phase 1 ships; read the phase doc first.
+
 Estimates are days for one person, and are deliberately calibrated against measured output: `~/personal/timemap_nyc` is 805 lines of `src` plus 1,022 of tests, reached in 11 commits over 5.5 months, with one CI workflow and **zero scheduled refresh jobs ever operated**. Operating crons is a first-time capability with its own cost, priced into M1.
 
 | M | Name | Days | Exit criterion | Demo |

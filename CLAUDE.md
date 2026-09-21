@@ -5,12 +5,26 @@ do about their city government this week: which City Council hearings are
 happening, where the room is, how to get in, that they can walk in without
 registering, and how many hours are left to file written testimony.
 
-Read `product-brief.md` first — purpose, users, the ten product requirements, and
-the open product questions. Then `council-access-project-outline.md` for the
-engineering plan: methodology, architecture, data contracts, milestones, and the
-57 constraints that deliver those ten requirements. The brief governs *what*; the
-outline governs *how*. This file carries only the working conventions and the
-settled calls.
+**Building right now? Read `docs/phase-1-scope.md`** — the owner scoped a barebones
+Phase 1: district dropdown or address input, one page of facts and links, no map,
+no analysis, security first. It supersedes the outline's milestones for the near
+term.
+
+For context: `product-brief.md` has the purpose, users and the eleven product
+requirements; `council-access-project-outline.md` is the engineering plan beneath
+it — architecture, data contracts, and the 57 constraints that deliver those
+requirements. The brief governs *what*, the outline governs *how*, and the phase
+doc governs *what now*. This file carries the working conventions and the settled
+calls.
+
+**Security is the owner's stated top priority.** The threat model is in
+`docs/phase-1-scope.md` §4. The short version, because it is easy to get wrong:
+this product has no accounts, so the primary risk is **injection through scraped
+upstream content** — committee names, meeting topics and bill titles are
+third-party text we render. Never `innerHTML`; strip tags at ingest; allowlist
+upstream URLs by host and scheme; `default-src 'none'` CSP with no
+`unsafe-inline`; zero third parties; the typed address goes only to the geocoder
+with `private=true` and never into a URL, storage or log.
 
 ## Decisions already made — don't relitigate
 

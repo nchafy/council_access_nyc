@@ -178,16 +178,18 @@ Everything else in the outline's §11 is downstream of these.
 
 1. ~~Is the reduction in §7 acceptable?~~ **Resolved 2026-09-21.** §4 accepted; the shortlist is
    in as P11; community board accepted; the district page is built from the member's record.
-2. **Which jobs are in v1?** J1 and J3 are fully supported and are ~4 weeks. J2 + J2b and J4's
-   routing half add roughly 2 weeks. J4's measured half is unproven. Recommendation: J1 + J3 +
-   J4 routing at launch, J2/J2b immediately after — the shortlist needs agenda items, which is
-   the same work as J2, so they ship together.
-3. **Do P8, P9, P10 stay?** They are the three requirements you did not ask for and they carry
-   most of the non-feature work.
-4. **Whose name is on it, and what happens when you stop maintaining it?**
-5. **How long is the shortlist, and over what window?** A shortlist of 30 is not a shortlist.
-   Suggest ~8 items over the next 30 days at the citywide level, but this is a judgement about
-   reading, not data, and it is yours.
+2. ~~Which jobs are in v1?~~ **Resolved 2026-09-21 — barebones Phase 1**, specified in
+   `docs/phase-1-scope.md`: one input (district dropdown or address), one page of facts and
+   links, **no map, no analysis**. Delivers J1, J3 and J4's routing half. J2 and J2b follow in a
+   later phase. ~10–13 days.
+3. ~~Do P8, P9, P10 stay?~~ **Resolved 2026-09-21: yes, all three.** And **security is the top
+   priority** — see `docs/phase-1-scope.md` §4, which treats injection through scraped upstream
+   content as the primary threat, since the product has no accounts to attack.
+4. **Whose name is on it, and what happens when you stop maintaining it?** Still open.
+5. ~~How long is the shortlist?~~ **5 items.** In Phase 1 this is literally "the next 5
+   meetings", chronological, which needs no analysis at all. Revisit the number when ranking
+   arrives.
+6. **Domain name, and whether the site is indexed at Phase 1.** Still open.
 
 ---
 

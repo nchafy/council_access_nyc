@@ -75,7 +75,13 @@ monitoring, because there are no analytics. See §6A of the outline.
 
 ## Status
 
-Planning complete, not yet built. Milestones (§8 of the outline):
+Planning complete, not yet built. **Phase 1 is scoped** in
+[docs/phase-1-scope.md](docs/phase-1-scope.md): pick a council district from a dropdown or type
+an address, get one page of facts and links — who represents you, the next 5 meetings with
+addresses, how to testify and by when, and your community board. No map and no analysis in Phase
+1; security is the top priority. About 10–13 days.
+
+The fuller milestone sequence below applies after Phase 1 ships (§8 of the outline):
 
 - [ ] **M0** — skeleton that is visibly alive: one hearing card from a committed fixture, live URL, staleness banner provable (3d)
 - [ ] **M1** — live calendar refreshing 3×/day, fails closed (5d)

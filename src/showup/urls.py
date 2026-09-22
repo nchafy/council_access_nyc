@@ -31,6 +31,22 @@ ALLOWED_HOSTS = frozenset(
         "nyc.gov",
         "geosearch.planninglabs.nyc",
         "cb.nyc.gov",
+        # Borough presidents appoint community board members and their offices
+        # process the applications, so the board view links them. These are the
+        # hosts nyc.gov itself publishes. Note two quirks found while verifying:
+        # the Bronx deep link nyc.gov publishes (/community-boards/) is a 404, so
+        # only roots are linked; and Staten Island's borough president site is on
+        # statenislandusa.com, which is not a .gov but is what nyc.gov lists.
+        "bronxboropres.nyc.gov",
+        "www.brooklynbp.nyc.gov",
+        "brooklynbp.nyc.gov",
+        "www.manhattanbp.nyc.gov",
+        "manhattanbp.nyc.gov",
+        "www.queensbp.nyc.gov",
+        "queensbp.nyc.gov",
+        "www.statenislandusa.com",
+        "statenislandusa.com",
+        "communityprofiles.planning.nyc.gov",
     }
 )
 

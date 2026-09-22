@@ -43,7 +43,15 @@ CHROME_CANDIDATES = [
 #: 390px layout needs CDP emulation (Playwright), which Phase 1 does not carry.
 VIEWPORTS = {"narrow": (500, 1400), "desktop": (1280, 1600)}
 
-PAGES = {"index": "/", "district-35": "/district/35/", "district-3": "/district/3/"}
+PAGES = {
+    "index": "/",
+    "district-35": "/district/35/",
+    # District 3 is the degraded-state page: vacant-seat handling, the
+    # source-conflict notice, missing committees.
+    "district-3": "/district/3/",
+    # The second view.
+    "board-302": "/board/302/",
+}
 
 
 def find_chrome() -> str | None:

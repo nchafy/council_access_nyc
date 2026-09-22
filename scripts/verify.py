@@ -36,6 +36,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from serve import parse_headers_file  # noqa: E402
 
+sys.path.insert(0, str(REPO_ROOT / "src"))
+from showup.urls import ALLOWED_HOSTS  # noqa: E402
+
 REQUIRED_HEADERS = {
     "Content-Security-Policy": "default-src 'none'",
     "X-Content-Type-Options": "nosniff",
@@ -43,16 +46,10 @@ REQUIRED_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 
-ALLOWED_LINK_HOSTS = {
-    "nyc.legistar.com",
-    "legistar.council.nyc.gov",
-    "council.nyc.gov",
-    "data.cityofnewyork.us",
-    "nyc.gov",
-    "www.nyc.gov",
-    "geosearch.planninglabs.nyc",
-    "cb.nyc.gov",
-}
+# Imported, never re-listed. A second copy of the allowlist is a copy that drifts:
+# this check passed for weeks and then failed the moment the real list grew, which
+# is the wrong way round for a security assertion.
+ALLOWED_LINK_HOSTS = ALLOWED_HOSTS
 
 _INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", re.IGNORECASE)
 _STYLE_ATTR = re.compile(r"\sstyle\s*=\s*[\"']", re.IGNORECASE)
@@ -161,7 +158,7 @@ def _run_checks(base: str, site: Path) -> None:
     check("unsafe-eval" not in csp, "CSP contains unsafe-eval")
 
     # --- index content ------------------------------------------------------
-    check("Find your Council district" in index, "index missing its heading")
+    check("what your city government is doing" in index.lower(), "index missing its heading")
     check(index.count('href="/district/') >= 51, "index does not link all 51 districts")
     check("<select" in index, "index has no dropdown")
 
@@ -194,6 +191,39 @@ def _run_checks(base: str, site: Path) -> None:
         _check_markup_safety(url, page)
         _check_links(url, page, site)
         print(f"GET /district/{number}/  {status}  {len(page)} bytes")
+
+    # --- the board view, the second of the two views -------------------------
+    for code in ("101", "302", "503"):
+        url = f"{base}/board/{code}/"
+        status, board_headers, page = fetch(url)
+        flat = " ".join(page.split())
+        check(status == 200, f"{url} returned {status}")
+        check("Community Board" in page, f"{url} missing its heading")
+        check("Content-Security-Policy" in board_headers, f"{url} served without CSP")
+        # The route that justifies this view existing at all.
+        check("non-Board (public) members" in flat, f"{url} missing the public-member route")
+        check("up to 50 unsalaried members" in flat, f"{url} missing the appointment facts")
+        # Refusals, not guesses.
+        check(
+            "could not find an official source" in flat,
+            f"{url} does not refuse the unpublished facts (term length, age, cadence)",
+        )
+        check(
+            'href="/district/' in page,
+            f"{url} does not link the council districts covering it",
+        )
+        check("of this board" in flat, f"{url} share is not labelled as of-the-board")
+        _check_markup_safety(url, page)
+        _check_links(url, page, site)
+        print(f"GET /board/{code}/  {status}  {len(page)} bytes")
+
+    board_dirs = [p for p in (site / "board").iterdir() if p.is_dir()]
+    check(len(board_dirs) == 59, f"expected 59 board pages, found {len(board_dirs)}")
+
+    # Both views must be reachable from the front page.
+    check('id="district-select"' in index, "index has no council district picker")
+    check('id="board-select"' in index, "index has no community board picker")
+    check(index.count('href="/board/') >= 59, "index does not link all 59 boards")
 
     # --- the built 404 path -------------------------------------------------
     status, _, missing = fetch(base + "/district/99/")
@@ -236,9 +266,18 @@ def _run_checks(base: str, site: Path) -> None:
         if not match:
             continue
         checked_pages += 1
-        block = match.group(1)
-        leaked += [f"{name} in {page.parent.name}" for name in names if name in block]
-    check(checked_pages >= 51, f"only {checked_pages} pages had a boards section")
+        leaked += [
+            f"{name} in district/{page.parent.name}" for name in names if name in match.group(1)
+        ]
+    check(checked_pages >= 51, f"only {checked_pages} district pages had a boards section")
+
+    # Board pages are entirely about one board, so the whole page is in scope.
+    board_pages = 0
+    for page in (site / "board").rglob("index.html"):
+        board_pages += 1
+        html = page.read_text()
+        leaked += [f"{name} in board/{page.parent.name}" for name in names if name in html]
+    check(board_pages >= 59, f"only {board_pages} board pages checked")
     check(not leaked, f"board chair/district-manager names leaked: {leaked[:3]}")
     print(
         f"privacy: {len(names)} board officer names checked against the boards "

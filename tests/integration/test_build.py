@@ -19,7 +19,7 @@ import pytest
 from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
-from showup.model import Committee, District, Member, Office
+from showup.model import Committee, District, DistrictBoard, Member, Office
 from showup.render import render_district, render_index
 from showup.sources.calendar import parse_calendar, upcoming
 
@@ -202,12 +202,45 @@ class TestVacantSeat:
 
 
 class TestIndex:
+    def _boards(self):
+        return [
+            DistrictBoard(
+                code=code,
+                label=f"Brooklyn Community Board {code[1:]}",
+                borough_name="Brooklyn",
+                share=1.0,
+                neighborhoods=None,
+                address=None,
+                phone=None,
+                email=None,
+                email_suppressed=None,
+                website=None,
+                board_meeting=None,
+                cabinet_meeting=None,
+            )
+            for code in ("301", "302")
+        ]
+
     def test_lists_every_district(self):
         districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
-        html = render_index(districts, built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
+        html = render_index(
+            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+        )
         for n in (1, 25, 51):
             assert f'href="/district/{n}/"' in html
         assert "<select" in html
+
+    def test_offers_both_views(self):
+        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
+        html = render_index(
+            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+        )
+        assert 'id="district-select"' in html
+        assert 'id="board-select"' in html
+        assert 'href="/board/302/"' in html
+        # The difference between the two must be stated, not assumed — residents
+        # routinely want the board and go looking for the council district.
+        assert "most local unit" in html
 
 
 class TestCrosswalk:
@@ -277,6 +310,82 @@ class TestBoardsOnThePage:
         }
         assert names, "fixture should carry some names to check against"
         for page in (out / "district").rglob("index.html"):
+            html = page.read_text()
+            for name in names:
+                assert name not in html, f"{name} leaked into {page}"
+
+
+class TestBoardView:
+    """The board view is a different page, not a district page variant."""
+
+    def test_all_59_board_pages_are_written(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        report = build_site(raw_dir, out, today=date(2026, 9, 22))
+        assert report["board_pages"] == 59
+        pages = [p for p in (out / "board").iterdir() if p.is_dir()]
+        assert len(pages) == 59
+
+    def test_board_page_carries_the_involvement_route(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
+        # The fact most residents do not know, and the reason this view exists.
+        assert "non-Board (public) members" in page
+        assert "not allowed to vote" in page
+        # Verified appointment facts.
+        assert "up to 50 unsalaried members" in page
+        assert "Borough President" in page
+        assert "reside, work, or have some other significant interest" in page
+
+    def test_board_page_refuses_what_the_city_does_not_publish(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
+        # Term length, minimum age, meeting frequency and public-comment rules are
+        # not published by the City, so the page says so rather than guessing.
+        assert "could not find an official source" in page
+        assert "No City dataset publishes community board agendas" in page
+
+    def test_board_page_links_its_council_districts(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = (out / "board" / "302" / "index.html").read_text()
+        # Brooklyn CB 2 spans council districts 33 and 35.
+        assert 'href="/district/33/"' in page
+        assert 'href="/district/35/"' in page
+
+    def test_board_shares_are_of_the_board_not_the_district(self, raw_dir, tmp_path):
+        """The two crosswalk directions answer different questions.
+
+        On district 35's page, Brooklyn CB 2 covers ~44% *of the district*. On CB
+        2's own page, district 33 holds ~53% *of the board*. Transposing one into
+        the other would silently mis-state both.
+        """
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        board_page = (out / "board" / "302" / "index.html").read_text()
+        assert "of this board" in board_page
+        district_page = (out / "district" / "35" / "index.html").read_text()
+        assert "of this council district" in district_page
+
+    def test_district_page_links_to_the_board_view(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = (out / "district" / "35" / "index.html").read_text()
+        assert 'href="/board/302/"' in page
+
+    def test_no_board_officer_names_on_board_pages(self, raw_dir, tmp_path):
+        """The privacy rule holds on the new view too."""
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        rows = json.loads((raw_dir / "community_boards.json").read_text())
+        names = {
+            (row.get(field) or "").strip()
+            for row in rows
+            for field in ("cb_chair", "cb_district_manager")
+            if len((row.get(field) or "").strip()) > 4
+        }
+        for page in (out / "board").rglob("index.html"):
             html = page.read_text()
             for name in names:
                 assert name not in html, f"{name} leaked into {page}"

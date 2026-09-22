@@ -16,18 +16,24 @@
 (function () {
   "use strict";
 
-  // 1. Dropdown navigation.
-  var form = document.getElementById("district-form");
-  var select = document.getElementById("district-select");
-  if (form && select) {
+  // 1. Dropdown navigation, for both views.
+  //
+  // Each pair is validated against its own path shape. Even though the option
+  // values are ours, checking here means a future change to how they are
+  // generated cannot turn this into an open redirect.
+  [
+    ["district-form", "district-select", /^\/district\/\d{1,2}\/$/],
+    ["board-form", "board-select", /^\/board\/[1-5]\d{2}\/$/],
+  ].forEach(function (pair) {
+    var form = document.getElementById(pair[0]);
+    var select = document.getElementById(pair[1]);
+    var allowed = pair[2];
+    if (!form || !select) return;
+
     form.addEventListener("submit", function (event) {
       event.preventDefault();
-      var target = select.value;
-      // Only ever navigate to our own root-relative district paths. Even though
-      // these values are ours, validating here means a future change to how the
-      // options are generated cannot turn this into an open redirect.
-      if (/^\/district\/\d{1,2}\/$/.test(target)) {
-        window.location.assign(target);
+      if (allowed.test(select.value)) {
+        window.location.assign(select.value);
       }
     });
     select.addEventListener("change", function () {
@@ -35,7 +41,7 @@
         form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit"));
       }
     });
-  }
+  });
 
   // 2. Staleness, computed against the reader's clock.
   var footer = document.querySelector("footer.site");

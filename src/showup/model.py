@@ -96,6 +96,8 @@ class DistrictBoard:
 
     code: str
     label: str
+    #: Borough name, used to pick the right borough-president application link.
+    borough_name: str
     share: float
     neighborhoods: str | None
     address: str | None

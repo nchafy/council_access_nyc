@@ -23,7 +23,13 @@ from pathlib import Path
 from .geo import GRID_SPACING_DEG, MIN_SHARE, load_features, overlap_shares
 from .sources.boards import JOINT_INTEREST_AREAS
 
-__all__ = ["CROSSWALK_PATH", "CrosswalkError", "generate", "load"]
+__all__ = [
+    "CROSSWALK_PATH",
+    "CrosswalkError",
+    "generate",
+    "load",
+    "load_boards_to_districts",
+]
 
 CROSSWALK_PATH = Path("crosswalks/council_to_boards.json")
 
@@ -43,6 +49,12 @@ def generate(council_geojson: Path, community_geojson: Path) -> dict:
         raise CrosswalkError(f"expected 59 community districts, found {len(boards)}")
 
     shares = overlap_shares(council, boards)
+    # And the reverse direction. The two are not transposes of each other: a share
+    # is always "of the containing polygon's sampled area", so
+    # districts[35][302] = 0.44 means 44% of council district 35 sits in Brooklyn
+    # CB 2, while boards[302][35] answers the different question of how much of
+    # CB 2 sits in district 35. The board view needs the second.
+    reverse = overlap_shares(boards, council)
 
     uncovered = sorted((key for key, value in shares.items() if not value), key=int)
     if uncovered:
@@ -71,11 +83,15 @@ def generate(council_geojson: Path, community_geojson: Path) -> dict:
             key: [[code, share] for code, share in value]
             for key, value in sorted(shares.items(), key=lambda kv: int(kv[0]))
         },
+        "boards": {
+            key: [[code, share] for code, share in value]
+            for key, value in sorted(reverse.items(), key=lambda kv: int(kv[0]))
+        },
     }
 
 
 def load(path: Path) -> dict[int, list[tuple[str, float]]]:
-    """Read the committed crosswalk, validating coverage before the build uses it."""
+    """Council district -> its community boards. Validates coverage of all 51."""
     file = Path(path)
     if not file.exists():
         raise CrosswalkError(
@@ -91,4 +107,33 @@ def load(path: Path) -> dict[int, list[tuple[str, float]]]:
     missing = [number for number in range(1, 52) if not result.get(number)]
     if missing:
         raise CrosswalkError(f"crosswalk covers no board for council districts {missing}")
+    return result
+
+
+def load_boards_to_districts(path: Path) -> dict[str, list[tuple[int, float]]]:
+    """Community district code -> the council districts overlapping it.
+
+    Shares here are of the *board's* area, which is the question the board view
+    asks ("how much of this board is in council district 35"). That is a different
+    number from the one on the district page, so the two directions are stored
+    separately rather than transposed.
+    """
+    file = Path(path)
+    if not file.exists():
+        raise CrosswalkError(f"{file} is missing. Run `showup crosswalk`.")
+    data = json.loads(file.read_text(encoding="utf-8"))
+    boards = data.get("boards")
+    if not boards:
+        raise CrosswalkError(
+            f"{file} has no `boards` section — regenerate it with `showup crosswalk`"
+        )
+    result = {
+        str(code): [(int(district), float(share)) for district, share in pairs]
+        for code, pairs in boards.items()
+    }
+    if len(result) != 59:
+        raise CrosswalkError(f"crosswalk covers {len(result)} community boards, expected 59")
+    empty = sorted(code for code, pairs in result.items() if not pairs)
+    if empty:
+        raise CrosswalkError(f"community boards with no council district: {empty}")
     return result

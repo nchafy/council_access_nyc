@@ -21,19 +21,34 @@ Estimated **8–11 days** for one person, down from 10–13 now that hosting and
 
 ## 1. What Phase 1 is
 
-A user arrives, identifies where they are **once**, and gets a single page answering: who
-represents me, where and when can I show up, what can I still do about it, and who do I call.
-Every fact links to the official source it came from.
+A user arrives, identifies where they are **once**, and gets a page answering: who represents me,
+where and when can I show up, what can I still do about it, and who do I call. Every fact links to
+the official source it came from.
 
-Two ways in, both producing the identical page:
+**Two views, added 2026-09-22 on the owner's decision.** They answer different questions and are
+not variants of each other:
 
-1. **A dropdown of all 51 council districts**, labelled with neighbourhood names so they are
-   recognisable — `District 35 — Fort Greene, Clinton Hill, Prospect Heights`. Requires no
-   network call and no geometry.
-2. **An address box.** Geocode the address, resolve which district the point falls in, redirect
-   to the same page.
+- **`/district/{1-51}`** — the City Council view. Who legislates for you, the committees your
+  member sits on, the next five Council meetings with addresses, and how to testify including the
+  written-testimony window.
+- **`/board/{code}`** — the community board view. The most local unit of City government: the
+  standing monthly cadence, the zoning review role, the office to call, the council districts
+  that cover it — and the route almost nobody knows, that **board committees seat non-board
+  members of the public**.
 
-`/district/35` is the canonical, shareable URL. The typed address never appears in it.
+The board view is deliberately not a district page with different data. A board has no hearing
+calendar we can read (no City dataset publishes board agendas), so the page says so and sends the
+reader to the board's own site; and its participation route is committee membership and
+appointment by the Borough President rather than testimony.
+
+Ways in, all producing one of those two pages:
+
+1. **Two dropdowns**, one per view, each with a plain-link list below it for the
+   no-JavaScript, keyboard and screen-reader path.
+2. **An address box.** Geocode, resolve the containing district, redirect. *(Not built yet.)*
+
+`/district/35` and `/board/302` are the canonical, shareable URLs. The typed address never
+appears in either.
 
 ## 2. What is on the page
 

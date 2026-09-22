@@ -19,10 +19,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from .crosswalk import CROSSWALK_PATH, CrosswalkError
+from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts
 from .crosswalk import load as load_crosswalk
 from .model import District, DistrictBoard, Manifest, Member
-from .render import render_district, render_index, render_not_found
+from .render import render_board, render_district, render_index, render_not_found
 from .sources.boards import load_boards
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
@@ -63,7 +63,9 @@ def _check_floor(name: str, count: int) -> None:
         )
 
 
-def _load_boards_by_district(raw: Path, repo_root: Path) -> dict[int, tuple[DistrictBoard, ...]]:
+def _load_boards_by_district(
+    raw: Path, repo_root: Path
+) -> tuple[dict[int, tuple[DistrictBoard, ...]], dict[str, DistrictBoard]]:
     """Join the committed geometry crosswalk to the boards' contact details.
 
     The crosswalk decides *which* boards cover a district (geometry); this dataset
@@ -80,6 +82,7 @@ def _load_boards_by_district(raw: Path, repo_root: Path) -> dict[int, tuple[Dist
         raise BuildError(str(error)) from error
 
     by_district: dict[int, tuple[DistrictBoard, ...]] = {}
+    by_code: dict[str, DistrictBoard] = {}
     for number, pairs in crosswalk.items():
         entries = []
         for code, share in pairs:
@@ -89,26 +92,29 @@ def _load_boards_by_district(raw: Path, repo_root: Path) -> dict[int, tuple[Dist
                     f"crosswalk references community district {code}, which is not in "
                     "community_boards.json — the two sources have drifted apart"
                 )
-            entries.append(
-                DistrictBoard(
-                    code=code,
-                    label=board.label,
-                    share=share,
-                    neighborhoods=board.neighborhoods,
-                    address=board.address,
-                    phone=board.phone,
-                    email=board.email,
-                    email_suppressed=board.email_suppressed,
-                    website=board.website,
-                    board_meeting=board.board_meeting,
-                    cabinet_meeting=board.cabinet_meeting,
-                )
+            entry = DistrictBoard(
+                code=code,
+                label=board.label,
+                borough_name=board.borough,
+                share=share,
+                neighborhoods=board.neighborhoods,
+                address=board.address,
+                phone=board.phone,
+                email=board.email,
+                email_suppressed=board.email_suppressed,
+                website=board.website,
+                board_meeting=board.board_meeting,
+                cabinet_meeting=board.cabinet_meeting,
             )
+            entries.append(entry)
+            by_code.setdefault(code, entry)
         by_district[number] = tuple(entries)
-    return by_district
+    return by_district, by_code
 
 
-def _load_districts(raw: Path, today: date) -> tuple[list[District], dict[int, dict]]:
+def _load_districts(
+    raw: Path, today: date
+) -> tuple[list[District], dict[int, dict], dict[str, DistrictBoard]]:
     pages = json.loads((raw / "district_pages.json").read_text(encoding="utf-8"))
     members = load_members(raw / "members.json")
     _check_floor("members", len(members))
@@ -122,7 +128,9 @@ def _load_districts(raw: Path, today: date) -> tuple[list[District], dict[int, d
         "district_pages", sum(1 for p in parsed_pages.values() if "page" not in p["missing"])
     )
 
-    boards_by_district = _load_boards_by_district(raw, Path(__file__).resolve().parents[2])
+    boards_by_district, boards_by_code = _load_boards_by_district(
+        raw, Path(__file__).resolve().parents[2]
+    )
 
     seen_at = datetime.now().isoformat(timespec="seconds")
     districts: list[District] = []
@@ -171,7 +179,7 @@ def _load_districts(raw: Path, today: date) -> tuple[list[District], dict[int, d
                 missing=tuple(page["missing"]),
             )
         )
-    return districts, current
+    return districts, current, boards_by_code
 
 
 def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> dict:
@@ -190,7 +198,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     meetings = parse_calendar(calendar_html)
     _check_floor("calendar", len(meetings))
 
-    districts, _ = _load_districts(raw, day)
+    districts, _, boards_by_code = _load_districts(raw, day)
 
     ahead = upcoming(meetings, day, SHORTLIST_SIZE)
     window_end = max((m.date for m in meetings), default=None)
@@ -201,7 +209,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     staging.mkdir(parents=True)
 
     (staging / "index.html").write_text(
-        render_index(districts, built_at=now, window_end=window_end), encoding="utf-8"
+        render_index(
+            districts,
+            sorted(boards_by_code.values(), key=lambda b: b.code),
+            built_at=now,
+            window_end=window_end,
+        ),
+        encoding="utf-8",
     )
     (staging / "404.html").write_text(
         render_not_found(built_at=now, window_end=window_end), encoding="utf-8"
@@ -212,7 +226,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     district_root = staging / "district"
     district_root.mkdir()
     (district_root / "index.html").write_text(
-        render_index(districts, built_at=now, window_end=window_end), encoding="utf-8"
+        render_index(
+            districts,
+            sorted(boards_by_code.values(), key=lambda b: b.code),
+            built_at=now,
+            window_end=window_end,
+        ),
+        encoding="utf-8",
     )
 
     for district in districts:
@@ -224,6 +244,39 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             ),
             encoding="utf-8",
         )
+
+    # The 59 community board pages. A board is a different view, not a variant of
+    # a district: it has a standing monthly cadence, a zoning review role, and it
+    # seats members of the public on committees.
+    repo_root = Path(__file__).resolve().parents[2]
+    boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
+    board_root = staging / "board"
+    board_root.mkdir()
+    boards_written = 0
+    for code, board in sorted(boards_by_code.items()):
+        page_dir = board_root / code
+        page_dir.mkdir()
+        (page_dir / "index.html").write_text(
+            render_board(
+                board,
+                boards_to_districts.get(code, []),
+                built_at=now,
+                window_end=window_end,
+            ),
+            encoding="utf-8",
+        )
+        boards_written += 1
+    if boards_written != 59:
+        raise BuildError(f"wrote {boards_written} board pages, expected 59")
+    (board_root / "index.html").write_text(
+        render_index(
+            districts,
+            sorted(boards_by_code.values(), key=lambda b: b.code),
+            built_at=now,
+            window_end=window_end,
+        ),
+        encoding="utf-8",
+    )
 
     assets_src = Path(__file__).parent / "assets"
     shutil.copytree(assets_src, staging / "assets")
@@ -281,6 +334,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "window_end": window_end.isoformat() if window_end else None,
         "districts_with_gaps": sum(1 for d in districts if d.missing),
         "boards_linked": sum(len(d.boards) for d in districts),
+        "board_pages": len(boards_by_code),
         "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [
             d.number for d in districts if d.member and d.member.seat_status == "vacant"

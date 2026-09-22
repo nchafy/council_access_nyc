@@ -28,7 +28,8 @@ from .text import esc
 __all__ = ["render_district", "render_index", "render_not_found"]
 
 _DOC_TITLE = "Show Up NYC"
-_TAGLINE = "What your City Council is doing, and what you can still do about it."
+#: Covers both views — a board page is not about the Council.
+_TAGLINE = "What your city government is doing, and what you can still do about it."
 
 
 def _layout(*, title: str, body: str, built_at: datetime, window_end: date | None) -> str:
@@ -97,57 +98,119 @@ def _dl(rows: list[tuple[str, str]]) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def render_index(districts: list[District], *, built_at: datetime, window_end: date | None) -> str:
-    options = "\n".join(
+def render_index(
+    districts: list[District],
+    boards: list[DistrictBoard],
+    *,
+    built_at: datetime,
+    window_end: date | None,
+) -> str:
+    """The front page: two ways in, because they answer different questions.
+
+    A council district tells you who legislates for you and which hearings you can
+    testify at. A community board tells you who reviews the zoning on your block
+    and will seat you on a committee. Residents routinely want the second and go
+    looking for the first, so both are offered side by side and the difference is
+    stated rather than assumed.
+    """
+    district_options = "\n".join(
         '    <option value="/district/{n}/">District {n}{hood}</option>'.format(
             n=d.number,
             hood=f" — {esc(_short(d.neighborhoods))}" if d.neighborhoods else "",
         )
         for d in districts
     )
-    # The <noscript> list is not a courtesy: it is the whole interface when
-    # JavaScript is off, and it is also the keyboard- and screen-reader-friendly
-    # path. The <select> is a convenience layered on top of it.
-    links = "\n".join(
+    board_options = "\n".join(
+        '    <option value="/board/{code}/">{label}{hood}</option>'.format(
+            code=esc(b.code),
+            label=esc(b.label),
+            hood=f" — {esc(_short(b.neighborhoods, 44))}" if b.neighborhoods else "",
+        )
+        for b in boards
+    )
+    # The <noscript> lists are not a courtesy: they are the whole interface when
+    # JavaScript is off, and the keyboard and screen-reader path either way.
+    district_links = "\n".join(
         '    <li><a href="/district/{n}/">District {n}{hood}</a></li>'.format(
             n=d.number,
             hood=f" — {esc(_short(d.neighborhoods))}" if d.neighborhoods else "",
         )
         for d in districts
     )
+    board_links = "\n".join(
+        '    <li><a href="/board/{code}/">{label}{hood}</a></li>'.format(
+            code=esc(b.code),
+            label=esc(b.label),
+            hood=f" — {esc(_short(b.neighborhoods, 44))}" if b.neighborhoods else "",
+        )
+        for b in boards
+    )
+
     body = f"""<section class="intro">
-  <h1>Find your Council district</h1>
+  <h1>Find out what your city government is doing</h1>
   <p>
-    Pick your district to see who represents you, the next five Council meetings
-    with addresses, and exactly how to be heard — including how long you have
-    left to file written testimony.
+    Two views, because they answer different questions. Pick whichever matches what
+    you are trying to do.
   </p>
 </section>
 
 <section class="picker">
-  <h2>Choose a district</h2>
+  <h2>City Council district</h2>
+  <p class="why">
+    Who legislates for you, the next five Council meetings with addresses, and how
+    to testify — including how long you have left to file in writing.
+    <strong>51 districts.</strong>
+  </p>
   <form id="district-form" action="/district/" method="get">
     <label for="district-select">Council district</label>
     <select id="district-select" name="district">
-      <option value="">Select a district…</option>
-{options}
+      <option value="">Select a council district…</option>
+{district_options}
+    </select>
+    <button type="submit">Go</button>
+  </form>
+</section>
+
+<section class="picker">
+  <h2>Community board</h2>
+  <p class="why">
+    The most local unit of City government: it reviews zoning on your block, sets
+    local budget priorities, meets on a standing monthly cadence, and
+    <strong>will seat a member of the public on its committees</strong>.
+    <strong>59 boards.</strong>
+  </p>
+  <form id="board-form" action="/board/" method="get">
+    <label for="board-select">Community board</label>
+    <select id="board-select" name="board">
+      <option value="">Select a community board…</option>
+{board_options}
     </select>
     <button type="submit">Go</button>
   </form>
   <p class="hint">
-    Not sure which district you are in?
-    {_link("https://council.nyc.gov/districts/", "Look it up on council.nyc.gov")}.
+    Not sure which is which, or which one you are in?
+    {_link("https://council.nyc.gov/districts/", "Council district lookup")} ·
+    {_link("https://communityprofiles.planning.nyc.gov/", "Community district profiles")}.
   </p>
 </section>
 
 <section class="all-districts">
-  <h2>All 51 districts</h2>
+  <h2>All 51 council districts</h2>
   <ul class="district-list">
-{links}
+{district_links}
+  </ul>
+</section>
+
+<section class="all-districts">
+  <h2>All 59 community boards</h2>
+  <ul class="district-list">
+{board_links}
   </ul>
 </section>
 """
-    return _layout(title="Find your district", body=body, built_at=built_at, window_end=window_end)
+    return _layout(
+        title="Find your district or board", body=body, built_at=built_at, window_end=window_end
+    )
 
 
 def _short(value: str | None, limit: int = 58) -> str:
@@ -425,7 +488,7 @@ def _board_card(board: DistrictBoard) -> str:
         f'<span class="share">about {esc(share)} of this council district</span>' if share else ""
     )
     return f"""  <article class="board">
-    <h3>{esc(board.label)}</h3>
+    <h3><a href="/board/{esc(board.code)}/">{esc(board.label)}</a></h3>
     {extent}
 {_dl(rows)}
   </article>
@@ -515,6 +578,192 @@ def render_district(
     return _layout(
         title=f"District {district.number}", body=body, built_at=built_at, window_end=window_end
     )
+
+
+#: Borough president offices appoint board members and process applications.
+#: Roots only: the Bronx deep link nyc.gov publishes is a 404, and three of these
+#: hosts return 403 to a non-browser client, so a deep path cannot be verified.
+BP_SITES = {
+    "Bronx": "https://bronxboropres.nyc.gov/",
+    "Brooklyn": "https://www.brooklynbp.nyc.gov/community-boards/",
+    "Manhattan": "https://www.manhattanbp.nyc.gov/",
+    "Queens": "https://www.queensbp.nyc.gov/",
+    "Staten Island": "https://www.statenislandusa.com/",
+}
+
+#: Every claim here was read off nyc.gov/site/communityboards on 2026-09-22.
+#: The things those pages do NOT state — term length, any minimum age, meeting
+#: frequency requirements, and whether the public may speak at a full board
+#: meeting — are rendered as refusals further down rather than guessed at.
+_BOARD_INVOLVEMENT_TEMPLATE = """<section class="participate">
+  <h2>How to get involved with this board</h2>
+  <p class="lead-truth">
+    The route most people do not know about: <strong>board committees admit
+    non-board members of the public.</strong> You can join the discussion and make
+    recommendations without being appointed to anything — you just cannot vote.
+  </p>
+
+  <h3>Join a committee as a public member</h3>
+  <ul>
+    <li>Committees are "composed of Board members, and non-Board (public) members".</li>
+    <li>As a public member you take part in discussion and offer recommendations, but are
+      "not allowed to vote".</li>
+    <li>Most boards ask for an application and a current resume — contact the board office
+      above.</li>
+    <li>Committees are open to the public and, under the New York State Open Meetings Law,
+      must keep full and accurate minutes.</li>
+  </ul>
+
+  <h3>Apply to be a board member</h3>
+  <ul>
+    <li>Each board has <strong>up to 50 unsalaried members</strong>, and <strong>half are
+      nominated by the City Council members</strong> whose districts cover it — which is why
+      the council districts listed above matter.</li>
+    <li>Members are appointed by the <strong>Borough President</strong>, whose office processes
+      applications at various times of the year.</li>
+    <li>You must "reside, work, or have some other significant interest in the community".</li>
+    <li>Apply through the {borough} Borough President: {bp_link}</li>
+  </ul>
+
+  <h3>What this board can and cannot do</h3>
+  <ul>
+    <li>Zoning: "Applications for a change in or variance from the zoning resolution must come
+      before the board for review." Boards must also be consulted on the siting of most
+      municipal facilities.</li>
+    <li>Budget: boards assess local needs and meet with City agencies to make recommendations
+      in the City's budget process.</li>
+    <li>The limit, stated plainly by the City: boards "do not have the ability to order any City
+      agency or official to perform any task". They advise, and are often persuasive.</li>
+    <li>Boards are "autonomous City agencies and members are City officers" — not a
+      neighbourhood association.</li>
+  </ul>
+
+  <h3>Things the City does not publish</h3>
+  <p class="refusal">
+    We could not find an official source for how long a board term lasts, any minimum age to
+    serve, how often the full board must meet, or whether and how the public may speak at a
+    full board meeting. Those vary by board and we will not guess. Ask the board office
+    directly — its phone and email are above.
+  </p>
+</section>
+"""
+
+
+def _board_involvement(borough: str) -> str:
+    url = BP_SITES.get(borough)
+    bp_link = (
+        _link(url, url.replace("https://", "").rstrip("/"))
+        if url
+        else '<span class="nolink">see nyc.gov/communityboards</span>'
+    )
+    return _BOARD_INVOLVEMENT_TEMPLATE.format(borough=esc(borough), bp_link=bp_link)
+
+
+def render_board(
+    board: DistrictBoard,
+    districts: list[tuple[int, float]],
+    *,
+    built_at: datetime,
+    window_end: date | None,
+) -> str:
+    """The community board view.
+
+    Deliberately not a copy of the district page. A board's value to a resident is
+    different: it meets on a predictable cadence, it reviews zoning in its own
+    area, and it will seat a member of the public on a committee. It has no
+    hearing calendar we can read — no dataset publishes board agendas — so this
+    page does not pretend to one and sends the reader to the board's own site.
+    """
+    rows: list[tuple[str, str]] = []
+    if board.neighborhoods:
+        rows.append(("Covers", esc(board.neighborhoods)))
+    if board.address:
+        rows.append(("Office", esc(board.address)))
+    if board.phone:
+        rows.append(("Phone", esc(board.phone)))
+    if board.email:
+        rows.append(("Email", esc(board.email)))
+    elif board.email_suppressed:
+        rows.append(("Email", f"<em>Not shown — {esc(board.email_suppressed)}.</em>"))
+    if board.website:
+        rows.append(
+            (
+                "Website",
+                _link(board.website, board.website.replace("https://", "").rstrip("/"))
+                + "<br><small>The board's own site is the only place its agendas and "
+                "minutes are published — no City dataset carries them.</small>",
+            )
+        )
+
+    meetings: list[tuple[str, str]] = []
+    if board.board_meeting:
+        meetings.append(("Full board meets", esc(board.board_meeting)))
+    if board.cabinet_meeting:
+        meetings.append(("Cabinet meets", esc(board.cabinet_meeting)))
+
+    meetings_block = (
+        f"""<section class="meetings">
+  <h2>When it meets</h2>
+  <p class="why">
+    Quoted exactly as the board publishes it. Unlike Council committees, which are
+    called by their chair, a community board meets on a standing monthly cadence —
+    which makes it the easier of the two to plan around.
+  </p>
+{_dl(meetings)}
+  <p class="refusal">
+    We do not have this board's calendar. No City dataset publishes community board
+    agendas or meeting dates, so the cadence above is a pattern, not a confirmed
+    date. <strong>Confirm with the board before you travel.</strong>
+  </p>
+</section>
+"""
+        if meetings
+        else """<section class="meetings">
+  <h2>When it meets</h2>
+  <p class="designed-state">
+    This board does not publish a meeting cadence in the City's dataset. Contact the
+    office or check its website.
+  </p>
+</section>
+"""
+    )
+
+    district_items = "\n".join(
+        f'    <li><a href="/district/{number}/">Council District {number}</a>'
+        f' <span class="share">{round(share * 100)}% of this board</span></li>'
+        for number, share in districts
+    )
+    districts_block = f"""<section class="committees">
+  <h2>Council districts covering this board</h2>
+  <p class="why">
+    These are the Council Members who can introduce legislation for this area — and
+    who nominate half of this board's members. Percentages are the share of
+    <em>this board</em> that sits in each district, computed from the City's
+    boundary files and approximate.
+  </p>
+  <ul class="district-list">
+{district_items}
+  </ul>
+</section>
+"""
+
+    body = f"""<section class="where">
+  <h1>{esc(board.label)}</h1>
+  <p class="distinction">
+    A <strong>community board</strong> is the most local unit of City government. It
+    advises on zoning, budget priorities and local services for one community
+    district. It is <em>not</em> the same thing as a council district — the Council
+    Members for this area are listed below.
+  </p>
+{_dl(rows)}
+</section>
+
+{meetings_block}
+{districts_block}
+{_board_involvement(board.borough_name)}
+<p class="back"><a href="/">Find another board or district</a></p>
+"""
+    return _layout(title=board.label, body=body, built_at=built_at, window_end=window_end)
 
 
 def render_not_found(*, built_at: datetime, window_end: date | None) -> str:

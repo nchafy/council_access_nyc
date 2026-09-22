@@ -49,7 +49,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"build refused: {error}", file=sys.stderr)
             return 1
 
-        print(f"built {report['districts']} district pages -> {report['out']}")
+        print(
+            f"built {report['districts']} district pages and "
+            f"{report['board_pages']} board pages -> {report['out']}"
+        )
         print(f"  meetings parsed : {report['meetings_parsed']}")
         print(f"  shortlist shown : {report['shortlist']}")
         print(f"  calendar through: {report['window_end']}")

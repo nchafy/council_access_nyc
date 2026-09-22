@@ -21,6 +21,7 @@ Exit code is non-zero on the first failure, so `make verify` gates a commit.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -177,6 +178,11 @@ def _run_checks(base: str, site: Path) -> None:
             f"{url} does not state the no-pre-registration fact",
         )
         check("hearings@council.nyc.gov" in page, f"{url} missing the hearings contact")
+        check("Community Board" in page, f"{url} missing the community board block")
+        check(
+            "community board" in page.lower() and "council district" in page.lower(),
+            f"{url} does not distinguish council district from community board",
+        )
         check(
             "Only Council Members can introduce legislation" in page,
             f"{url} does not lead with the no-petition truth",
@@ -205,6 +211,37 @@ def _run_checks(base: str, site: Path) -> None:
         "manifest bakes in a staleness verdict; it must carry inputs only",
     )
     print(f"GET /manifest.json  {status}")
+
+    # --- the privacy line: no community board chair or district manager --------
+    boards = json.loads((REPO_ROOT / "etl" / "raw" / "community_boards.json").read_text())
+    names = {
+        (row.get(field) or "").strip()
+        for row in boards
+        for field in ("cb_chair", "cb_district_manager")
+        if len((row.get(field) or "").strip()) > 4
+    }
+    # Scoped to the boards section, not the whole page. A person can hold both
+    # roles: Frank Morano is the Council Member for District 51 *and* chair of
+    # Staten Island CB 3, so his name legitimately appears in the member block.
+    # An unscoped check flags that as a leak, which is a bug in the check.
+    boards_section = re.compile(
+        r'<section class="boards">(.*?)</section>', re.IGNORECASE | re.DOTALL
+    )
+    leaked = []
+    checked_pages = 0
+    for page in (site / "district").rglob("index.html"):
+        match = boards_section.search(page.read_text())
+        if not match:
+            continue
+        checked_pages += 1
+        block = match.group(1)
+        leaked += [f"{name} in {page.parent.name}" for name in names if name in block]
+    check(checked_pages >= 51, f"only {checked_pages} pages had a boards section")
+    check(not leaked, f"board chair/district-manager names leaked: {leaked[:3]}")
+    print(
+        f"privacy: {len(names)} board officer names checked against the boards "
+        f"section of {checked_pages} pages"
+    )
 
 
 def _check_markup_safety(url: str, page: str) -> None:

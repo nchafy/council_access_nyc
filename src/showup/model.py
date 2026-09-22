@@ -86,10 +86,33 @@ class Member:
 
 
 @dataclass(frozen=True, slots=True)
+class DistrictBoard:
+    """A community board covering part of this council district.
+
+    `share` is the approximate fraction of the council district's sampled land
+    area inside this board, from the committed crosswalk. It orders the list and
+    is shown as approximate; it is not a precise areal measurement.
+    """
+
+    code: str
+    label: str
+    share: float
+    neighborhoods: str | None
+    address: str | None
+    phone: str | None
+    email: str | None
+    email_suppressed: str | None
+    website: str | None
+    board_meeting: str | None
+    cabinet_meeting: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class District:
     number: int
     neighborhoods: str | None
     member: Member | None
+    boards: tuple[DistrictBoard, ...] = ()
     #: Per-field record of where each fact came from and when it was seen, so a
     #: page can show provenance without the renderer guessing.
     provenance: dict[str, str] = field(default_factory=dict)

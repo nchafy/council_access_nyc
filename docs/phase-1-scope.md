@@ -62,8 +62,12 @@ the two deadlines in block 4.
    the registration cut-off and the per-speaker time limit are published nowhere official, so we
    give `hearings@council.nyc.gov` / 212-482-4219 instead of a guess. Leads with the fact that
    **only Council Members introduce legislation** — there is no public petition route.
-6. **Your community board.** Office address, website, the meeting cadence quoted verbatim, and
-   the office email only when it matches the institutional pattern.
+6. **Your community board(s).** Matched by **geometry**, not by the boards dataset's own
+   `council_district` column, which omits seven council districts entirely. Most districts
+   overlap two or three boards, listed by how much of the district each covers. Office address,
+   phone, email, website, and the meeting cadence quoted verbatim. Board chairs and district
+   managers are never named — we publish the office, which is staffed and whose job is to hear
+   from you.
 
 Plus a persistent footer: when each source was last fetched, and the covered forward window
 stated literally.

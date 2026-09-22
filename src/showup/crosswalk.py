@@ -1,0 +1,94 @@
+"""The council-district → community-board crosswalk.
+
+Generated rarely, committed, and read by every build. Two reasons it is a file
+rather than a build step:
+
+1. **Cost.** The geometry sweep takes ~35 seconds. Council and community district
+   lines change roughly once a decade (council lines after each census, community
+   districts almost never), so paying that per build would be absurd.
+2. **Review.** A generated crosswalk that lands in git is a diff a human can read.
+   If a boundary change moves a board between districts, that shows up as a
+   reviewable change rather than silently altering what the site tells people.
+
+Regenerate with `showup crosswalk` after replacing either geometry file, then read
+the diff before committing it.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+from pathlib import Path
+
+from .geo import GRID_SPACING_DEG, MIN_SHARE, load_features, overlap_shares
+from .sources.boards import JOINT_INTEREST_AREAS
+
+__all__ = ["CROSSWALK_PATH", "CrosswalkError", "generate", "load"]
+
+CROSSWALK_PATH = Path("crosswalks/council_to_boards.json")
+
+
+class CrosswalkError(RuntimeError):
+    """The crosswalk is missing, malformed, or does not cover all 51 districts."""
+
+
+def generate(council_geojson: Path, community_geojson: Path) -> dict:
+    """Compute the crosswalk. Slow by design; called by `showup crosswalk` only."""
+    council = load_features(council_geojson, "coundist")
+    if len(council) != 51:
+        raise CrosswalkError(f"expected 51 council districts, found {len(council)}")
+
+    boards = load_features(community_geojson, "boro_cd", exclude=set(JOINT_INTEREST_AREAS))
+    if len(boards) != 59:
+        raise CrosswalkError(f"expected 59 community districts, found {len(boards)}")
+
+    shares = overlap_shares(council, boards)
+
+    uncovered = sorted((key for key, value in shares.items() if not value), key=int)
+    if uncovered:
+        # Every council district must reach at least one board, or the page for
+        # that district silently loses its most locally useful block. This is the
+        # floor that caught the naive `council_district` join, which left seven
+        # districts empty.
+        raise CrosswalkError(f"council districts with no community board: {uncovered}")
+
+    return {
+        "generated_on": date.today().isoformat(),
+        "method": (
+            "lattice sampling at "
+            f"{GRID_SPACING_DEG} degrees (~110 m), shares below {MIN_SHARE} dropped as slivers"
+        ),
+        "sources": {
+            "council_districts": "NYC Open Data 872g-cjhh",
+            "community_districts": "NYC Open Data 5crt-au7u (joint interest areas excluded)",
+        },
+        "note": (
+            "Shares are approximate and are of sampled land area within the council "
+            "district. They may sum to less than 1 where water or unsampled gaps fall "
+            "inside the district. Ordering is stable; treat the numbers as indicative."
+        ),
+        "districts": {
+            key: [[code, share] for code, share in value]
+            for key, value in sorted(shares.items(), key=lambda kv: int(kv[0]))
+        },
+    }
+
+
+def load(path: Path) -> dict[int, list[tuple[str, float]]]:
+    """Read the committed crosswalk, validating coverage before the build uses it."""
+    file = Path(path)
+    if not file.exists():
+        raise CrosswalkError(
+            f"{file} is missing. Run `showup crosswalk` to generate it, then commit it."
+        )
+    data = json.loads(file.read_text(encoding="utf-8"))
+    districts = data.get("districts") or {}
+
+    result: dict[int, list[tuple[str, float]]] = {}
+    for key, pairs in districts.items():
+        result[int(key)] = [(str(code), float(share)) for code, share in pairs]
+
+    missing = [number for number in range(1, 52) if not result.get(number)]
+    if missing:
+        raise CrosswalkError(f"crosswalk covers no board for council districts {missing}")
+    return result

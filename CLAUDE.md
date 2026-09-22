@@ -152,6 +152,15 @@ get re-argued.
 - **`wp-json` is not a substitute for the rendered page** — it reports District
   1's office as "101 Lafayette St, 9th Floor" while the live page says "65 East
   Broadway".
+- **Community boards are joined by geometry, never by `ruf7-3wgc.council_district`.**
+  That column has 44 distinct values across 59 rows and omits 7 council districts;
+  it records the board office's district, not the ones it covers. The join lives in
+  the committed `crosswalks/council_to_boards.json`, regenerated with
+  `showup crosswalk` (~35 s) when either boundary file changes. Read the diff.
+- **Board chairs and district managers are never rendered**, but every published
+  office email is. The harm is the name-to-mailbox pairing, not the address —
+  11 boards publish only the district manager's work email and withholding it
+  would leave them uncontactable. R30 in the outline carries the measurement.
 - **Two facts residents most want are published nowhere official:** the
   registration cut-off before a hearing, and the per-speaker time limit. These
   render as explicit refusal strings pointing at

@@ -19,8 +19,11 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from .model import District, Manifest, Member
+from .crosswalk import CROSSWALK_PATH, CrosswalkError
+from .crosswalk import load as load_crosswalk
+from .model import District, DistrictBoard, Manifest, Member
 from .render import render_district, render_index, render_not_found
+from .sources.boards import load_boards
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
 from .sources.members import current_by_district, load_members
@@ -36,7 +39,7 @@ DISTRICT_COUNT = 51
 #: Below these, the parse is treated as broken rather than as "not much data".
 #: A floor is the difference between noticing a silent upstream change and
 #: publishing an empty site with a confident tone.
-FLOORS = {"calendar": 40, "district_pages": DISTRICT_COUNT, "members": 300}
+FLOORS = {"calendar": 40, "district_pages": DISTRICT_COUNT, "members": 300, "boards": 59}
 
 
 class BuildError(RuntimeError):
@@ -60,6 +63,51 @@ def _check_floor(name: str, count: int) -> None:
         )
 
 
+def _load_boards_by_district(raw: Path, repo_root: Path) -> dict[int, tuple[DistrictBoard, ...]]:
+    """Join the committed geometry crosswalk to the boards' contact details.
+
+    The crosswalk decides *which* boards cover a district (geometry); this dataset
+    supplies *how to reach* them. Neither alone is enough: `ruf7-3wgc` also carries
+    a `council_district` column, and using it would leave seven districts with no
+    board at all.
+    """
+    boards = load_boards(raw / "community_boards.json")
+    _check_floor("boards", len(boards))
+
+    try:
+        crosswalk = load_crosswalk(repo_root / CROSSWALK_PATH)
+    except CrosswalkError as error:
+        raise BuildError(str(error)) from error
+
+    by_district: dict[int, tuple[DistrictBoard, ...]] = {}
+    for number, pairs in crosswalk.items():
+        entries = []
+        for code, share in pairs:
+            board = boards.get(code)
+            if board is None:
+                raise BuildError(
+                    f"crosswalk references community district {code}, which is not in "
+                    "community_boards.json — the two sources have drifted apart"
+                )
+            entries.append(
+                DistrictBoard(
+                    code=code,
+                    label=board.label,
+                    share=share,
+                    neighborhoods=board.neighborhoods,
+                    address=board.address,
+                    phone=board.phone,
+                    email=board.email,
+                    email_suppressed=board.email_suppressed,
+                    website=board.website,
+                    board_meeting=board.board_meeting,
+                    cabinet_meeting=board.cabinet_meeting,
+                )
+            )
+        by_district[number] = tuple(entries)
+    return by_district
+
+
 def _load_districts(raw: Path, today: date) -> tuple[list[District], dict[int, dict]]:
     pages = json.loads((raw / "district_pages.json").read_text(encoding="utf-8"))
     members = load_members(raw / "members.json")
@@ -73,6 +121,8 @@ def _load_districts(raw: Path, today: date) -> tuple[list[District], dict[int, d
     _check_floor(
         "district_pages", sum(1 for p in parsed_pages.values() if "page" not in p["missing"])
     )
+
+    boards_by_district = _load_boards_by_district(raw, Path(__file__).resolve().parents[2])
 
     seen_at = datetime.now().isoformat(timespec="seconds")
     districts: list[District] = []
@@ -112,9 +162,11 @@ def _load_districts(raw: Path, today: date) -> tuple[list[District], dict[int, d
                 number=number,
                 neighborhoods=page["neighborhoods"],
                 member=member,
+                boards=boards_by_district.get(number, ()),
                 provenance={
                     "member": f"council.nyc.gov/district-{number}/ @ {seen_at}",
                     "seat_status": f"NYC Open Data uvw5-9znb @ {seen_at}",
+                    "community_boards": f"NYC Open Data ruf7-3wgc + 5crt-au7u geometry @ {seen_at}",
                 },
                 missing=tuple(page["missing"]),
             )
@@ -197,6 +249,11 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
                 "max_age_hours": 24 * 40,
                 "rows": DISTRICT_COUNT,
             },
+            "community_boards": {
+                "fetched_at": _mtime(raw / "community_boards.json"),
+                "max_age_hours": 24 * 90,
+                "rows": 59,
+            },
         },
         built_at=now,
         calendar_window_end=window_end,
@@ -223,6 +280,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "shortlist": len(ahead),
         "window_end": window_end.isoformat() if window_end else None,
         "districts_with_gaps": sum(1 for d in districts if d.missing),
+        "boards_linked": sum(len(d.boards) for d in districts),
+        "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [
             d.number for d in districts if d.member and d.member.seat_status == "vacant"
         ],

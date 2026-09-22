@@ -108,6 +108,24 @@ button {
 .committee-list { margin: .4rem 0; padding-left: 1.15rem; }
 .committee-list .role { color: var(--muted); font-size: .9rem; }
 
+/* Community boards */
+.board {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: .8rem 1rem 1rem;
+  margin: .9rem 0;
+}
+.board h3 { margin-top: 0; }
+.share {
+  display: inline-block;
+  font-size: .8rem;
+  color: var(--muted);
+  background: #f5f7fa;
+  padding: .1rem .45rem;
+  border-radius: 10px;
+}
+
 /* Definition lists carry most of the facts */
 dl { margin: .5rem 0; }
 dt {
@@ -199,5 +217,5 @@ footer.site p { margin: .4rem 0; }
     --ok-bg: #1a3322;
     --ok-ink: #a8dcb6;
   }
-  .distinction, .designed-state, .refusal { background: #1b1f24; }
+  .distinction, .designed-state, .refusal, .share { background: #1b1f24; }
 }

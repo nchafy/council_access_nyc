@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from .deadlines import accommodation_state, written_state
-from .model import District, Meeting
+from .model import District, DistrictBoard, Meeting
 from .text import esc
 
 __all__ = ["render_district", "render_index", "render_not_found"]
@@ -392,6 +392,83 @@ _HOW_TO_BE_HEARD = """<section class="participate">
 """
 
 
+def _board_card(board: DistrictBoard) -> str:
+    rows: list[tuple[str, str]] = []
+    if board.neighborhoods:
+        rows.append(("Covers", esc(board.neighborhoods)))
+    if board.address:
+        rows.append(("Office", esc(board.address)))
+    if board.phone:
+        rows.append(("Phone", esc(board.phone)))
+    if board.email:
+        rows.append(("Email", esc(board.email)))
+    elif board.email_suppressed:
+        # Say why there is no email rather than leaving a blank the reader has to
+        # interpret. "The published address names an individual" is a deliberate
+        # suppression, not missing data.
+        rows.append(("Email", f"<em>Not shown — {esc(board.email_suppressed)}.</em>"))
+    if board.website:
+        rows.append(("Website", _link(board.website, board.website.replace("https://", ""))))
+    if board.board_meeting:
+        rows.append(
+            (
+                "Full board meets",
+                f"{esc(board.board_meeting)}<br><small>The board's own published "
+                "wording. Confirm on their site — boards move meetings.</small>",
+            )
+        )
+    if board.cabinet_meeting:
+        rows.append(("Cabinet meets", esc(board.cabinet_meeting)))
+
+    share = f"{round(board.share * 100)}%" if board.share else None
+    extent = (
+        f'<span class="share">about {esc(share)} of this council district</span>' if share else ""
+    )
+    return f"""  <article class="board">
+    <h3>{esc(board.label)}</h3>
+    {extent}
+{_dl(rows)}
+  </article>
+"""
+
+
+def _boards_block(district: District) -> str:
+    if not district.boards:
+        return """<section class="boards">
+  <h2>Your community board</h2>
+  <p class="designed-state">
+    We could not match a community board to this district. Find yours through
+    <a href="https://www.nyc.gov/site/cau/community-boards/community-boards.page"
+       rel="noopener noreferrer">the Mayor's Community Affairs Unit</a>.
+  </p>
+</section>
+"""
+    plural = "boards" if len(district.boards) > 1 else "board"
+    intro = (
+        f"This council district overlaps {len(district.boards)} community "
+        f"{plural}. They are listed by how much of the district each covers."
+        if len(district.boards) > 1
+        else "This council district falls almost entirely inside one community board."
+    )
+    cards = "\n".join(_board_card(board) for board in district.boards)
+    return f"""<section class="boards">
+  <h2>Your community {plural}</h2>
+  <p class="why">
+    {esc(intro)} A community board meets on a <strong>predictable monthly
+    cadence</strong>, unlike Council committees, and for a land-use, construction,
+    liquor-licence or quality-of-life question it is usually the right room to
+    start in.
+  </p>
+{cards}
+  <p class="hint">
+    Board members are volunteers appointed by the Borough President. We list the
+    board <em>office</em>, which is staffed and whose job is to hear from you — not
+    individual members.
+  </p>
+</section>
+"""
+
+
 def render_district(
     district: District,
     meetings: list[Meeting],
@@ -423,7 +500,7 @@ def render_district(
     Your <strong>council district</strong> elects the member below. Your
     <strong>community board</strong> is a different, smaller body that handles many
     local land-use and quality-of-life questions — often the right place to start.
-    Community board details are coming in the next release.
+    Both are below.
   </p>
 {missing}
 </section>
@@ -431,6 +508,7 @@ def render_district(
 {_member_block(district)}
 {_committees_block(district)}
 {_meetings_block(meetings, today=day, now=moment)}
+{_boards_block(district)}
 {_HOW_TO_BE_HEARD}
 <p class="back"><a href="/">Choose a different district</a></p>
 """

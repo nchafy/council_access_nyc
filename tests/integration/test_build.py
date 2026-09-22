@@ -10,14 +10,20 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 
 from showup.build import BuildError, build_site
+from showup.crosswalk import CrosswalkError
+from showup.crosswalk import load as load_crosswalk
 from showup.model import Committee, District, Member, Office
 from showup.render import render_district, render_index
 from showup.sources.calendar import parse_calendar, upcoming
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -55,6 +61,10 @@ def raw_dir(tmp_path, calendar_html, district_page_html):
         for i in range(300)
     ]
     (raw / "members.json").write_text(json.dumps(members), encoding="utf-8")
+
+    # Real community-board rows: 59 of them, needed to clear the boards floor and
+    # to carry the real chair / district-manager names the privacy test checks.
+    shutil.copy2(REPO_ROOT / "etl" / "raw" / "community_boards.json", raw / "community_boards.json")
     return raw
 
 
@@ -195,3 +205,75 @@ class TestIndex:
         for n in (1, 25, 51):
             assert f'href="/district/{n}/"' in html
         assert "<select" in html
+
+
+class TestCrosswalk:
+    """The committed crosswalk is a real artifact with a coverage guarantee."""
+
+    def test_covers_all_51_districts(self):
+        crosswalk = load_crosswalk(REPO_ROOT / "crosswalks" / "council_to_boards.json")
+        assert sorted(crosswalk) == list(range(1, 52))
+
+    def test_every_district_has_at_least_one_board(self):
+        # The naive ruf7-3wgc.council_district join left 7 districts empty. This
+        # is the assertion that would have caught it.
+        crosswalk = load_crosswalk(REPO_ROOT / "crosswalks" / "council_to_boards.json")
+        for number, boards in crosswalk.items():
+            assert boards, f"council district {number} has no community board"
+
+    def test_shares_are_ordered_and_plausible(self):
+        crosswalk = load_crosswalk(REPO_ROOT / "crosswalks" / "council_to_boards.json")
+        for number, boards in crosswalk.items():
+            shares = [share for _, share in boards]
+            assert shares == sorted(shares, reverse=True), f"district {number} unordered"
+            assert all(0 < share <= 1 for share in shares), f"district {number} share out of range"
+            assert sum(shares) <= 1.02, f"district {number} shares sum above 1"
+
+    def test_known_overlaps_are_right(self):
+        """Spot-check against geography a human can verify.
+
+        District 35 covers Fort Greene, Clinton Hill and Crown Heights, which sit
+        in Brooklyn community boards 2, 8 and 9 (codes 302/308/309).
+        """
+        crosswalk = load_crosswalk(REPO_ROOT / "crosswalks" / "council_to_boards.json")
+        assert {code for code, _ in crosswalk[35]} == {"302", "308", "309"}
+        # District 51 is Staten Island's south shore: board 503 dominates.
+        assert crosswalk[51][0][0] == "503"
+
+    def test_missing_crosswalk_is_a_loud_failure(self, tmp_path):
+        with pytest.raises(CrosswalkError, match="missing"):
+            load_crosswalk(tmp_path / "nope.json")
+
+    def test_incomplete_crosswalk_is_rejected(self, tmp_path):
+        path = tmp_path / "partial.json"
+        path.write_text(json.dumps({"districts": {"1": [["101", 0.9]]}}))
+        with pytest.raises(CrosswalkError, match="no board for council districts"):
+            load_crosswalk(path)
+
+
+class TestBoardsOnThePage:
+    def test_boards_render_with_contact_details(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = (out / "district" / "35" / "index.html").read_text()
+        assert "Brooklyn Community Board 2" in page
+        assert "community board" in page.lower()
+        # The cadence must appear verbatim, not reformatted into a date.
+        assert "Wednesday" in page or "Tuesday" in page or "Thursday" in page
+
+    def test_chair_and_district_manager_are_never_rendered(self, raw_dir, tmp_path):
+        """The privacy line: we publish the institution, not the individuals."""
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        boards = json.loads((raw_dir / "community_boards.json").read_text())
+        names = {
+            (row.get(field) or "").strip()
+            for row in boards
+            for field in ("cb_chair", "cb_district_manager")
+            if (row.get(field) or "").strip()
+        }
+        assert names, "fixture should carry some names to check against"
+        for page in (out / "district").rglob("index.html"):
+            html = page.read_text()
+            for name in names:
+                assert name not in html, f"{name} leaked into {page}"

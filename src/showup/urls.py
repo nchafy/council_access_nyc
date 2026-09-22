@@ -78,10 +78,9 @@ def safe_url(href: str | None, *, base: str | None = None) -> str | None:
         return None
 
     if base is not None:
-        resolved = absolutize(candidate, base)
-        if resolved is None:
-            return None
-        candidate = resolved
+        # `absolutize` cannot return None here: `candidate` is already non-empty and
+        # stripped, which is the only case that makes it give up. No None guard.
+        candidate = absolutize(candidate, base)
 
     try:
         parts = urlsplit(candidate)
@@ -101,8 +100,3 @@ def safe_url(href: str | None, *, base: str | None = None) -> str | None:
         return None
 
     return candidate
-
-
-def is_internal(path: str) -> bool:
-    """True for our own root-relative paths, which need no allowlisting."""
-    return path.startswith("/") and not path.startswith("//")

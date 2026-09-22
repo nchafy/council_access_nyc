@@ -23,10 +23,11 @@ passes, the change is good.
 | Command | What it does | When |
 |---|---|---|
 | `make build` | Cached sources → `site/` | after any ETL or renderer change |
-| `make test` | 132 tests, 85% coverage floor | after any logic change |
+| `make test` | ~9,000 tests, **100% coverage floor** | after any logic change |
 | `make lint` | ruff check + format check | before committing |
 | `make serve` | Serve on :8000 **with the real headers** | to look at it in a browser |
 | `make shot` | Screenshots to `screenshots/` | to check layout, or to show someone |
+| `make browser` | Drive the address box in real Chrome | after touching `assets/address.js` |
 | `make check` | lint + test, no build | fast inner loop |
 
 ## Looking at it
@@ -92,6 +93,10 @@ read `etl/raw/community_boards.json` and CI could not find it. Test data belongs
 
 ## Coverage floor
 
-`--cov-fail-under=85` (currently ~90%). If a change drops it, add the test rather
-than lowering the number. `src/showup/text.py` and `src/showup/urls.py` are the XSS
-boundary; they should stay near 100% and every new branch in them needs a test.
+**100%, enforced** (`--cov-fail-under=100`). The build fails below it. When new code
+drops coverage: write the test, delete the dead code, or restructure so the branch
+cannot exist — in that order. `# pragma: no cover` is the last resort and needs a
+reason on the same line; there is exactly one in `src/` today.
+
+See the `fuzz-and-corpus` skill for the corpus, the fuzzer, and what counts as a
+justified pragma.

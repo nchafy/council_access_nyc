@@ -1,0 +1,7 @@
+{"in": "bk02@cb.nyc.gov", "out": ["bk02@cb.nyc.gov", null], "note": "institutional city mailbox"}
+{"in": "info@brooklyncb6.org", "out": ["info@brooklyncb6.org", null], "note": "board's own domain; the strict cb.nyc.gov rule would have withheld this"}
+{"in": "brooklyncb8@gmail.com", "out": ["brooklyncb8@gmail.com", null], "note": "consumer mailbox, but it is the contact the board published"}
+{"in": "eprince@cb.nyc.gov", "out": ["eprince@cb.nyc.gov", null], "note": "district manager's WORK address; 11 boards publish only this shape"}
+{"in": "", "out": [null, "no email published"], "note": "absent"}
+{"in": "not-an-address", "out": [null, "published value is not a usable address"], "note": "malformed"}
+{"in": "   ", "out": [null, "no email published"], "note": "whitespace only"}

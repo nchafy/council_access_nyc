@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -38,3 +40,82 @@ def district_page_html() -> dict[int, str]:
         if path.exists():
             pages[number] = path.read_text(encoding="utf-8")
     return pages
+
+
+# Shared by the integration tests and the guard tests: a minimal but
+# floor-passing raw cache. Lives here rather than in one test file because both
+# need it, and duplicating it would let the two drift.
+@pytest.fixture
+def raw_dir(tmp_path, calendar_html, district_page_html):
+    """A minimal but floor-passing raw cache."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
+
+    # All 51 pages must be present to clear the district_pages floor; reuse the
+    # four real fixtures cyclically for the rest.
+    available = sorted(district_page_html)
+    pages = {str(n): district_page_html[available[(n - 1) % len(available)]] for n in range(1, 52)}
+    (raw / "district_pages.json").write_text(json.dumps(pages), encoding="utf-8")
+
+    members = [
+        {
+            "name": f"Member {n}",
+            "council_member_id": str(1000 + n),
+            "district": str(n),
+            "term_start": "2026-01-01T00:00:00.000",
+            "term_end": "2029-12-31T00:00:00.000",
+        }
+        for n in range(1, 52)
+    ]
+    # Pad past the members floor with historical rows, as the real dataset has.
+    members += [
+        {
+            "name": f"Former Member {i}",
+            "council_member_id": str(2000 + i),
+            "district": str((i % 51) + 1),
+            "term_start": "2014-01-01T00:00:00.000",
+            "term_end": "2017-12-31T00:00:00.000",
+        }
+        for i in range(300)
+    ]
+    (raw / "members.json").write_text(json.dumps(members), encoding="utf-8")
+
+    # Real community-board rows: 59 of them, needed to clear the boards floor and
+    # to carry the real chair / district-manager names the privacy test checks.
+    # From tests/fixtures, NOT etl/raw — the cache is gitignored, and reading it
+    # here made these tests pass locally and error in CI.
+    shutil.copy2(FIXTURES / "community_boards.json", raw / "community_boards.json")
+
+    # Synthetic district geometry: 51 disjoint squares. The build needs 51 features
+    # to emit site/data/districts.geo.json, and nothing here depends on the shapes
+    # being real — the accuracy of the real simplification is covered separately by
+    # tests/unit/test_geo.py::TestSimplifiedGeometryAgrees, which runs against the
+    # actual DCP file. Committing a 3.8 MB geojson to satisfy a smoke test would be
+    # the wrong trade.
+    features = []
+    for n in range(1, 52):
+        x0 = -74.3 + (n - 1) * 0.02
+        y0 = 40.5
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {"coundist": str(n)},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [x0, y0],
+                            [x0 + 0.018, y0],
+                            [x0 + 0.018, y0 + 0.018],
+                            [x0, y0 + 0.018],
+                            [x0, y0],
+                        ]
+                    ],
+                },
+            }
+        )
+    (raw / "districts.geojson").write_text(
+        json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8"
+    )
+    return raw

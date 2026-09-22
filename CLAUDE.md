@@ -50,6 +50,50 @@ upstream URLs by host and scheme; `default-src 'none'` CSP with no
 `unsafe-inline`; zero third parties; the typed address goes only to the geocoder
 with `private=true` and never into a URL, storage or log.
 
+## The bar for starting work
+
+**Do not implement from a vague ask.** If the request does not already say what the
+thing is, who it is for, and how you would know it worked, the first deliverable is
+a clear ask — not code.
+
+A clear ask names:
+
+- **the user-visible outcome**, in a sentence someone outside the project would
+  understand;
+- **the data it rests on**, specifically enough to check it exists (a dataset id, an
+  endpoint, a page);
+- **what it refuses to claim** — this product's failure mode is confident wrongness,
+  so the honesty boundary is part of the spec, not a polish pass;
+- **how it is verified**, i.e. which assertion would fail if it broke.
+
+When an ask is unclear, say which of those four is missing and propose a reading.
+Building the wrong well-tested thing is more expensive than asking. This has already
+paid for itself: "add an interest score" and "show community boards" both turned out
+to mean something materially different from the first reading, and one of them was
+only buildable because the disagreement surfaced before the code.
+
+The exception is a genuinely trivial mechanical change. If you are unsure whether it
+qualifies, it does not.
+
+## Testing is not optional, and 100% is the floor
+
+- **100% line coverage, enforced** (`--cov-fail-under=100`). Not a target — the
+  build fails below it. When new code drops coverage, write the test; do not lower
+  the number.
+- **`# pragma: no cover` needs a reason on the same line.** It is for lines that
+  genuinely cannot run in a test (a `__main__` guard, an unreachable defensive
+  branch). A pragma without a stated reason is a coverage hole with extra steps.
+- **Fuzz the parsers, and keep the corpus.** Every input-parsing function has a
+  committed corpus under `tests/corpus/` of input → expected-output pairs, and a
+  generative fuzzer that asserts invariants (never raises, never emits markup,
+  output is plain text) over mutated inputs. **When the fuzzer finds a new
+  interesting input, add it to the corpus with its expected result and commit it.**
+  The corpus is the durable artifact; the fuzzer is how it grows. See the
+  `fuzz-and-corpus` skill.
+- Coverage is necessary and not sufficient. The XSS boundary (`text.py`, `urls.py`)
+  and anything that renders a date or a deadline need tests that assert *behaviour
+  under hostile input*, not just line execution.
+
 ## Decisions already made — don't relitigate
 
 Reopening one requires an ADR citing new evidence, not a preference. The full

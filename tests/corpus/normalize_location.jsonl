@@ -1,0 +1,17 @@
+{"in": "Council Chambers - City Hall", "out": ["city-hall-chambers", "in_person"], "note": "canonical"}
+{"in": "Council Chambers – City Hall", "out": ["city-hall-chambers", "in_person"], "note": "en dash variant"}
+{"in": "Council Chambers  - City Hall", "out": ["city-hall-chambers", "in_person"], "note": "double space"}
+{"in": "Council Chambers ~ City Hall", "out": ["city-hall-chambers", "in_person"], "note": "tilde separator"}
+{"in": "Committee Room - City Hall", "out": ["city-hall-committee", "in_person"], "note": "the other City Hall room"}
+{"in": "Council Committee Room - City Hall", "out": ["city-hall-committee", "in_person"], "note": "contains both words; committee must win"}
+{"in": "250 Broadway - 8th Floor - Hearing Room 1", "out": ["250-broadway-8", "in_person"], "note": "current main venue"}
+{"in": "250 Broadway - Committee Rm, 16th Fl.", "out": ["250-broadway-16", "in_person"], "note": "abbreviated floor"}
+{"in": "Hearing Room, 250 Broadway, 16th Fl.", "out": ["250-broadway-16", "in_person"], "note": "reordered"}
+{"in": "250 Broadway", "out": ["250-broadway", "in_person"], "note": "no floor stated; must not invent one"}
+{"in": "REMOTE HEARING (VIRTUAL ROOM 3)", "out": ["remote", "remote"], "note": "remote is a mode, not a room"}
+{"in": "- REMOTE HEARING -", "out": ["remote", "remote"], "note": "bare remote"}
+{"in": "HYBRID HEARING - Council Chambers - City Hall", "out": ["city-hall-chambers", "hybrid"], "note": "hybrid keeps its physical room"}
+{"in": "Council Chambers - City Hall Jointly with the Committee on Education.", "out": ["city-hall-chambers", "in_person"], "note": "joint clause stripped before matching"}
+{"in": "Emigrant Savings Bank - 49-51 Chambers Street", "out": ["emigrant", "in_person"], "note": "overflow space"}
+{"in": "Marine Park Intermediate School 278, 1925 Stuart Street", "out": ["offsite", "in_person"], "note": "unknown venue must not be guessed; wrong borough otherwise"}
+{"in": "", "out": ["offsite", "in_person"], "note": "empty"}

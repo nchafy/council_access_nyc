@@ -169,3 +169,109 @@ class TestArgparse:
         out = capsys.readouterr().out
         for command in ("build", "fetch", "crosswalk"):
             assert command in out
+
+
+class TestVacantSeatReport:
+    def test_a_vacant_seat_is_named_in_the_report(self, repo, capsys, monkeypatch):
+        """A vacancy is operationally interesting, so the build says so out loud."""
+        import showup.cli as cli_module
+
+        real = cli_module.build_site
+
+        def with_vacancy(*args, **kwargs):
+            report = real(*args, **kwargs)
+            return {**report, "vacant_seats": [3]}
+
+        monkeypatch.setattr(cli_module, "build_site", with_vacancy)
+        assert main(["build"]) == 0
+        assert "vacant seats    : [3]" in capsys.readouterr().out
+
+
+class TestFetchBanner:
+    def test_a_full_refresh_warns_about_the_nine_minute_crawl(self, tmp_path, monkeypatch, capsys):
+        """Someone running this for the first time must not think it has hung."""
+        from dataclasses import replace
+
+        from showup.fetch import SOURCES
+
+        (tmp_path / "etl" / "raw").mkdir(parents=True)
+        monkeypatch.setattr("showup.cli.REPO_ROOT", tmp_path)
+        calendar = next(s for s in SOURCES if s.name == "calendar")
+        body = b'<table id="gridCalendar">' + b"x" * 300_000
+        monkeypatch.setattr("showup.fetch.SOURCES", (replace(calendar, fetch=lambda log: body),))
+
+        assert main(["fetch"]) == 0
+        out = capsys.readouterr().out
+        assert "8.5 min" in out
+        assert "robots.txt" in out
+
+    def test_a_named_source_skips_the_banner(self, tmp_path, monkeypatch, capsys):
+        from dataclasses import replace
+
+        from showup.fetch import SOURCES
+
+        (tmp_path / "etl" / "raw").mkdir(parents=True)
+        monkeypatch.setattr("showup.cli.REPO_ROOT", tmp_path)
+        calendar = next(s for s in SOURCES if s.name == "calendar")
+        body = b'<table id="gridCalendar">' + b"x" * 300_000
+        monkeypatch.setattr("showup.fetch.SOURCES", (replace(calendar, fetch=lambda log: body),))
+
+        assert main(["fetch", "--only", "calendar"]) == 0
+        assert "8.5 min" not in capsys.readouterr().out
+
+    def test_an_unknown_source_name_from_fetch_all_exits_two(self, tmp_path, monkeypatch, capsys):
+        """`fetch_all` raising is distinct from a source failing: nothing ran."""
+        import showup.cli as cli_module
+        from showup.fetch import FetchError
+
+        (tmp_path / "etl" / "raw").mkdir(parents=True)
+        monkeypatch.setattr("showup.cli.REPO_ROOT", tmp_path)
+
+        def boom(*args, **kwargs):
+            raise FetchError("unknown source 'nope'")
+
+        monkeypatch.setattr(cli_module, "fetch_all", boom)
+        assert main(["fetch"]) == 2
+        assert "fetch refused" in capsys.readouterr().err
+
+
+class TestCrosswalkCommand:
+    def test_writes_the_crosswalk_and_reports_its_shape(self, tmp_path, monkeypatch, capsys):
+        import showup.cli as cli_module
+
+        (tmp_path / "etl" / "raw").mkdir(parents=True)
+        monkeypatch.setattr("showup.cli.REPO_ROOT", tmp_path)
+        payload = {
+            "generated_on": "2026-09-22",
+            "districts": {str(n): [["101", 1.0], ["102", 0.2]] for n in range(1, 52)},
+            "boards": {"101": [[1, 1.0]]},
+            "zips": {"11217": [35]},
+        }
+        monkeypatch.setattr(cli_module, "generate", lambda *a, **k: payload)
+
+        assert main(["crosswalk"]) == 0
+        out = capsys.readouterr().out
+        written = tmp_path / "crosswalks" / "council_to_boards.json"
+        assert written.is_file()
+        assert json.loads(written.read_text())["zips"] == {"11217": [35]}
+        # The report is what a human checks before committing the diff.
+        assert "districts: 51" in out
+        assert "zip codes: 1" in out
+        assert "read the diff" in out
+
+    def test_a_refused_crosswalk_exits_nonzero_and_writes_nothing(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        import showup.cli as cli_module
+        from showup.crosswalk import CrosswalkError
+
+        (tmp_path / "etl" / "raw").mkdir(parents=True)
+        monkeypatch.setattr("showup.cli.REPO_ROOT", tmp_path)
+
+        def boom(*args, **kwargs):
+            raise CrosswalkError("council districts with no community board: [5, 8]")
+
+        monkeypatch.setattr(cli_module, "generate", boom)
+        assert main(["crosswalk"]) == 1
+        assert "crosswalk refused" in capsys.readouterr().err
+        assert not (tmp_path / "crosswalks").exists(), "a refused run left a partial file"

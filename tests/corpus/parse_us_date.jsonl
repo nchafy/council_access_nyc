@@ -1,0 +1,6 @@
+{"in": "12/17/2026", "out": "2026-12-17", "note": "the common case"}
+{"in": "1/5/2026", "out": "2026-01-05", "note": "single digits"}
+{"in": "02/31/2026", "out": null, "note": "impossible date REJECTED, not rolled to 03/03 which would send someone on the wrong day"}
+{"in": "13/45/2026", "out": null, "note": "nonsense"}
+{"in": "2026-12-17", "out": null, "note": "ISO is not the source format"}
+{"in": "", "out": null, "note": "empty"}

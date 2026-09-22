@@ -12,6 +12,10 @@ rather than a build step:
 
 Regenerate with `showup crosswalk` after replacing either geometry file, then read
 the diff before committing it.
+
+`generate` takes a `spacing` override purely for tests. The production sweep takes
+~35 seconds, and a test suite that pays that repeatedly gets skipped rather than
+maintained; the guard behaviour under test does not depend on lattice resolution.
 """
 
 from __future__ import annotations
@@ -40,7 +44,11 @@ class CrosswalkError(RuntimeError):
 
 
 def generate(
-    council_geojson: Path, community_geojson: Path, zip_geojson: Path | None = None
+    council_geojson: Path,
+    community_geojson: Path,
+    zip_geojson: Path | None = None,
+    *,
+    spacing: float = GRID_SPACING_DEG,
 ) -> dict:
     """Compute the crosswalk. Slow by design; called by `showup crosswalk` only."""
     council = load_features(council_geojson, "coundist")
@@ -51,13 +59,13 @@ def generate(
     if len(boards) != 59:
         raise CrosswalkError(f"expected 59 community districts, found {len(boards)}")
 
-    shares = overlap_shares(council, boards)
+    shares = overlap_shares(council, boards, spacing=spacing)
     # And the reverse direction. The two are not transposes of each other: a share
     # is always "of the containing polygon's sampled area", so
     # districts[35][302] = 0.44 means 44% of council district 35 sits in Brooklyn
     # CB 2, while boards[302][35] answers the different question of how much of
     # CB 2 sits in district 35. The board view needs the second.
-    reverse = overlap_shares(boards, council)
+    reverse = overlap_shares(boards, council, spacing=spacing)
 
     # ZIP -> council districts, so a reader can type "11217" instead of a street
     # address and never touch the geocoder. The city publishes *modified* ZCTAs,
@@ -66,7 +74,7 @@ def generate(
     zips: dict[str, list[list]] = {}
     if zip_geojson and Path(zip_geojson).exists():
         zctas = load_features(zip_geojson, "modzcta")
-        zcta_shares = overlap_shares(zctas, council, min_share=0.02)
+        zcta_shares = overlap_shares(zctas, council, spacing=spacing, min_share=0.02)
         members = _zcta_members(zip_geojson)
         for code, pairs in zcta_shares.items():
             if not pairs:
@@ -85,8 +93,8 @@ def generate(
     return {
         "generated_on": date.today().isoformat(),
         "method": (
-            "lattice sampling at "
-            f"{GRID_SPACING_DEG} degrees (~110 m), shares below {MIN_SHARE} dropped as slivers"
+            f"lattice sampling at {spacing} degrees (~110 m at the default), "
+            f"shares below {MIN_SHARE} dropped as slivers"
         ),
         "sources": {
             "council_districts": "NYC Open Data 872g-cjhh",

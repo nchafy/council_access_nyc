@@ -1,0 +1,29 @@
+{"in": "Committee on Aging", "out": "Committee on Aging", "note": "plain text is unchanged"}
+{"in": "<b>Committee</b> on <i>Aging</i>", "out": "Committee on Aging", "note": "tags removed"}
+{"in": "<script>alert('x')</script>Finance", "out": "Finance", "note": "script BODY dropped, not escaped"}
+{"in": "<style>body{}</style>Parks", "out": "Parks", "note": "style body dropped"}
+{"in": "&amp;lt;script&amp;gt;", "out": "&lt;script&gt;", "note": "entities decoded exactly once; twice would yield live markup"}
+{"in": "Parks &amp; Recreation", "out": "Parks & Recreation", "note": "single decode of a plain entity"}
+{"in": "<td>Aging</td><td>Finance</td>", "out": "Aging Finance", "note": "block tags become word breaks, not 'AgingFinance'"}
+{"in": "<div>Health", "out": "Health", "note": "unclosed tag does not raise"}
+{"in": "<td class=\"x", "out": "", "note": "truncated mid-attribute, a real scrape failure"}
+{"in": "<img src=x onerror=\"alert(1)\">Transportation", "out": "Transportation", "note": "event handler attribute discarded"}
+{"in": "Committee   on\n\n  Aging", "out": "Committee on Aging", "note": "whitespace collapsed"}
+{"in": "<b>Avilés</b>", "out": "Avilés", "note": "accents preserved; mangling is wrong about a real person's name"}
+{"in": "Ossé", "out": "Ossé", "note": "combining vs precomposed must survive"}
+{"in": "", "out": "", "note": "empty"}
+{"in": "   ", "out": "", "note": "whitespace only"}
+{"in": "<!-- comment -->Aging", "out": "Aging", "note": "comments dropped"}
+{"in": "<noscript>fallback</noscript>Health", "out": "Health", "note": "noscript body dropped"}
+{"in": "a<br>b", "out": "a b", "note": "br is a word break"}
+{"in": "&#60;script&#62;", "out": "<script>", "note": "numeric entity decoded once to inert TEXT; render escapes it"}
+{"in": "&#x3C;b&#x3E;", "out": "<b>", "note": "hex entity, same rule"}
+{"in": "<p>One</p><p>Two</p>", "out": "One Two", "note": "paragraphs separated"}
+{"in": "Committee on Governmental Operations, State &amp; Federal Legislation", "out": "Committee on Governmental Operations, State & Federal Legislation", "note": "real committee name with an entity"}
+{"in": "&#60;script", "out": "<script", "note": "FOUND BY FUZZER: entity decodes to a literal < beside text, so the CHARACTERS '<script' are legitimate output; esc makes it inert"}
+{"in": "&#x3C;javascript:;b&#x3E;", "out": "<javascript:;b>", "note": "FOUND BY FUZZER: hex entities around a scheme-looking string; still inert text"}
+{"in": "Defer&#x3C;red", "out": "Defer<red", "note": "FOUND BY FUZZER: a decoded < mid-word"}
+{"in": "<a", "out": "", "note": "an unterminated tag start is dropped, not echoed"}
+{"in": "abc<", "out": "abc<", "note": "a trailing bare < survives as inert text; esc escapes it"}
+{"in": "Defer<red", "out": "Defer", "note": "FOUND BY FUZZER: strip_tags is NOT idempotent — '<red' reads as an unterminated tag on a second pass. Apply it exactly once, to raw upstream text only"}
+{"in": "javascript:<script", "out": "javascript:", "note": "FOUND BY FUZZER: second-pass drop again; documents why double-stripping is forbidden"}

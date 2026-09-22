@@ -1,0 +1,10 @@
+{"in": "1:30 PM", "out": "13:30", "note": "the common case"}
+{"in": "10:00 AM", "out": "10:00", "note": "morning"}
+{"in": "12:00 PM", "out": "12:00", "note": "noon is 12, not 0"}
+{"in": "12:00 AM", "out": "00:00", "note": "midnight is 0, not 12"}
+{"in": "9:30 a.m.", "out": "09:30", "note": "dotted lowercase variant"}
+{"in": "Deferred", "out": null, "note": "never guess a start time"}
+{"in": "", "out": null, "note": "empty"}
+{"in": "TBD", "out": null, "note": "unparseable"}
+{"in": "25:00 PM", "out": null, "note": "out of range"}
+{"in": "noon", "out": null, "note": "words are not times"}

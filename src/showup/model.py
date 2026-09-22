@@ -46,10 +46,6 @@ class Meeting:
     #: Three business days before the hearing, for ASL/CART and interpretation.
     accommodation_by: date | None
 
-    @property
-    def is_past(self) -> bool:
-        return self.date < date.today()
-
 
 @dataclass(frozen=True, slots=True)
 class Office:

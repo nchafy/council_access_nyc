@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
@@ -45,13 +44,6 @@ FLOORS = {"calendar": 40, "district_pages": DISTRICT_COUNT, "members": 300, "boa
 
 class BuildError(RuntimeError):
     """A source failed its floor or invariant. The build must not continue."""
-
-
-@dataclass(frozen=True)
-class Paths:
-    raw: Path
-    out: Path
-    assets: Path
 
 
 def _check_floor(name: str, count: int) -> None:

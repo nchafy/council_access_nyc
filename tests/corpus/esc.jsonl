@@ -1,0 +1,8 @@
+{"in": "<script>", "out": "&lt;script&gt;", "note": "angle brackets"}
+{"in": "a & b", "out": "a &amp; b", "note": "ampersand"}
+{"in": "&lt;", "out": "&amp;lt;", "note": "ampersand escaped first, or double-decoding becomes possible"}
+{"in": "it's", "out": "it&#x27;s", "note": "single quote, for attribute context"}
+{"in": "say \"hi\"", "out": "say &quot;hi&quot;", "note": "double quote, for attribute context"}
+{"in": "\" onmouseover=\"alert(1)", "out": "&quot; onmouseover=&quot;alert(1)", "note": "attribute break-out neutralised"}
+{"in": "", "out": "", "note": "empty"}
+{"in": "Avilés", "out": "Avilés", "note": "non-ASCII untouched"}

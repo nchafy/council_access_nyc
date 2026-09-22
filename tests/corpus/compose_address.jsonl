@@ -1,0 +1,7 @@
+{"in": ["350 Jay Street Brooklyn, NY 11201", "8th Floor"], "out": "350 Jay Street, 8th Floor, Brooklyn, NY 11201", "note": "line 2 belongs before the city, not after the ZIP"}
+{"in": ["1243 Woodrow Road Staten Island, N. Y. 10309", "2nd Floor"], "out": "1243 Woodrow Road, 2nd Floor, Staten Island, N. Y. 10309", "note": "spaced state abbreviation"}
+{"in": ["211 East 43rd Street, New York, NY", "Suite 1404"], "out": "211 East 43rd Street, Suite 1404, New York, NY", "note": "no ZIP present"}
+{"in": ["30-50 Whitestone Expressway Flushing/Whitestone", "Suite 205"], "out": "30-50 Whitestone Expressway Flushing/Whitestone, Suite 205", "note": "no recognisable city tail: append rather than guess"}
+{"in": ["1 Main St", ""], "out": "1 Main St", "note": "no second line"}
+{"in": ["", "Suite 5"], "out": "Suite 5", "note": "only a second line"}
+{"in": ["", ""], "out": null, "note": "nothing"}

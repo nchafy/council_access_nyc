@@ -1,0 +1,16 @@
+{"in": "https://nyc.legistar.com/MeetingDetail.aspx?ID=1", "out": "https://nyc.legistar.com/MeetingDetail.aspx?ID=1", "note": "allowlisted host: legistar"}
+{"in": "https://council.nyc.gov/district-35/", "out": "https://council.nyc.gov/district-35/", "note": "allowlisted host: council.nyc.gov"}
+{"in": "javascript:alert(1)", "out": null, "note": "scheme not allowed"}
+{"in": "JaVaScRiPt:alert(1)", "out": null, "note": "case does not bypass"}
+{"in": "java\nscript:alert(1)", "out": null, "note": "a browser ignores control chars inside a scheme; we must agree with it"}
+{"in": "\u0001javascript:alert(1)", "out": null, "note": "leading control char"}
+{"in": "data:text/html,<script>alert(1)</script>", "out": null, "note": "data URL"}
+{"in": "vbscript:msgbox(1)", "out": null, "note": "legacy scheme"}
+{"in": "file:///etc/passwd", "out": null, "note": "local file"}
+{"in": "http://council.nyc.gov/", "out": null, "note": "http is rejected, never silently upgraded"}
+{"in": "https://evil.example.com/x", "out": null, "note": "unknown host"}
+{"in": "https://council.nyc.gov.evil.com/x", "out": null, "note": "suffix lookalike"}
+{"in": "https://user:pass@council.nyc.gov/", "out": null, "note": "credentials are a phishing shape"}
+{"in": "//evil.example.com/x", "out": null, "note": "protocol-relative"}
+{"in": "", "out": null, "note": "empty"}
+{"in": "   ", "out": null, "note": "whitespace only"}

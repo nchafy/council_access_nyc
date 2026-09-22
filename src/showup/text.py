@@ -14,6 +14,14 @@ here rather than remembered at each call site:
 Decoding entities exactly once matters. `&amp;lt;script&amp;gt;` decoded twice
 becomes `<script>`; decoded once it stays the literal text `&lt;script&gt;`,
 which is what the source actually said.
+
+A consequence worth knowing, found by the fuzzer: `strip_tags` output CAN contain
+the characters `<script>`, because `&#60;script&#62;` decodes to exactly that and
+the source genuinely said so. Stripping is therefore not the defence — **escaping
+is**. Rule 2 is the one that makes a page safe, and rule 1 only guarantees that no
+*markup* survives as markup. Do not "harden" `strip_tags` by deleting `<` from its
+output: that would corrupt legitimate text and would not add any protection the
+escaper does not already provide.
 """
 
 from __future__ import annotations
@@ -141,8 +149,3 @@ def esc(value: object) -> str:
     if value is None:
         return ""
     return html.escape(str(value), quote=True)
-
-
-def unescape_once(value: str) -> str:
-    """Decode HTML entities exactly once. Use only on values that are not markup."""
-    return html.unescape(value)

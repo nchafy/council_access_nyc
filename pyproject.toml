@@ -32,7 +32,9 @@ addopts = [
     "-ra",
     "--cov=showup",
     "--cov-report=term-missing",
-    "--cov-fail-under=85",
+    # 100% is the floor, not a target: see CLAUDE.md. When new code drops
+    # coverage, the answer is a test, never a lower number.
+    "--cov-fail-under=100",
 ]
 filterwarnings = ["error"]
 markers = [

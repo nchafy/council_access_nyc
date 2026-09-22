@@ -19,6 +19,12 @@ help: ## show this help
 setup: ## install the toolchain and dev dependencies
 	uv sync
 
+fetch: ## refresh the upstream cache (~9 min cold; skips fresh sources)
+	uv run showup fetch
+
+fetch-calendar: ## refresh just the daily-changing calendar
+	uv run showup fetch --only calendar --force
+
 build: ## build the static site into site/
 	uv run showup build
 

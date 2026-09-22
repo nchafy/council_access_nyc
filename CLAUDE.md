@@ -8,10 +8,18 @@ registering, and how many hours are left to file written testimony.
 ## The development loop
 
 ```bash
-make verify   # build + lint + test + 230 live-response assertions. The gate.
+make fetch    # refresh the upstream cache (~9 min cold; skips anything fresh)
+make verify   # build + lint + test + 337 live-response assertions. The gate.
 make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
 make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
+make browser  # drive the address box in real headless Chrome
 ```
+
+Fetch and build are separate stages on purpose: the build never touches the
+network, so it is reproducible and a flaky download cannot half-write a site. A
+download is validated against a size floor **and** a body invariant before it
+replaces a cache entry — these hosts return HTTP 200 carrying error pages, so a
+status check is not enough.
 
 Never serve with `python -m http.server`: it sends no CSP, so policy violations
 would surface for the first time at deploy. `scripts/serve.py` applies the real

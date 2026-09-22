@@ -221,9 +221,10 @@ achieves the same latency more simply. Those constraints return when the map doe
 4. The hostile-content fixture renders inert, asserted by a test.
 5. axe clean on the two page types; full keyboard navigation; works with JavaScript disabled for
    everything except the address box.
-6. The refresh is runnable as one local command, fails closed on a bad fetch, and the staleness
-   notice provably appears when `manifest.json` is hand-aged. Running it *on a schedule* is
-   deferred with hosting.
+6. ✅ The refresh is runnable as one local command (`make fetch`), fails closed on a bad fetch,
+   and the staleness notice provably appears when `manifest.json` is hand-aged. Running it *on a
+   schedule* is deferred with hosting. Crawl rates come from each host's own `robots.txt`, and an
+   `upstream` test fails if the City raises its delay above ours.
 7. Every fact on the page carries its source link and fetch date.
 
 ## 7. Open, for the owner

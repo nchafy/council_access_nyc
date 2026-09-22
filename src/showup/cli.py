@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .build import BuildError, build_site
 from .crosswalk import CrosswalkError, generate
+from .fetch import SOURCES, FetchError, fetch_all
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -33,6 +34,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     cross.add_argument("--raw", default="etl/raw")
     cross.add_argument("--out", default="crosswalks/council_to_boards.json")
+
+    grab = sub.add_parser("fetch", help="refresh the upstream cache in etl/raw/")
+    grab.add_argument("--raw", default="etl/raw")
+    grab.add_argument(
+        "--only",
+        choices=[s.name for s in SOURCES],
+        help="refresh a single source instead of all of them",
+    )
+    grab.add_argument(
+        "--force", action="store_true", help="refetch even if the cached copy is fresh"
+    )
 
     args = parser.parse_args(argv)
 
@@ -63,6 +75,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         if report["vacant_seats"]:
             print(f"  vacant seats    : {report['vacant_seats']}")
+        return 0
+
+    if args.command == "fetch":
+        raw = (REPO_ROOT / args.raw).resolve()
+        if args.only is None and not args.force:
+            print("refreshing the cache (district pages take ~8.5 min at the rate")
+            print("council.nyc.gov's robots.txt asks for; skipped if already fresh)")
+        try:
+            report = fetch_all(raw, only=args.only, force=args.force)
+        except FetchError as error:
+            print(f"fetch refused: {error}", file=sys.stderr)
+            return 2
+
+        fetched = [n for n, r in report["sources"].items() if r["status"] == "fetched"]
+        fresh = [n for n, r in report["sources"].items() if r["status"] == "fresh"]
+        print(f"fetched {len(fetched)}, already fresh {len(fresh)}, failed {len(report['failed'])}")
+        if report["failed"]:
+            # Non-zero, but the cache still holds the last good copies — the build
+            # will refuse on its own floors if what remains is unusable.
+            print(f"  failed: {', '.join(report['failed'])}", file=sys.stderr)
+            print("  previous cached copies were kept", file=sys.stderr)
+            return 1
         return 0
 
     if args.command == "crosswalk":

@@ -1,94 +1,133 @@
 ---
 name: refresh-data
-description: Refresh Show Up NYC's upstream data and fixtures — re-fetch the Legistar calendar, the 51 council.nyc.gov district pages, and the NYC Open Data members dataset. Use when the site shows stale data, when a staleness banner appears, when fixtures need regenerating, or when asked to update/re-fetch/re-scrape the data.
+description: Refresh Show Up NYC's upstream data and fixtures — the Legistar calendar, the 51 council.nyc.gov district pages, the NYC Open Data members/boards datasets, and the three geometry files. Use when the site shows stale data, when a staleness banner appears, when a fetch is refused, when fixtures need regenerating, or when asked to update/re-fetch/re-scrape the data.
 ---
 
 # Refreshing data
 
-## Where the data lives now
+## The commands
 
-`etl/raw/` holds cached upstream payloads. It is **gitignored** — 78 MB of
-re-fetchable city data does not belong in git. The build reads from it and never
-touches the network, so a build is reproducible and a network failure can never
-half-write a site.
+```bash
+make fetch                                  # refresh anything stale, skip what's fresh
+make fetch-calendar                         # just the daily-changing calendar
+uv run showup fetch --only boards --force   # one named source, ignoring freshness
+uv run showup build                         # then rebuild the site
+```
 
-| File | Source | Changes |
+A cold `make fetch` takes **about 9 minutes**, almost all of it the 51 district
+pages at the 10-second crawl delay `council.nyc.gov` asks for. Everything else is
+seconds. Sources younger than their `max_age_hours` are skipped, so running it
+often is cheap.
+
+## Where the data lives
+
+`etl/raw/` holds the cache. It is **gitignored** — re-fetchable city data does not
+belong in git. The build reads from it and never touches the network, so a build is
+reproducible and a flaky download cannot half-write a site.
+
+| Source name | File | Refresh after |
 |---|---|---|
-| `legistar_calendar.html` | `nyc.legistar.com/Calendar.aspx` | daily |
-| `district_pages.json` | 51 × `council.nyc.gov/district-N/` | per session, or on a special election |
-| `members.json` | Open Data `uvw5-9znb` | per session, lags reality |
+| `calendar` | `legistar_calendar.html` | 12 h |
+| `districts` | `district_pages.json` (51 pages) | 30 d |
+| `members` | `members.json` | 30 d |
+| `boards` | `community_boards.json` | 60 d |
+| `council-geometry` | `districts.geojson` | 1 y |
+| `community-geometry` | `community_districts.geojson` | 1 y |
+| `zip-geometry` | `modzcta.geojson` | 1 y |
 
-The others (`meetings.json`, `bills.json`, `funding.json`, `constituent.json`,
-`committee_membership.json`, `districts.geojson`) are from the Phase 0 spike and
-**not used by Phase 1**. Do not wire them in without checking the plan: casework
-and discretionary funding are cut on evidence, not deferred.
+`meetings.json`, `bills.json`, `funding.json`, `constituent.json` and
+`committee_membership.json` are leftovers from the Phase 0 spike and **not used**.
+Do not wire them in without reading the plan: casework and discretionary funding
+are cut on evidence, not deferred.
 
-## Re-fetching
+## When a fetch is refused
 
-A `showup fetch` command does not exist yet — Phase 1 reads the existing cache.
-Until it does, the throwaway Node spike on branch `spike/node-etl` does the
-fetching, and it is the reference for what a Python fetch stage must reproduce:
+```
+boards: 12 rows, floor is 59. Keeping the previous cache.
+```
+
+**This is the design working.** A download is validated against a size floor *and*
+a body invariant before it replaces anything, so the cache holds either the last
+known-good payload or a new known-good one. Never a truncated file, never an error
+page.
+
+Do not raise the floor to make it pass. Work out what changed upstream:
+
+- **Body invariant failed** — the shape changed. Check the real response by hand,
+  then fix the parser and the fixture together.
+- **Row/feature count changed** — could be legitimate (boundaries redrawn, a board
+  merged) or a truncated export. Verify before accepting, because
+  `council-geometry` demands *exactly* 51 features and the address lookup depends
+  on it.
+- **One source failed, others succeeded** — deliberate. A dead host does not block
+  the rest, and the build's own floors catch a partly-refreshed cache.
+
+## Why body invariants and not status codes
+
+Three verified cases where these hosts return **HTTP 200 carrying an error**:
+`nyc.legistar.com/Feed.ashx` yields a 721-byte `<title>Invalid feed</title>`; a bad
+`LegislationDetail` GUID yields a 19-byte `Invalid parameters!`; and a Socrata query
+error arrives as JSON with an `error` key. A status check would cache all three
+happily.
+
+The district-pages invariant goes further and checks that pages 1, 26 and 51 each
+contain their own heading — 51 copies of a login wall would otherwise clear both
+the count and the size floor.
+
+## Politeness
+
+Rates come from each host's own `robots.txt`, checked 2026-09-22:
+
+| Host | Declared | Ours |
+|---|---|---|
+| `council.nyc.gov` | `Crawl-delay: 10` | 10 s |
+| `data.cityofnewyork.us` | `Crawl-delay: 1` | 1 s |
+| `nyc.legistar.com` | **no robots.txt (404)** | 2 s, our own choice |
+
+An `upstream`-marked test re-reads `council.nyc.gov/robots.txt` and fails if the
+City raises its delay above ours. Run it with `uv run pytest -m upstream`. Never
+lower a delay to speed up a run — we are a guest on these servers.
+
+Two rules that are not negotiable: **one plain GET of `Calendar.aspx`** (never POST
+the ~374 KB `__VIEWSTATE` for page 2, which holds the least valuable rows), and a
+**stable `$order=:id`** on every Socrata page, or rows silently duplicate and vanish
+between pages.
+
+## After a geometry change
+
+`crosswalks/council_to_boards.json` is derived from two of the geometry files and is
+**committed**. If either changes, regenerate it and read the diff:
 
 ```bash
-git show spike/node-etl:etl/fetch.mjs > /tmp/fetch.mjs   # read it, do not run it as the answer
+uv run showup crosswalk   # ~35 s sweep
+git diff crosswalks/
 ```
 
-What that stage must preserve when it is ported:
-
-- **One plain GET** of `Calendar.aspx`. Never POST the ~374 KB `__VIEWSTATE` for
-  page 2 — page 1 is date-descending and already spans months ahead.
-- **Polite rates.** `council.nyc.gov` at 1 request / 10 s (51 pages ≈ 8.5 min).
-  Hammering a city website is a security failure in the direction we control.
-- **Body invariants, not status codes.** Legistar serves error bodies with HTTP
-  200: `Feed.ashx` returns a 721-byte `<title>Invalid feed</title>`, a bad
-  `LegislationDetail` GUID returns a 19-byte `Invalid parameters!`.
-- **Stable `$order` when paging Socrata**, or rows silently duplicate and vanish.
-- **Write to a cache, then build.** Fetch and transform stay separate stages.
-
-`webapi.legistar.com` needs a token (`403 Token is required`) and Phase 1 must
-work without one. A free key can be requested at
-`council.nyc.gov/legislation/api/`, but nothing may depend on it.
-
-## Rebuild and check
-
-```bash
-make verify
-```
-
-`build` reports what it saw:
-
-```
-meetings parsed : 100
-calendar through: 2026-12-17
-pages with gaps : 6
-```
-
-Compare those to the previous run. A large drop in `meetings parsed`, or
-`pages with gaps` jumping, means an upstream change — investigate before
-committing. If a floor is breached the build refuses and keeps the old site,
-which is the intended behaviour.
+A boundary change moving a board between council districts should be a reviewable
+diff, not a silent shift in what the site tells people. The command refuses to write
+a crosswalk that leaves any of the 51 districts without a board.
 
 ## Refreshing fixtures
 
-Fixtures are frozen snapshots and should change rarely and deliberately: they
-encode the pathological cases that tests depend on. When an upstream redesign
-makes them unrepresentative:
+Fixtures under `tests/fixtures/` are frozen snapshots encoding the pathological
+cases tests depend on. Change them rarely and deliberately:
 
-1. Re-fetch into `etl/raw/`.
-2. Regenerate only the affected fixture, keeping the same trimming (drop
-   `__VIEWSTATE`, drop inline script/style bodies) so the diff is readable.
-3. Run `make test` and read every failure before changing an expectation — a
-   failing test here usually means upstream changed, not that the test is wrong.
-4. Note what changed in `docs/OBSERVATIONS.md` with the date. That log is the
-   evidence base for later decisions.
+1. `make fetch --force` for the affected source.
+2. Regenerate only that fixture, keeping the same trimming (drop `__VIEWSTATE`,
+   drop inline script and style bodies) so the diff stays readable.
+3. `make test` and read every failure before changing an expectation — a failure
+   here usually means upstream changed, not that the test is wrong.
+4. Note what changed in `docs/OBSERVATIONS.md` with the date.
 
-Keep district pages 1, 3, 35 and 51: they are the reference layout, the
-source-conflict and no-committees case, and the two missing-`Office Hours` cases.
+Keep district pages 1, 3, 35 and 51: the reference layout, the
+source-conflict-and-no-committees case, and the two missing-`Office Hours` cases.
+`tests/fixtures/community_boards.json` must stay too — the privacy test checks real
+officer names against it.
 
-## Staleness
+## Staleness at runtime
 
 `manifest.json` carries per-source `fetched_at` and `max_age_hours`; the **browser**
-compares them to the reader's clock and shows the banner. The build never bakes in
-a `degraded` boolean — that is what would let an abandoned site keep claiming to be
-fresh. To test the banner, hand-edit `fetched_at` in `site/manifest.json` to
+compares them to the reader's clock and shows the banner. The build never bakes in a
+`degraded` boolean — that is what would let an abandoned site keep claiming to be
+fresh. To see the banner, hand-edit a `fetched_at` in `site/manifest.json` to
 something old and reload.

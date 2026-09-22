@@ -5,6 +5,22 @@ do about their city government this week: which City Council hearings are
 happening, where the room is, how to get in, that they can walk in without
 registering, and how many hours are left to file written testimony.
 
+## The development loop
+
+```bash
+make verify   # build + lint + test + 230 live-response assertions. The gate.
+make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
+make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
+```
+
+Never serve with `python -m http.server`: it sends no CSP, so policy violations
+would surface for the first time at deploy. `scripts/serve.py` applies the real
+`_headers`. Skills: `verify-site`, `add-source-adapter`, `refresh-data`.
+
+`district-3` is the deliberate degraded-state page — vacant-seat handling, the
+source-conflict notice, missing committees, designed empty states. Check it after
+any renderer change.
+
 **Building right now? Read `docs/phase-1-scope.md`** — the owner scoped a barebones
 Phase 1: district dropdown or address input, one page of facts and links, no map,
 no analysis, security first. It supersedes the outline's milestones for the near

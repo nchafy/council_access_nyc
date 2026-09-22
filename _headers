@@ -1,0 +1,19 @@
+# Response headers. Cloudflare Pages reads this file verbatim; scripts/serve.py
+# parses it so the SAME policy is enforced during local development.
+#
+# Why this file exists rather than <meta> tags: CSP frame-ancestors,
+# X-Content-Type-Options, Referrer-Policy and HSTS are only honoured as response
+# headers. A CSP that is not served is not a CSP, and one first discovered at
+# deploy time is one that gets waived under pressure.
+#
+# default-src 'none' means every resource class must be named explicitly below.
+# Adding a directive here is a security decision — see docs/phase-1-scope.md §4.2.
+
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: DENY
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()

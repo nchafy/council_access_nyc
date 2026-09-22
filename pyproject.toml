@@ -1,0 +1,69 @@
+[project]
+name = "showup"
+version = "0.1.0"
+description = "Show Up NYC — what the NYC City Council is doing this week and what you can still do about it"
+requires-python = ">=3.12"
+# Phase 1 is deliberately dependency-free at runtime. Everything here is
+# stdlib: html.parser for the scraped pages, json, datetime, pathlib, http.server
+# for local serving. Every dependency is an attack surface and this project's
+# primary threat is untrusted upstream content (docs/phase-1-scope.md §4), so the
+# smallest possible dependency set is a security decision, not minimalism for its
+# own sake. No PDF parser and no map library in Phase 1.
+dependencies = []
+
+[project.scripts]
+showup = "showup.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/showup"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--cov=showup",
+    "--cov-report=term-missing",
+    "--cov-fail-under=85",
+]
+filterwarnings = ["error"]
+markers = [
+    "upstream: hits a real third-party host; excluded from CI, run on a schedule",
+    "browser: needs a local Chrome; excluded from the default run",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+# Ruff reformats Python snippets inside Markdown. The skill files are
+# documentation whose snippets are deliberately elided and illustrative, so
+# formatting them is noise that would fail CI for prose reasons.
+extend-exclude = [".claude"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH", "RET", "ARG", "TID", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ARG"]
+# The ambiguous-character rule is right in general and wrong here: these files
+# deliberately contain the en dash, figure dash and minus sign that appear in
+# Legistar's clerk-typed location strings. Normalising them would delete the
+# thing under test.
+"src/showup/venues.py" = ["RUF001"]
+"tests/unit/test_venues.py" = ["RUF001"]
+# Source adapters import their own package's shared primitives by relative path.
+# TID252 exists to stop reaching across package boundaries; staying inside one
+# package is the intent, and absolute self-imports would be noise.
+"src/showup/sources/*.py" = ["TID252"]
+# The handler's class attributes are configuration set once before the server
+# starts, which is how http.server is designed to be parameterised.
+"scripts/serve.py" = ["RUF012"]

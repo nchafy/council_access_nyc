@@ -5,48 +5,48 @@ on:
     branches: [mainline]
   pull_request:
 
+# The build needs no secrets, so there is nothing for a malicious dependency or
+# pull request to exfiltrate. Least privilege makes that explicit.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # No pyproject.toml exists yet — this repo is a plan, not an
-      # implementation. Every Python step below is gated on it appearing so that
-      # CI is honestly green (nothing to check) rather than permanently red for
-      # a reason nobody will keep looking at. M0 commits pyproject.toml and the
-      # gate opens by itself.
-      - name: Detect Python project
-        id: detect
-        run: |
-          if [ -f pyproject.toml ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No pyproject.toml yet — skipping lint and tests (pre-M0)."
-          fi
-
       - uses: astral-sh/setup-uv@v5
-        if: steps.detect.outputs.present == 'true'
         with:
           enable-cache: true
 
       - name: Install dependencies
-        if: steps.detect.outputs.present == 'true'
-        run: uv sync --frozen
+        run: uv sync
 
       - name: Lint
-        if: steps.detect.outputs.present == 'true'
         run: uv run ruff check .
 
       - name: Format check
-        if: steps.detect.outputs.present == 'true'
         run: uv run ruff format --check .
 
-      # Hermetic tests only: every parser test runs against a committed fixture
-      # under tests/fixtures/, so CI never depends on nyc.legistar.com being up
-      # or on a city dataset keeping its shape. The contract tests that DO hit
-      # upstream run on a schedule (see refresh workflows) and are excluded here.
+      # Hermetic: every parser test runs against a committed fixture under
+      # tests/fixtures/, so CI never depends on nyc.legistar.com being up or on a
+      # city dataset keeping its shape. Contract tests that DO hit upstream are
+      # marked `upstream` and run on a schedule instead, so a third party can
+      # never redden this build.
       - name: Tests
-        if: steps.detect.outputs.present == 'true'
-        run: uv run pytest -m "not upstream"
+        run: uv run pytest -m "not upstream and not browser"
+
+  # The site build needs the cached upstream payloads in etl/raw/, which are
+  # gitignored (78 MB, re-fetchable). Until `showup fetch` exists, this job can
+  # only run where that cache is present, so it is skipped rather than silently
+  # passing on an empty build.
+  site:
+    runs-on: ubuntu-latest
+    if: false # enable once `showup fetch` lands and CI can populate etl/raw/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run showup build
+      - run: uv run python scripts/verify.py

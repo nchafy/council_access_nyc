@@ -1,0 +1,203 @@
+/* Mobile-first, system fonts only.
+   No web fonts: a hosted font is a third party, and the CSP in _headers has no
+   font-src, so there is nothing to load even by accident. */
+
+:root {
+  --ink: #16191d;
+  --muted: #55606d;
+  --rule: #d8dde3;
+  --bg: #fff;
+  --accent: #0b4fa8;
+  --warn-bg: #fff6e5;
+  --warn-ink: #6b4400;
+  --urgent-bg: #fdecec;
+  --urgent-ink: #8a1f1f;
+  --ok-bg: #eaf5ec;
+  --ok-ink: #1d5b2c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 8px;
+  top: 8px;
+  z-index: 10;
+  background: var(--bg);
+  padding: 8px 12px;
+  border: 2px solid var(--accent);
+}
+
+main, header.site, footer.site {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 0 1.1rem;
+}
+
+header.site { padding-top: 1.4rem; }
+.wordmark { margin: 0; font-weight: 700; font-size: 1.05rem; letter-spacing: .01em; }
+.wordmark a { color: var(--ink); text-decoration: none; }
+.tagline { margin: .15rem 0 1.1rem; color: var(--muted); font-size: .92rem; }
+
+h1 { font-size: 1.7rem; line-height: 1.2; margin: .6rem 0 .5rem; }
+h2 { font-size: 1.18rem; margin: 2rem 0 .5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+h3 { font-size: 1.02rem; margin: 1.2rem 0 .35rem; }
+
+a { color: var(--accent); }
+a:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.nolink { color: var(--muted); }
+
+.neighborhoods { color: var(--muted); margin: 0 0 .8rem; }
+
+.why, .hint, .distinction, .gap {
+  color: var(--muted);
+  font-size: .92rem;
+}
+.distinction { background: #f5f7fa; padding: .7rem .85rem; border-radius: 6px; }
+.gap { font-style: italic; }
+
+/* Forms */
+.picker form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.picker label { flex: 1 0 100%; font-weight: 600; font-size: .95rem; }
+select {
+  flex: 1 1 16rem;
+  min-height: 2.9rem;
+  font-size: 1rem;
+  padding: .4rem;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+}
+button {
+  min-height: 2.9rem;
+  padding: 0 1.15rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Lists */
+.district-list {
+  list-style: none;
+  padding: 0;
+  margin: .5rem 0 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .1rem;
+}
+.district-list li { padding: .3rem 0; border-bottom: 1px solid var(--rule); }
+.committee-list { margin: .4rem 0; padding-left: 1.15rem; }
+.committee-list .role { color: var(--muted); font-size: .9rem; }
+
+/* Definition lists carry most of the facts */
+dl { margin: .5rem 0; }
+dt {
+  font-weight: 600;
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  margin-top: .7rem;
+}
+dd { margin: .12rem 0 0; }
+dd small { color: var(--muted); font-size: .84rem; display: inline-block; margin-top: .2rem; }
+
+.member-name { font-size: 1.28rem; font-weight: 700; margin: .3rem 0 0; }
+
+/* Meetings */
+.meeting {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: .85rem 1rem 1rem;
+  margin: .9rem 0;
+}
+.meeting h3 { margin-top: 0; }
+.meeting .links { margin: .8rem 0 0; font-size: .93rem; }
+
+.deadline { font-weight: 700; padding: .1rem .35rem; border-radius: 4px; }
+.deadline.open { background: var(--ok-bg); color: var(--ok-ink); }
+.deadline.closing { background: var(--warn-bg); color: var(--warn-ink); }
+.deadline.closed { background: var(--urgent-bg); color: var(--urgent-ink); }
+
+.designed-state {
+  background: #f5f7fa;
+  border-left: 3px solid var(--muted);
+  padding: .7rem .85rem;
+  margin: .6rem 0;
+}
+
+.lead-truth {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  padding: .75rem .9rem;
+  border-radius: 6px;
+}
+.refusal {
+  background: #f5f7fa;
+  padding: .75rem .9rem;
+  border-radius: 6px;
+  font-size: .95rem;
+}
+
+.participate ul { padding-left: 1.15rem; }
+.participate li { margin: .3rem 0; }
+
+.back { margin: 2.2rem 0 0; }
+
+/* Footer */
+footer.site {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  padding-bottom: 2.5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: .87rem;
+}
+footer.site p { margin: .4rem 0; }
+.staleness {
+  background: var(--urgent-bg);
+  color: var(--urgent-ink);
+  padding: .7rem .9rem;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+@media (min-width: 34rem) {
+  .district-list { grid-template-columns: 1fr 1fr; gap: .1rem 1.4rem; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8eaed;
+    --muted: #9aa4b0;
+    --rule: #333a42;
+    --bg: #14171a;
+    --accent: #7fb0ff;
+    --warn-bg: #3a2f14;
+    --warn-ink: #f0d79a;
+    --urgent-bg: #3d1f20;
+    --urgent-ink: #f3b4b4;
+    --ok-bg: #1a3322;
+    --ok-ink: #a8dcb6;
+  }
+  .distinction, .designed-state, .refusal { background: #1b1f24; }
+}

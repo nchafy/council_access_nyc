@@ -21,6 +21,7 @@ Exit code is non-zero on the first failure, so `make verify` gates a commit.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import re
 import subprocess
@@ -54,6 +55,13 @@ ALLOWED_LINK_HOSTS = ALLOWED_HOSTS
 _INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", re.IGNORECASE)
 _STYLE_ATTR = re.compile(r"\sstyle\s*=\s*[\"']", re.IGNORECASE)
 _HREF = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+
+
+def _strip_comments(source: str) -> str:
+    """Comment-free source, so a grep does not match a file's own documentation."""
+    without_block = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    return "\n".join(re.sub(r"(^|\s)//.*$", "", line) for line in without_block.splitlines())
+
 
 failures: list[str] = []
 checks = 0
@@ -230,6 +238,49 @@ def _run_checks(base: str, site: Path) -> None:
     check(status == 404, f"/district/99/ returned {status}, expected 404")
     check("not found" in missing.lower(), "404 page has no not-found message")
     print(f"GET /district/99/  {status}  (expected 404)")
+
+    # --- the address box and the data it needs --------------------------------
+    check('id="address-input"' in index, "index has no address box")
+    check(
+        'id="address-section"' in index and "hidden" in index,
+        "address box is not hidden by default",
+    )
+    check('src="/assets/address.js"' in index, "index does not load address.js")
+
+    status, _, address_js = fetch(base + "/assets/address.js")
+    check(status == 200, f"address.js returned {status}")
+    # Strip comments once: the file documents the rules it follows, so a raw grep
+    # matches its own prose. This already produced two false failures.
+    address_code = _strip_comments(address_js)
+    # R33: the geocoder must be asked not to log the query.
+    check("private=true" in address_code, "address.js omits private=true")
+    # The typed address must not be able to reach a URL, storage or a cookie.
+    for banned in ("localStorage", "sessionStorage", "pushState", "document.cookie"):
+        check(banned not in address_code, f"address.js touches {banned}")
+    check("innerHTML" not in address_code, "address.js uses innerHTML")
+
+    status, _, geo = fetch(base + "/data/districts.geo.json")
+    check(status == 200, f"districts.geo.json returned {status}")
+    geo_json = json.loads(geo)
+    check(
+        len(geo_json.get("features", [])) == 51,
+        f"district geometry has {len(geo_json.get('features', []))} features, expected 51",
+    )
+    gz = len(gzip.compress(geo.encode(), 9))
+    # §6A.3 budget: geometry must stay under 300 KB gzipped.
+    check(gz < 300 * 1024, f"district geometry is {gz // 1024} KB gzipped, budget is 300 KB")
+    print(f"GET /data/districts.geo.json  {status}  {gz // 1024} KB gzipped (budget 300)")
+
+    status, _, lookup = fetch(base + "/data/lookup.json")
+    check(status == 200, f"lookup.json returned {status}")
+    lookup_json = json.loads(lookup)
+    check(len(lookup_json.get("districts", [])) == 51, "lookup is missing districts")
+    check(len(lookup_json.get("boards", [])) == 59, "lookup is missing boards")
+    check(len(lookup_json.get("zips", {})) > 150, "lookup has suspiciously few ZIP codes")
+    print(
+        f"GET /data/lookup.json  {status}  "
+        f"{len(lookup_json['zips'])} ZIPs resolvable without the network"
+    )
 
     # --- manifest -----------------------------------------------------------
     status, _, manifest = fetch(base + "/manifest.json")

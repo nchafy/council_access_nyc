@@ -9,8 +9,13 @@ step.
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import pytest
 
 from showup.geo import Polygon, load_features, locate, overlap_shares
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SQUARE = [[(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0), (0.0, 0.0)]]
 #: A square with a square hole, to prove even-odd fill handles interior rings.
@@ -130,3 +135,85 @@ class TestLoadFeatures:
         polygons = load_features(path, "coundist")
         assert len(polygons) == 1
         assert len(polygons[0].rings) == 2
+
+
+class TestSimplify:
+    def test_ring_is_reduced_but_closed(self):
+        from showup.geo import simplify_rings
+
+        # A long straight edge with redundant mid-points collapses to its ends.
+        ring = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0), (3.0, 3.0), (0.0, 0.0)]
+        out = simplify_rings([ring], tolerance=0.1)[0]
+        assert len(out) < len(ring)
+        assert out[0] == out[-1], "ring must stay closed"
+
+    def test_collapsed_ring_is_dropped(self):
+        from showup.geo import simplify_rings
+
+        # A speck smaller than the tolerance cannot survive as a valid ring.
+        speck = [(0.0, 0.0), (0.00001, 0.0), (0.00001, 0.00001), (0.0, 0.0)]
+        assert simplify_rings([speck], tolerance=1.0) == []
+
+    def test_square_survives(self):
+        from showup.geo import simplify_rings
+
+        out = simplify_rings([SQUARE[0]], tolerance=0.0001)
+        assert len(out) == 1
+        assert len(out[0]) >= 4
+
+
+@pytest.mark.slow
+class TestSimplifiedGeometryAgrees:
+    """The accuracy floor for the address path.
+
+    The browser hit-tests against simplified geometry, so a resident's district is
+    only as correct as that simplification. This measures it rather than assuming
+    it: any point that resolves to a *different* district than the full-precision
+    geometry would tell someone the wrong council member.
+
+    Marked slow (~15 s). Runs in the default suite because it guards the product's
+    central claim, and a tolerance change must not be able to pass silently.
+    """
+
+    def test_assignment_matches_full_precision(self, tmp_path):
+        from showup.geo import to_geojson
+
+        # The gitignored cache, so this skips in CI rather than failing there. It
+        # is the one test that needs the real 3.8 MB geometry: the point is to
+        # compare against full precision, which a fixture cannot stand in for.
+        source = REPO_ROOT / "etl" / "raw" / "districts.geojson"
+        if not source.exists():
+            pytest.skip("etl/raw/districts.geojson absent (gitignored cache; run showup fetch)")
+        full = load_features(source, "coundist")
+
+        path = tmp_path / "simplified.geojson"
+        path.write_text(json.dumps(to_geojson(full, "coundist")))
+        simple = load_features(path, "coundist")
+
+        min_x = min(p.min_x for p in full)
+        max_x = max(p.max_x for p in full)
+        min_y = min(p.min_y for p in full)
+        max_y = max(p.max_y for p in full)
+
+        wrong = inside = 0
+        step = 0.0015
+        y = min_y
+        while y <= max_y:
+            full_row = [p for p in full if p.min_y <= y <= p.max_y]
+            simple_row = [p for p in simple if p.min_y <= y <= p.max_y]
+            x = min_x
+            while x <= max_x:
+                expected = locate(full_row, x, y)
+                if expected is not None:
+                    inside += 1
+                    actual = locate(simple_row, x, y)
+                    if actual is not None and actual != expected:
+                        wrong += 1
+                x += step
+            y += step
+
+        assert inside > 30_000, f"lattice only covered {inside} points"
+        # Measured at 0.011%. The floor is ~0.005% even unsimplified, because
+        # points on a shared edge are ambiguous. 0.05% would mean the tolerance
+        # was loosened without re-measuring.
+        assert wrong / inside < 0.0005, f"{wrong}/{inside} points get the wrong district"

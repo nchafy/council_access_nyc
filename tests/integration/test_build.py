@@ -68,6 +68,38 @@ def raw_dir(tmp_path, calendar_html, district_page_html):
     # From tests/fixtures, NOT etl/raw — the cache is gitignored, and reading it
     # here made these tests pass locally and error in CI.
     shutil.copy2(FIXTURES / "community_boards.json", raw / "community_boards.json")
+
+    # Synthetic district geometry: 51 disjoint squares. The build needs 51 features
+    # to emit site/data/districts.geo.json, and nothing here depends on the shapes
+    # being real — the accuracy of the real simplification is covered separately by
+    # tests/unit/test_geo.py::TestSimplifiedGeometryAgrees, which runs against the
+    # actual DCP file. Committing a 3.8 MB geojson to satisfy a smoke test would be
+    # the wrong trade.
+    features = []
+    for n in range(1, 52):
+        x0 = -74.3 + (n - 1) * 0.02
+        y0 = 40.5
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {"coundist": str(n)},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [x0, y0],
+                            [x0 + 0.018, y0],
+                            [x0 + 0.018, y0 + 0.018],
+                            [x0, y0 + 0.018],
+                            [x0, y0],
+                        ]
+                    ],
+                },
+            }
+        )
+    (raw / "districts.geojson").write_text(
+        json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8"
+    )
     return raw
 
 
@@ -389,3 +421,43 @@ class TestBoardView:
             html = page.read_text()
             for name in names:
                 assert name not in html, f"{name} leaked into {page}"
+
+
+class TestShippedData:
+    """The payloads the address box fetches at runtime."""
+
+    def test_geometry_and_lookup_are_written(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        assert (out / "data" / "districts.geo.json").is_file()
+        assert (out / "data" / "lookup.json").is_file()
+
+    def test_geometry_carries_all_51_districts(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        geo = json.loads((out / "data" / "districts.geo.json").read_text())
+        keys = {f["properties"]["coundist"] for f in geo["features"]}
+        assert keys == {str(n) for n in range(1, 52)}
+
+    def test_lookup_resolves_without_the_network(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        lookup = json.loads((out / "data" / "lookup.json").read_text())
+        assert len(lookup["districts"]) == 51
+        assert len(lookup["boards"]) == 59
+        # ZIPs come from the committed crosswalk, so this also guards against the
+        # crosswalk losing its zips section.
+        assert len(lookup["zips"]) > 150
+        # Every ZIP maps to at least one real district number.
+        for code, districts in lookup["zips"].items():
+            assert code.isdigit() and len(code) == 5
+            assert districts and all(1 <= n <= 51 for n in districts)
+
+    def test_a_wrong_district_count_fails_closed(self, raw_dir, tmp_path):
+        # Geometry with the wrong number of features means the upstream changed;
+        # the build must refuse rather than ship a partial address lookup.
+        (raw_dir / "districts.geojson").write_text(
+            json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"
+        )
+        with pytest.raises(BuildError, match="district geometry"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))

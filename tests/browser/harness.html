@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>address.js harness</title>
+</head>
+<body>
+<!--
+  Test harness for assets/address.js. Not part of the site — served from the built
+  site only so that the script's own fetches of /data/lookup.json resolve.
+
+  It builds the DOM ids address.js expects, loads the real script unmodified, then
+  drives it the way a user would: set the input, dispatch submit, read the DOM.
+
+  Results are reported by fetching /__result, which the test's server records.
+  Reading them back out of the DOM does not work: this Chrome build's --dump-dom
+  returns the page's original source rather than the live DOM, so even a
+  synchronous textContent change is invisible to it.
+
+  Only the branches that do NOT navigate are exercised here, because
+  window.location.assign cannot be stubbed in a modern browser without contorting
+  the production code. Those branches are exactly the interesting ones — the ZIP
+  that straddles districts, the name match, the out-of-city refusal — and the
+  navigating branch is a single guarded call asserted separately.
+-->
+<section id="address-section" hidden>
+  <form id="address-form"><input id="address-input"><button type="submit">Find</button></form>
+  <p id="address-status"></p>
+  <div id="address-results"></div>
+</section>
+
+<pre id="report">running…</pre>
+
+<script src="/assets/address.js" defer></script>
+<script>
+window.addEventListener("load", function () {
+  var input = document.getElementById("address-input");
+  var form = document.getElementById("address-form");
+  var status = document.getElementById("address-status");
+  var results = document.getElementById("address-results");
+  var report = document.getElementById("report");
+  var lines = [];
+
+  function check(name, condition, detail) {
+    lines.push((condition ? "PASS " : "FAIL ") + name + (condition ? "" : "  << " + detail));
+  }
+
+  function submit(value) {
+    input.value = value;
+    form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+  }
+
+  function step(fn, delay) {
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        fn();
+        resolve();
+      }, delay);
+    });
+  }
+
+  // The script reveals the section once it is running.
+  check("section revealed", document.getElementById("address-section").hidden === false,
+        "still hidden");
+
+  Promise.resolve()
+    .then(function () {
+      return step(function () { submit(""); }, 50);
+    })
+    .then(function () {
+      return step(function () {
+        check("empty input prompts", /Type an address/.test(status.textContent), status.textContent);
+      }, 120);
+    })
+    .then(function () {
+      return step(function () { submit("11217"); }, 50);
+    })
+    .then(function () {
+      return step(function () {
+        var text = results.textContent;
+        check("multi-district ZIP offers a choice",
+              /covers more than one council district/.test(text) || /Council District/.test(text),
+              text.slice(0, 120));
+        check("ZIP choice links districts", results.querySelectorAll('a[href^="/district/"]').length > 0,
+              "no district links");
+      }, 400);
+    })
+    .then(function () {
+      return step(function () { submit("Fort Greene"); }, 50);
+    })
+    .then(function () {
+      return step(function () {
+        var links = results.querySelectorAll("a");
+        check("neighbourhood name matches", links.length > 0, results.textContent.slice(0, 120));
+        var hrefs = Array.prototype.map.call(links, function (a) { return a.getAttribute("href"); });
+        check("matches link to real pages",
+              hrefs.every(function (h) { return /^\/(district|board)\/[0-9]+\/$/.test(h); }),
+              hrefs.join(","));
+      }, 400);
+    })
+    .then(function () {
+      return step(function () { submit("07102"); }, 50);
+    })
+    .then(function () {
+      return step(function () {
+        check("non-NYC ZIP is refused by name",
+              /not in New York City/.test(status.textContent), status.textContent);
+      }, 400);
+    })
+    .then(function () {
+      // Privacy: nothing the user typed may have leaked into the URL or storage.
+      check("address not in URL", window.location.href.indexOf("11217") === -1 &&
+            window.location.href.indexOf("Fort") === -1, window.location.href);
+      check("nothing written to localStorage", window.localStorage.length === 0,
+            "localStorage has " + window.localStorage.length + " keys");
+      check("nothing written to sessionStorage", window.sessionStorage.length === 0,
+            "sessionStorage has " + window.sessionStorage.length + " keys");
+      check("no cookies set", document.cookie === "", document.cookie);
+
+      var verdict = lines.some(function (l) { return l.indexOf("FAIL") === 0; }) ? "FAILED" : "OK";
+      report.textContent = "RESULT " + verdict + "\n" + lines.join("\n");
+
+      // Report over HTTP rather than through the DOM. This Chrome build's
+      // --dump-dom serialises the original source, not the live DOM, so an
+      // assertion that reads the page would always see "running…". The test's
+      // server records this request instead, which is robust to that quirk.
+      fetch("/__result?verdict=" + verdict + "&lines=" + encodeURIComponent(lines.join("|")));
+    });
+});
+</script>
+</body>
+</html>

@@ -195,3 +195,139 @@ def overlap_shares(
         shares.sort(key=lambda pair: (-pair[1], pair[0]))
         result[key] = shares
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Simplification, for shipping geometry to a browser
+# --------------------------------------------------------------------------- #
+
+#: Douglas-Peucker tolerance in degrees, ~2.2 m. Chosen by measurement, not taste.
+#: Measured over a 37,000-point citywide lattice, comparing the district each point
+#: resolves to against the full-precision geometry:
+#:
+#:     tolerance   gzipped   points assigned to the WRONG district
+#:     11 m         60 KB    0.059%
+#:     2.2 m       132 KB    0.011%   <- chosen
+#:     none        372 KB    0.005%
+#:
+#: The floor is not zero: even unsimplified geometry disagrees on 2 points, which
+#: are lattice points sitting exactly on a shared edge — an artifact of the
+#: comparison rather than of simplification. So 2.2 m is close to as good as this
+#: gets, at a third of the 300 KB payload budget. Going coarser is a fivefold
+#: accuracy cost for 72 KB, which is the wrong trade for a page whose whole claim
+#: is "this is your council member".
+#:
+#: Boundary cases remain possible, which is why the address result always offers
+#: the City's own lookup as the authority — our geometry is a copy of DCP's
+#: published lines, not the legal definition of a district.
+SIMPLIFY_TOLERANCE_DEG = 0.00002
+
+#: Coordinate precision. 5 decimals is ~1 m, well below any boundary's accuracy,
+#: and truncating there is most of the file-size win.
+COORD_PRECISION = 5
+
+
+def _perpendicular_distance(
+    point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]
+) -> float:
+    px, py = point
+    ax, ay = start
+    bx, by = end
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return ((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2) ** 0.5
+
+
+def simplify_ring(ring: list[tuple[float, float]], tolerance: float) -> list[tuple[float, float]]:
+    """Douglas-Peucker, iterative.
+
+    Iterative rather than recursive because a single coastline ring runs to tens of
+    thousands of vertices and the recursive form blows the stack on real input.
+    """
+    if len(ring) <= 3:
+        return list(ring)
+
+    keep = [False] * len(ring)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(ring) - 1)]
+    while stack:
+        first, last = stack.pop()
+        worst = -1.0
+        index = -1
+        for i in range(first + 1, last):
+            distance = _perpendicular_distance(ring[i], ring[first], ring[last])
+            if distance > worst:
+                worst, index = distance, i
+        if worst > tolerance and index != -1:
+            keep[index] = True
+            stack.append((first, index))
+            stack.append((index, last))
+    return [point for point, keeper in zip(ring, keep, strict=True) if keeper]
+
+
+def simplify_rings(
+    rings: list[list[tuple[float, float]]],
+    *,
+    tolerance: float = SIMPLIFY_TOLERANCE_DEG,
+    precision: int = COORD_PRECISION,
+) -> list[list[tuple[float, float]]]:
+    """Simplify and round every ring, dropping any that collapses.
+
+    A ring needs four positions to be a valid closed ring. Islands smaller than
+    the tolerance disappear — an accepted trade, since they are also too small to
+    contain a distinguishable address at this precision, and the agreement test
+    would fail if the loss mattered.
+    """
+    out: list[list[tuple[float, float]]] = []
+    for ring in rings:
+        simplified = simplify_ring(ring, tolerance)
+        rounded = [(round(x, precision), round(y, precision)) for x, y in simplified]
+        deduped = [p for i, p in enumerate(rounded) if i == 0 or p != rounded[i - 1]]
+        if deduped and deduped[0] != deduped[-1]:
+            deduped.append(deduped[0])
+        if len(deduped) >= 4:
+            out.append(deduped)
+    return out
+
+
+def to_geojson(
+    polygons: list[Polygon],
+    key_property: str,
+    *,
+    simplify: bool = True,
+    tolerance: float | None = None,
+    precision: int = COORD_PRECISION,
+) -> dict:
+    """Serialise polygons back to GeoJSON, optionally simplified for the browser.
+
+    Every feature becomes a MultiPolygon of its rings. We do not attempt to
+    reconstruct the original outer/inner nesting: the browser's hit test uses the
+    same even-odd rule as `Polygon.contains`, so a flat ring list is equivalent for
+    our purpose and simpler to be correct about.
+    """
+    features = []
+    for polygon in sorted(polygons, key=lambda p: p.key):
+        rings = (
+            simplify_rings(
+                polygon.rings,
+                tolerance=SIMPLIFY_TOLERANCE_DEG if tolerance is None else tolerance,
+                precision=precision,
+            )
+            if simplify
+            else polygon.rings
+        )
+        if not rings:
+            continue
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {key_property: polygon.key},
+                "geometry": {
+                    "type": "MultiPolygon",
+                    "coordinates": [[list(map(list, ring))] for ring in rings],
+                },
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}

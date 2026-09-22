@@ -29,6 +29,7 @@ __all__ = [
     "generate",
     "load",
     "load_boards_to_districts",
+    "load_zips",
 ]
 
 CROSSWALK_PATH = Path("crosswalks/council_to_boards.json")
@@ -38,7 +39,9 @@ class CrosswalkError(RuntimeError):
     """The crosswalk is missing, malformed, or does not cover all 51 districts."""
 
 
-def generate(council_geojson: Path, community_geojson: Path) -> dict:
+def generate(
+    council_geojson: Path, community_geojson: Path, zip_geojson: Path | None = None
+) -> dict:
     """Compute the crosswalk. Slow by design; called by `showup crosswalk` only."""
     council = load_features(council_geojson, "coundist")
     if len(council) != 51:
@@ -55,6 +58,21 @@ def generate(council_geojson: Path, community_geojson: Path) -> dict:
     # CB 2, while boards[302][35] answers the different question of how much of
     # CB 2 sits in district 35. The board view needs the second.
     reverse = overlap_shares(boards, council)
+
+    # ZIP -> council districts, so a reader can type "11217" instead of a street
+    # address and never touch the geocoder. The city publishes *modified* ZCTAs,
+    # which merge some real ZIPs into one area, so each feature's `zcta` field is
+    # expanded back out to the ZIPs a person would actually type.
+    zips: dict[str, list[list]] = {}
+    if zip_geojson and Path(zip_geojson).exists():
+        zctas = load_features(zip_geojson, "modzcta")
+        zcta_shares = overlap_shares(zctas, council, min_share=0.02)
+        members = _zcta_members(zip_geojson)
+        for code, pairs in zcta_shares.items():
+            if not pairs:
+                continue
+            for real_zip in members.get(code, [code]):
+                zips[real_zip] = [[district, share] for district, share in pairs]
 
     uncovered = sorted((key for key, value in shares.items() if not value), key=int)
     if uncovered:
@@ -87,7 +105,27 @@ def generate(council_geojson: Path, community_geojson: Path) -> dict:
             key: [[code, share] for code, share in value]
             for key, value in sorted(reverse.items(), key=lambda kv: int(kv[0]))
         },
+        "zips": dict(sorted(zips.items())),
     }
+
+
+def _zcta_members(path: Path) -> dict[str, list[str]]:
+    """modzcta code -> the real ZIP codes it represents.
+
+    `10001` is published as a modified ZCTA covering `10001, 10119, 10199`, and a
+    resident types one of the members, not the modified code.
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    out: dict[str, list[str]] = {}
+    for feature in data.get("features", []):
+        props = feature.get("properties") or {}
+        code = str(props.get("modzcta", "")).strip()
+        if not code:
+            continue
+        raw = str(props.get("zcta") or props.get("label") or code)
+        members = [part.strip() for part in raw.split(",") if part.strip().isdigit()]
+        out[code] = members or [code]
+    return out
 
 
 def load(path: Path) -> dict[int, list[tuple[str, float]]]:
@@ -137,3 +175,20 @@ def load_boards_to_districts(path: Path) -> dict[str, list[tuple[int, float]]]:
     if empty:
         raise CrosswalkError(f"community boards with no council district: {empty}")
     return result
+
+
+def load_zips(path: Path) -> dict[str, list[tuple[int, float]]]:
+    """ZIP code -> the council districts it overlaps, largest share first.
+
+    A ZIP is not a district and routinely straddles two or three, so this returns
+    every overlap rather than a single answer. The UI offers the choice instead of
+    guessing which one the reader meant.
+    """
+    file = Path(path)
+    if not file.exists():
+        raise CrosswalkError(f"{file} is missing. Run `showup crosswalk`.")
+    data = json.loads(file.read_text(encoding="utf-8"))
+    return {
+        str(code): [(int(district), float(share)) for district, share in pairs]
+        for code, pairs in (data.get("zips") or {}).items()
+    }

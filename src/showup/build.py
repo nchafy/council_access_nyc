@@ -19,8 +19,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts
+from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
 from .crosswalk import load as load_crosswalk
+from .geo import load_features, to_geojson
 from .model import District, DistrictBoard, Manifest, Member
 from .render import render_board, render_district, render_index, render_not_found
 from .sources.boards import load_boards
@@ -278,6 +279,39 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         encoding="utf-8",
     )
 
+    # Geometry for the address box. The city geocoder returns a coordinate but
+    # NOT a council district, so the browser has to do the point-in-polygon itself.
+    # Shipped simplified: 132 KB gzipped against 3.8 MB raw, measured to assign the
+    # same district as full precision on 99.99% of a citywide lattice
+    # (tests/unit/test_geo.py::TestSimplifiedGeometryAgrees).
+    data_dir = staging / "data"
+    data_dir.mkdir()
+    council_polygons = load_features(raw / "districts.geojson", "coundist")
+    if len(council_polygons) != DISTRICT_COUNT:
+        raise BuildError(
+            f"district geometry has {len(council_polygons)} features, expected {DISTRICT_COUNT}"
+        )
+    (data_dir / "districts.geo.json").write_text(
+        json.dumps(to_geojson(council_polygons, "coundist"), separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    # Everything resolvable without the network: a district number, a neighbourhood
+    # name, a board name, or a ZIP. Typing one of these must never reach the
+    # geocoder — it is faster and it keeps the input on the machine.
+    zips = load_zips(repo_root / CROSSWALK_PATH)
+    lookup = {
+        "districts": [{"n": d.number, "hoods": d.neighborhoods or ""} for d in districts],
+        "boards": [
+            {"code": b.code, "label": b.label, "hoods": b.neighborhoods or ""}
+            for b in sorted(boards_by_code.values(), key=lambda b: b.code)
+        ],
+        "zips": {code: [n for n, _ in pairs] for code, pairs in sorted(zips.items())},
+    }
+    (data_dir / "lookup.json").write_text(
+        json.dumps(lookup, separators=(",", ":")), encoding="utf-8"
+    )
+
     assets_src = Path(__file__).parent / "assets"
     shutil.copytree(assets_src, staging / "assets")
 
@@ -335,6 +369,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "districts_with_gaps": sum(1 for d in districts if d.missing),
         "boards_linked": sum(len(d.boards) for d in districts),
         "board_pages": len(boards_by_code),
+        "zip_codes": len(zips),
         "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [
             d.number for d in districts if d.member and d.member.seat_status == "vacant"

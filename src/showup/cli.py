@@ -70,7 +70,11 @@ def main(argv: list[str] | None = None) -> int:
         out = (REPO_ROOT / args.out).resolve()
         print("sweeping the city lattice — this takes about 35 seconds")
         try:
-            data = generate(raw / "districts.geojson", raw / "community_districts.geojson")
+            data = generate(
+                raw / "districts.geojson",
+                raw / "community_districts.geojson",
+                raw / "modzcta.geojson",
+            )
         except CrosswalkError as error:
             print(f"crosswalk refused: {error}", file=sys.stderr)
             return 1
@@ -82,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             f"  districts: {len(counts)}   boards per district: "
             f"min {min(counts)}, max {max(counts)}, mean {sum(counts) / len(counts):.1f}"
         )
+        print(f"  zip codes: {len(data.get('zips') or {})}")
         print("  read the diff before committing it")
         return 0
 

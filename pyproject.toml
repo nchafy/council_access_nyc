@@ -38,6 +38,7 @@ filterwarnings = ["error"]
 markers = [
     "upstream: hits a real third-party host; excluded from CI, run on a schedule",
     "browser: needs a local Chrome; excluded from the default run",
+    "slow: takes more than a few seconds; still runs by default",
 ]
 
 [tool.ruff]

@@ -32,9 +32,17 @@ _DOC_TITLE = "Show Up NYC"
 _TAGLINE = "What your city government is doing, and what you can still do about it."
 
 
-def _layout(*, title: str, body: str, built_at: datetime, window_end: date | None) -> str:
+def _layout(
+    *,
+    title: str,
+    body: str,
+    built_at: datetime,
+    window_end: date | None,
+    extra_script: str | None = None,
+) -> str:
     """The shared shell. No inline script and no inline style — the CSP in
     `_headers` forbids both, so everything is an external first-party file."""
+    extra = f'<script src="/assets/{esc(extra_script)}" defer></script>' if extra_script else ""
     window = (
         f"We can see meetings scheduled through {esc(window_end.strftime('%-d %B %Y'))}."
         if window_end
@@ -73,6 +81,7 @@ def _layout(*, title: str, body: str, built_at: datetime, window_end: date | Non
   </p>
 </footer>
 <script src="/assets/site.js" defer></script>
+{extra}
 </body>
 </html>
 """
@@ -154,6 +163,30 @@ def render_index(
   </p>
 </section>
 
+<section class="picker" id="address-section" hidden>
+  <h2>Start with your address</h2>
+  <p class="why">
+    An address, a ZIP code, a neighbourhood, or just a district number. Your address
+    is sent to the City's address lookup only when you press Find, with logging
+    switched off, and never appears in the page URL.
+  </p>
+  <form id="address-form" action="#" method="get" autocomplete="off">
+    <label for="address-input">Address, ZIP, neighbourhood or district number</label>
+    <input
+      id="address-input"
+      name="q"
+      type="text"
+      inputmode="text"
+      autocomplete="off"
+      autocorrect="off"
+      spellcheck="false"
+      placeholder="350 Jay Street, or 11217, or Fort Greene, or 35">
+    <button type="submit">Find</button>
+  </form>
+  <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
+  <div id="address-results"></div>
+</section>
+
 <section class="picker">
   <h2>City Council district</h2>
   <p class="why">
@@ -209,7 +242,13 @@ def render_index(
 </section>
 """
     return _layout(
-        title="Find your district or board", body=body, built_at=built_at, window_end=window_end
+        title="Find your district or board",
+        body=body,
+        built_at=built_at,
+        window_end=window_end,
+        # Only the front page carries the address logic and the geometry it pulls,
+        # so the other 110 pages do not download either.
+        extra_script="address.js",
     )
 
 

@@ -45,7 +45,14 @@ Ways in, all producing one of those two pages:
 
 1. **Two dropdowns**, one per view, each with a plain-link list below it for the
    no-JavaScript, keyboard and screen-reader path.
-2. **An address box.** Geocode, resolve the containing district, redirect. *(Not built yet.)*
+2. **An address box.** Built 2026-09-22. Submit-only — there is no
+   autocomplete-as-you-type, which removes a class of keystroke leakage to a third
+   party. An address, ZIP, neighbourhood name or district number all work, and
+   everything except a street address resolves **entirely locally** from a
+   committed index, never touching the geocoder. ZIPs straddle districts, so a ZIP
+   offers the choice instead of guessing. `private=true` on every geocoder call,
+   asserted by the gate. Out-of-city input is refused by name ("that looks like
+   Newark") from what the geocoder says it *parsed*, before anything renders.
 
 `/district/35` and `/board/302` are the canonical, shareable URLs. The typed address never
 appears in either.
@@ -99,11 +106,20 @@ Cut for now, each recoverable later:
 - **Calendar files (`.ics`).** Cheap, but not needed to prove the product.
 - **Search by subject, and the citywide browse view.**
 
-**Note on geometry:** the address path still needs the district polygons, because the NYC
-geocoder returns coordinates but *not* a council district, so the lookup is a point-in-polygon
-test. Phase 1 therefore ships simplified geometry **for resolution only, never for display** —
-a meaningful distinction, since the accuracy bar is correctness of assignment rather than
-appearance, and no tile or rendering library is involved.
+**Note on geometry:** the address path needs the district polygons, because the NYC geocoder
+returns coordinates but *not* a council district, so the lookup is a point-in-polygon test in the
+browser. Phase 1 ships simplified geometry **for resolution only, never for display** — the
+accuracy bar is correctness of assignment, not appearance, and no tile or rendering library is
+involved.
+
+The tolerance was chosen by measurement, not taste. Over a 37,000-point citywide lattice,
+comparing the district each point resolves to against full precision: 11 m tolerance gives 60 KB
+gzipped and 0.059% wrong; **2.2 m gives 132 KB and 0.011%**; no simplification gives 372 KB and
+0.005%. The floor is not zero — even unsimplified geometry disagrees on 2 points that sit exactly
+on a shared edge. 2.2 m is close to the floor at a third of the 300 KB budget, and
+`tests/unit/test_geo.py::TestSimplifiedGeometryAgrees` fails if the tolerance is loosened without
+re-measuring. Because boundary cases remain possible, the address result always offers the City's
+own lookup: our geometry is a copy of DCP's published lines, not the legal definition.
 
 ## 4. Security — the top priority
 

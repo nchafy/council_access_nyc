@@ -7,7 +7,7 @@
 # uv manages the toolchain; nothing here needs a pre-activated virtualenv.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup build serve test lint fmt check verify shot clean fetch open
+.PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open
 
 PORT ?= 8000
 ROOT ?= site
@@ -38,8 +38,11 @@ fmt: ## apply ruff formatting
 	uv run ruff format .
 	uv run ruff check --fix .
 
-test: ## unit and contract tests (no network)
+test: ## unit and contract tests (no network, no browser)
 	uv run pytest -m "not upstream and not browser"
+
+browser: build ## drive the address box in real headless Chrome
+	uv run pytest -m browser -v
 
 check: ## the fast gate: lint + test
 	@$(MAKE) --no-print-directory lint

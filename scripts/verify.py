@@ -213,7 +213,9 @@ def _run_checks(base: str, site: Path) -> None:
     print(f"GET /manifest.json  {status}")
 
     # --- the privacy line: no community board chair or district manager --------
-    boards = json.loads((REPO_ROOT / "etl" / "raw" / "community_boards.json").read_text())
+    # The committed fixture, not the gitignored cache, so this check works on a
+    # fresh clone and in CI.
+    boards = json.loads((REPO_ROOT / "tests" / "fixtures" / "community_boards.json").read_text())
     names = {
         (row.get(field) or "").strip()
         for row in boards

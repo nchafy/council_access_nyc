@@ -75,6 +75,21 @@ parsed below its floor means the upstream shape probably changed. The previous
 `site/` is deliberately left untouched. Fix the parser or update the fixture —
 never lower the floor to make it pass.
 
+## Simulating CI before you push
+
+`make verify` uses `etl/raw/`, which is **gitignored**. A test that reads from it
+passes locally and errors in CI. Reproduce the CI environment by hiding the cache:
+
+```bash
+mv etl/raw /tmp/raw_hidden
+uv run pytest -m "not upstream and not browser" -q   # must pass
+mv /tmp/raw_hidden etl/raw
+```
+
+This has already caught one real failure: the community-board integration tests
+read `etl/raw/community_boards.json` and CI could not find it. Test data belongs in
+`tests/fixtures/`, always.
+
 ## Coverage floor
 
 `--cov-fail-under=85` (currently ~90%). If a change drops it, add the test rather

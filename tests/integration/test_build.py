@@ -24,6 +24,7 @@ from showup.render import render_district, render_index
 from showup.sources.calendar import parse_calendar, upcoming
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXTURES = REPO_ROOT / "tests" / "fixtures"
 
 
 @pytest.fixture
@@ -64,7 +65,9 @@ def raw_dir(tmp_path, calendar_html, district_page_html):
 
     # Real community-board rows: 59 of them, needed to clear the boards floor and
     # to carry the real chair / district-manager names the privacy test checks.
-    shutil.copy2(REPO_ROOT / "etl" / "raw" / "community_boards.json", raw / "community_boards.json")
+    # From tests/fixtures, NOT etl/raw — the cache is gitignored, and reading it
+    # here made these tests pass locally and error in CI.
+    shutil.copy2(FIXTURES / "community_boards.json", raw / "community_boards.json")
     return raw
 
 

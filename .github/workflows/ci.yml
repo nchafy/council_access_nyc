@@ -86,8 +86,14 @@ jobs:
           echo "$collected browser gate tests collected"
           [ "$collected" -ge 60 ] || { echo "::error::only $collected collected, expected 60+"; exit 1; }
 
+      # `--no-cov` because `--cov-fail-under=100` is in addopts and applies to whatever
+      # subset runs. The browser gates touch about 70% of `showup` by design — they
+      # exercise the built site, not every parser — so leaving coverage on would fail
+      # this job on every run for a reason that has nothing to do with the gates. The
+      # 100% floor is enforced where it means something: the `test` job above, which
+      # runs the whole non-browser suite.
       - name: Accessibility, console and performance gates
-        run: uv run pytest -m browser -v
+        run: uv run pytest -m browser -v --no-cov
 
   # The site build needs the cached upstream payloads in etl/raw/, which are gitignored
   # (78 MB, re-fetchable). Until CI can populate that cache, this job can only run where

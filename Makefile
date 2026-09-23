@@ -48,8 +48,11 @@ fmt: ## apply ruff formatting
 test: ## unit and contract tests (no network, no browser)
 	uv run pytest -m "not upstream and not browser"
 
-browser: build ## drive the address box in real headless Chrome
-	uv run pytest -m browser -v
+browser: build ## every browser gate in one pytest run (~110 s)
+	# --no-cov: the 100% floor in addopts applies to whatever subset runs, and the
+	# browser gates deliberately touch ~70% of `showup` — they drive the built site,
+	# not every parser. `make test` is where the floor means something.
+	uv run pytest -m browser -v --no-cov
 
 check: ## the fast gate: lint + test
 	@$(MAKE) --no-print-directory lint

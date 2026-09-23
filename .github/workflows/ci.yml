@@ -14,9 +14,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
+      # Actions are pinned to commit SHAs, not tags, because §4.5 requires it and this
+      # file did not do it. A tag is a movable pointer: `@v4` means "whatever that org
+      # pushes to that tag next", and a compromised action runs with the job's
+      # permissions. The trailing comment records which release each SHA was, since a
+      # bare SHA is unreadable and would otherwise never be updated.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -34,19 +38,74 @@ jobs:
       # city dataset keeping its shape. Contract tests that DO hit upstream are
       # marked `upstream` and run on a schedule instead, so a third party can
       # never redden this build.
+      #
+      # This job also carries R40's page-weight budget, in
+      # tests/integration/test_budget.py, and the CSP cross-check in
+      # tests/unit/test_csp.py. Both are arithmetic over committed bytes, so they need
+      # no browser and belong here, where they run on every commit.
       - name: Tests
         run: uv run pytest -m "not upstream and not browser"
 
-  # The site build needs the cached upstream payloads in etl/raw/, which are
-  # gitignored (78 MB, re-fetchable). Until `showup fetch` exists, this job can
-  # only run where that cache is present, so it is skipped rather than silently
-  # passing on an empty build.
+  # R39 and R40's browser halves: axe over every pre-rendered page, the keyboard and
+  # accessibility-tree pass, the console and CSP check, and the throttled-3G cold load.
+  #
+  # These build a site from committed fixtures rather than from etl/raw/, which is
+  # gitignored and absent on a runner. That is what makes them gate-able at all — a
+  # check that only ran where an upstream cache happens to exist would not be a gate.
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      # The browser fixture skips when Chrome is missing. That is right locally, where
+      # not every contributor has one, and wrong here, where a skipped gate reports
+      # success. Assert it exists as its own step so the job fails loudly if a runner
+      # image ever drops it.
+      - name: Chrome must be present, or these gates are theatre
+        run: |
+          set -eu
+          command -v google-chrome >/dev/null 2>&1 \
+            || command -v google-chrome-stable >/dev/null 2>&1 \
+            || { echo "::error::no Chrome on this runner; the browser gates would all skip"; exit 1; }
+          google-chrome --version || google-chrome-stable --version
+
+      # Belt and braces on the same failure: if the tests were somehow all deselected,
+      # the run below would still be green. Require that they exist first.
+      - name: The gates must exist, not merely not fail
+        run: |
+          set -eu
+          # The summary line reads "68/9129 tests collected (9061 deselected)", so take
+          # the leading integer rather than the first space-separated field.
+          collected=$(uv run pytest -m browser --collect-only -q --color=no \
+            | tail -1 | grep -oE '^[0-9]+')
+          echo "$collected browser gate tests collected"
+          [ "$collected" -ge 60 ] || { echo "::error::only $collected collected, expected 60+"; exit 1; }
+
+      - name: Accessibility, console and performance gates
+        run: uv run pytest -m browser -v
+
+  # The site build needs the cached upstream payloads in etl/raw/, which are gitignored
+  # (78 MB, re-fetchable). Until CI can populate that cache, this job can only run where
+  # it is already present, so it is skipped rather than silently passing on an empty
+  # build. The `gates` job deliberately does NOT depend on it: it builds its own site
+  # from fixtures so the browser gates do not wait on this being solved.
   site:
     runs-on: ubuntu-latest
-    if: false # enable once `showup fetch` lands and CI can populate etl/raw/
+    if: false # enable once CI can populate etl/raw/
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync
       - run: uv run showup build
       - run: uv run python scripts/verify.py
+      # Against the real data and the real geometry, which the fixture site cannot
+      # cover: 132 KB of simplified polygons, and 51 pages of real upstream markup
+      # whose lengths and missing fields vary in ways fixtures only approximate.
+      - run: uv run python scripts/perf.py --weight-only
+      - run: uv run python scripts/axe_check.py --all
+      - run: uv run python scripts/console_check.py --all

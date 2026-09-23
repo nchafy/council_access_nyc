@@ -7,7 +7,8 @@
 # uv manages the toolchain; nothing here needs a pre-activated virtualenv.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open
+.PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open \
+	axe a11y console perf gates
 
 PORT ?= 8000
 ROOT ?= site
@@ -62,6 +63,29 @@ verify: build ## the real gate: build, lint, test, then assert against a live se
 
 shot: build ## screenshot the built site with headless Chrome
 	uv run python scripts/shot.py
+
+# The four M5 gates. Each runs against the real site/ here and against a
+# fixture-built site in CI, using the same code either way — see tests/browser/.
+# `make verify` deliberately does not call them: together they are about two
+# minutes of real browser time, and the fast gate has to stay fast to stay used.
+
+axe: build ## axe-core over every page type (add ALL=1 for all 114)
+	uv run python scripts/axe_check.py $(if $(ALL),--all,)
+
+a11y: build ## real Tab keys and the accessibility tree, over every page type
+	uv run python scripts/a11y_audit.py
+
+console: build ## fail on any console error or CSP violation (add ALL=1 for all 114)
+	uv run python scripts/console_check.py $(if $(ALL),--all,)
+
+perf: build ## page weight, and cold load p95 on throttled 3G (slow: ~2 min)
+	uv run python scripts/perf.py
+
+gates: ## every M5 gate, in the order a failure is cheapest to read
+	@$(MAKE) --no-print-directory axe
+	@$(MAKE) --no-print-directory a11y
+	@$(MAKE) --no-print-directory console
+	@$(MAKE) --no-print-directory perf
 
 clean: ## remove build output
 	rm -rf site site.building screenshots .pytest_cache .ruff_cache .coverage

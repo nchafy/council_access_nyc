@@ -1,0 +1,77 @@
+{
+  "_comment": [
+    "The performance promises of R40, in one file, so changing one is a reviewable diff",
+    "rather than an edited number inside a script. scripts/perf.py reads this; nothing",
+    "hard-codes a threshold.",
+    "",
+    "Throughput is in BYTES per second, which is what Chrome's",
+    "Network.emulateNetworkConditions takes. 200000 B/s is 1.6 Mbit/s."
+  ],
+
+  "page_weight_gzip_bytes": 61440,
+  "_page_weight_note": [
+    "R40: 'initial HTML + CSS + district JSON under 60 KB gzipped'. 60 KB = 61440 bytes.",
+    "Counted as what the browser must have before the page is readable and the dropdowns",
+    "work: the document, every stylesheet it links, and every script it loads. Anything",
+    "fetched after first paint is not in this number and is bounded separately below."
+  ],
+
+  "script_gzip_bytes": 12288,
+  "_script_note": [
+    "A tighter ceiling on JavaScript alone: 12 KB gzipped for site.js + address.js",
+    "together, measured at 6.7 KB. The 60 KB page budget is loose enough that a",
+    "framework could hide inside it, and §2 decides vanilla ES modules with no bundler",
+    "and no runtime dependency — a claim about the code that only stays true if it is a",
+    "number somewhere. React with its DOM package is about 45 KB gzipped, so anything",
+    "of that shape trips this long before it troubles the page budget."
+  ],
+
+  "geometry_gzip_bytes": 307200,
+  "_geometry_note": [
+    "§6A.3: simplified district geometry, fetched after first paint, budget 300 KB",
+    "gzipped. Measured at 132 KB at the pinned 2.2 m tolerance. It is only fetched when",
+    "a street address is submitted, so it is never on the critical path of a district",
+    "number, a ZIP, a neighbourhood, a dropdown choice or a shared /district/N link."
+  ],
+
+  "cold_load_ms_p95": 3000,
+  "runs": 20,
+  "_runs_note": [
+    "§6A asks for p95 over at least 20 runs. With 20 samples the p95 is the 19th",
+    "ordered value, so a single slow run does not pass and a single fast one does not",
+    "rescue it."
+  ],
+
+  "gating_profile": "3g-fast",
+  "profiles": {
+    "3g-fast": {
+      "label": "3G Fast, as WebPageTest defines it, plus a mid-tier Android CPU",
+      "download_bps": 200000,
+      "upload_bps": 96000,
+      "latency_ms": 300,
+      "cpu": 4
+    },
+    "3g-slow": {
+      "label": "Chrome DevTools' own Slow 3G preset — reported, never gated",
+      "download_bps": 50000,
+      "upload_bps": 50000,
+      "latency_ms": 2000,
+      "cpu": 4
+    }
+  },
+  "_profile_note": [
+    "Two profiles, one gate. '3g-fast' is the promise: it is the profile R40's 3 s was",
+    "written against and the one CI fails on.",
+    "",
+    "'3g-slow' is measured and printed and never gated, because a 2000 ms round trip",
+    "spends 6 s on three sequential round trips before a single byte of ours is",
+    "considered. Under that profile the number says nothing about our page weight — it",
+    "measures the network. Gating on it would mean the only way to pass is to stop",
+    "loading a stylesheet. It is reported so the figure is on the record rather than",
+    "quietly chosen away.",
+    "",
+    "Both figures are CI measurements on a reference profile, never observed field",
+    "percentiles. There is no real-user monitoring because analytics are banned, and",
+    "§2 says so out loud: SLA evidence is synthetic, and we say so."
+  ]
+}

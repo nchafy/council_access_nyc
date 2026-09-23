@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -93,6 +96,38 @@ class HeaderApplyingHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         if not self.quiet:
             super().log_message(fmt, *args)
+
+
+@contextmanager
+def background_server(root: Path, headers: Path | None = None) -> Iterator[str]:
+    """Serve `root` with the real headers for the life of the block; yield its base URL.
+
+    The accessibility and performance gates all need the same thing: the built site,
+    on a real port, behind the real `Content-Security-Policy`. Running them against a
+    bare `SimpleHTTPRequestHandler` would measure a site that does not exist — a
+    stylesheet blocked by a policy mistake changes both the colour-contrast result
+    and the load time, and changes them in the flattering direction.
+
+    The port is OS-assigned, so two gates can run at once without colliding. The
+    handler's configuration is class-level, which is how `http.server` is meant to be
+    parameterised but does mean two servers in *one* process would share it. No
+    caller does that; this note is here so nobody starts.
+    """
+    rules = parse_headers_file(headers or REPO_ROOT / "_headers")
+    if not rules:
+        raise RuntimeError("no header rules found; refusing to serve a site without its CSP")
+    HeaderApplyingHandler.header_rules = rules
+    HeaderApplyingHandler.quiet = True
+    handler = partial(HeaderApplyingHandler, directory=str(root))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
 
 
 def main(argv: list[str] | None = None) -> int:

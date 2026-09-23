@@ -105,3 +105,42 @@ exploration doc.
   at all and the operator had to repeat the whole crawl. Fixed with one retry pass over just the
   failures. | generic: "fail closed and keep the last good copy" degrades to "fail" on first run.
   Any long polite crawl needs a retry pass over its own failures, or the cold path is a coin flip.
+- 2026-09-23 | `_headers` `connect-src`, found by the first browser run behind the real CSP | The
+  directive named the geocoder and omitted `'self'`, so all three same-origin fetches were refused:
+  `/data/lookup.json`, `/data/districts.geo.json`, `/manifest.json`. Local resolution of a ZIP,
+  neighbourhood or district number therefore fell through to the geocoder — a policy written to
+  protect the reader's address was causing **more** of their input to be sent — and the staleness
+  notice silently never rendered. Invisible because the one browser test served the site from a
+  bare file server with no CSP, and `verify.py` fetched the manifest over plain HTTP. | generic:
+  testing a feature and testing it *under the policy shipped with it* are different tests, and the
+  second one is the only one that is true. Any project with a CSP needs a gate that loads every
+  page in a browser behind the real headers and fails on any console error.
+- 2026-09-23 | `tests/fixtures/a11y_broken/`, the axe negative control | The deliberate
+  colour-contrast defect was in a `<style>` block and axe never reported it, because `style-src
+  'self'` blocked the inline CSS and the rule applied to nothing. The negative control was itself
+  testing nothing, and caught that by being the thing under test. | generic: a negative control
+  built for a gate must be built for the *environment* of the gate. Write it to the same
+  constraints as production, or it proves the gate works on a page that cannot exist.
+- 2026-09-23 | `scripts/cdp.py`, headless focus behaviour | Tabbing past the last focusable element
+  does not release focus to the browser's own controls in headless Chrome — there are none, so
+  focus wraps to the top. An assertion that "focus can leave the page" reported all 9 page types as
+  focus traps. The property that actually distinguishes a trap is reachability: n Tab presses must
+  visit n distinct elements. | generic: assert the invariant a defect breaks, not the behaviour a
+  windowed browser happens to have. Also: `Input.dispatchKeyEvent` with `rawKeyDown` moves focus for
+  Tab but skips Blink's implicit form submission for Enter, which needs `keyDown` carrying `text`.
+- 2026-09-23 | `scripts/perf.py`, throttled cold load, 20 runs per page | Cold load to interactive
+  on 3G Fast + 4x CPU: front page p95 906 ms, district page 741 ms, board page 723 ms, against a
+  3000 ms promise. On DevTools' own Slow 3G preset the same pages take 4.3-5.1 s, which is three
+  2000 ms round trips before a byte of ours is considered. | refused: gating on Slow 3G, because
+  under it the number measures the network and not our page — the only way to pass would be to stop
+  loading a stylesheet. Measured and published beside the gated figure rather than dropped.
+- 2026-09-23 | page weight, gzipped, at the 60 KB R40 budget | Front page 13.7 KB, district pages
+  7.4 KB, board pages 6.1 KB, 404 at 4.3 KB; all JavaScript together 6.5 KB; geometry 132 KB
+  against its separate 300 KB after-first-paint budget. | generic: a budget met at 22% is worth a
+  second, tighter ceiling on the part that can grow without bound — here, script alone at 12 KB,
+  because React with its DOM package is ~45 KB gzipped and would hide comfortably inside 60 KB.
+- 2026-09-23 | `site/index.html`, `site/district/index.html`, `site/board/index.html` | All three
+  are byte-identical (29,458 bytes): the front page carries both link lists, so both index routes
+  are copies of it. Not a defect — it is what makes the no-JavaScript form target work — but the
+  axe and console sweeps test the same bytes three times. | generic: when enumerating "every page"
+  for a gate, dedupe by content hash before spending browser time on it.

@@ -3,9 +3,11 @@
 **What this is for:** the exact, small thing to build first. **When to read it:** before writing
 any code, and instead of the outline's §8 milestones, which this supersedes for the near term.
 
-**Status: built and running locally as of 2026-09-22.** Exit criteria in §6 are ticked
-individually; one remains open (accessibility and performance, criterion 5). Run it with
-`make fetch && make serve`.
+**Status: built and running locally as of 2026-09-23.** Exit criteria in §6 are ticked
+individually. Six of seven are met. The seventh, criterion 5, is met except for one thing that
+cannot be automated: **a real screen-reader pass has not been run** — see
+`docs/accessibility-pass.md` §3.2. Everything else in it is gated in CI. Run it with
+`make fetch && make serve`, and the gates with `make gates`.
 
 Decided by the owner 2026-09-21: barebones. One input — a dropdown or an address — produces one
 page of information and links. No map. No analysis. Security is the top priority. P8, P9 and P10
@@ -226,15 +228,36 @@ achieves the same latency more simply. Those constraints return when the map doe
    at a real host unchanged.
 4. ✅ The hostile-content fixture renders inert, asserted end to end — plus ~8,500 generated fuzz
    cases over the parsers and a committed corpus of 104 input/expected pairs.
-5. ❌ **OPEN — the one remaining item.** axe clean on every page type; a documented keyboard and
-   screen-reader pass; the 60 KB / 3 s throttled-3G budget gated in CI. The site *is* built to
-   work with JavaScript disabled for everything except the address box (plain link lists, and the
-   dropdown degrades to `/district/`), but that has not been verified with a real screen reader
-   and the performance budget is not yet enforced.
+5. ⚠️ **Mostly met; one half genuinely open.** Built 2026-09-23.
+   - ✅ **axe** clean on **all 114** pre-rendered pages at WCAG 2.2 AA, gated in CI, with a
+     committed negative control (`tests/fixtures/a11y_broken/`) proving the gate can still fail
+     and a floor on rules-exercised per page proving it actually ran.
+   - ✅ **The keyboard pass**, automated: 122 checks over 9 page types, driven with real `Tab`
+     keypresses in a real browser — skip link first and visible, focus into `<main>`, DOM order,
+     reachability, a ≥2px ring at every stop, `Shift+Tab` in reverse. Plus the accessibility tree
+     (landmarks, accessible names, one h1, no skipped heading levels), and the no-JavaScript path
+     verified with script execution disabled in the browser rather than inferred from the markup.
+   - ❌ **The screen-reader pass has not been run.** Reading the accessibility tree is not
+     listening to a screen reader, and automating that distinction away is the one shortcut this
+     product cannot take. `docs/accessibility-pass.md` §3.2 is the procedure, §4 is the record,
+     and the record says NOT RUN. **This is the one thing left in Phase 1.**
+   - ✅ **The 60 KB budget**, gated in CI as arithmetic over the built bytes — front page 13.7 KB
+     gzipped, district pages 7.4 KB, boards 6.1 KB, all JavaScript 6.5 KB against a separate
+     12 KB ceiling, geometry 132 KB against its 300 KB after-first-paint budget.
+   - ✅ **The 3 s throttled-3G gate**: p95 over 20 cold runs per page on 3G Fast with a 4× CPU
+     throttle — 906 ms, 741 ms and 723 ms against 3000 ms. Thresholds and profiles live in the
+     committed `perf-budget.json`. DevTools' Slow 3G preset yields 4.3–5.1 s; it is reported but
+     not gated, and the reasoning is in that file rather than being a quiet omission.
 6. ✅ The refresh is runnable as one local command (`make fetch`), fails closed on a bad fetch,
    and the staleness notice provably appears when `manifest.json` is hand-aged. Running it *on a
    schedule* is deferred with hosting. Crawl rates come from each host's own `robots.txt`, and an
    `upstream` test fails if the City raises its delay above ours.
+   **Corrected 2026-09-23:** the staleness claim used to be true only over HTTP and false in a
+   browser. `connect-src` omitted `'self'`, so `/manifest.json` could not be fetched at all and
+   the notice never rendered for any reader. The tick now rests on
+   `tests/browser/test_console.py::TestTheStalenessNoticeReallyRenders`, which ages the manifest,
+   loads a real page in a real browser behind the real headers, and asserts the rendered text
+   names the source, its age in days, and the instruction not to rely on the meeting times.
 7. ✅ Every fact on the page carries its source link, and the footer carries each source's fetch
    date with the covered forward window stated literally.
 

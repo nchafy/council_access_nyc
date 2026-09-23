@@ -12,8 +12,16 @@ make fetch    # refresh the upstream cache (~9 min cold; skips anything fresh)
 make verify   # build + lint + ~9,000 tests + 357 live-response assertions. The gate.
 make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
 make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
-make browser  # drive the address box in real headless Chrome
+make browser  # every browser gate in one pytest run (~100 s)
+make gates    # the same four gates as operator tools, with readable output
 ```
+
+`make gates` is `axe` (WCAG 2.2 AA over all 114 pages), `a11y` (real `Tab` keypresses and
+the accessibility tree), `console` (any console error or CSP violation) and `perf` (page
+weight, and cold-load p95 on throttled 3G). They are deliberately **not** part of `make
+verify`: together they are about two minutes of real browser time, and the fast gate has to
+stay fast to keep being used. CI runs them as a separate job, and fails loudly rather than
+skipping if the runner has no Chrome.
 
 Fetch and build are separate stages on purpose: the build never touches the
 network, so it is reproducible and a flaky download cannot half-write a site. A
@@ -29,13 +37,26 @@ would surface for the first time at deploy. `scripts/serve.py` applies the real
 source-conflict notice, missing committees, designed empty states. Check it after
 any renderer change.
 
-**State of play (2026-09-22).** Phase 1 is **built and runs locally**: 110 pages
+**State of play (2026-09-23).** Phase 1 is **built and runs locally**: 110 pages
 (51 district, 59 board), seven fetchers, 100% enforced coverage, CI green. Not
 deployed — no domain, no hosting, no scheduled refresh, all deferred together.
-The one open Phase 1 item is the accessibility and performance pass (axe, a
-keyboard and screen-reader run, the 60 KB / 3 s gate in CI). `README.md` has the
-done/not-done list; `docs/phase-1-scope.md` §6 has the exit criteria ticked
-individually.
+
+The accessibility and performance pass is now built and gated in CI: axe clean on all
+114 pre-rendered pages at WCAG 2.2 AA, 122 keyboard and accessibility-tree checks over
+9 page types, no console error or CSP violation on any page, 13.7 KB gzipped on the
+heaviest page against the 60 KB budget, and a 906 ms cold-load p95 on throttled 3G
+against the 3 s promise. **The one open Phase 1 item is a real screen-reader pass**,
+which is the one part of R39 no gate can stand in for — the procedure and the record
+are in `docs/accessibility-pass.md`. `README.md` has the done/not-done list;
+`docs/phase-1-scope.md` §6 has the exit criteria ticked individually.
+
+Building a gate? **Serve behind the real `_headers`, always.** `scripts/serve.py` has
+`background_server()` for this. The CSP already broke a shipped feature silently once:
+`connect-src` omitted `'self'`, so the address box's local index could not be fetched
+and every query fell through to the geocoder — the opposite of what the privacy design
+promises. It was invisible because the only browser test used a bare file server that
+sent no policy. Testing a feature and testing it under the policy shipped with it are
+different tests, and only the second one is true.
 
 **On a fresh clone, run `make fetch` first.** `etl/raw/` is gitignored, so there is
 no data until you do; `make build` exits 2 and says so. Roughly 9 minutes cold,

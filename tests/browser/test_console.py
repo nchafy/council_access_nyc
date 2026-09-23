@@ -16,6 +16,8 @@ way.
 
 from __future__ import annotations
 
+import json
+import shutil
 import time
 
 import pytest
@@ -126,7 +128,7 @@ class TestLocalResolutionStaysLocal:
             f"the local index was never requested; the trace was {requested}"
         )
 
-    def test_geometry_is_not_fetched_for_a_district_number(self, network_trace):
+    def test_the_geometry_is_not_fetched_for_a_district_number(self, network_trace):
         """districts.geo.json is 132 KB gzipped and only a street address needs it.
 
         Pulling it for a district number would blow the R40 budget on the one path
@@ -136,3 +138,67 @@ class TestLocalResolutionStaysLocal:
         assert not [url for url in requested if "districts.geo.json" in url], (
             "the 132 KB geometry was fetched to resolve a district number"
         )
+
+
+@pytest.fixture(scope="module")
+def aged_site(built_site, tmp_path_factory):
+    """A copy of the site whose manifest claims every source was fetched long ago.
+
+    Copied rather than edited in place, because `built_site` is shared with the other
+    browser gates and a stale manifest would change what they see.
+    """
+    out = tmp_path_factory.mktemp("aged-site")
+    shutil.copytree(built_site, out, dirs_exist_ok=True)
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for source in manifest["sources"].values():
+        source["fetched_at"] = "2019-01-01T00:00:00+00:00"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return out
+
+
+@pytest.fixture(scope="module")
+def notice(chrome, aged_site):
+    """The text of the staleness notice the browser renders, or an empty string."""
+    with background_server(aged_site) as base, Browser() as browser:
+        page = browser.page()
+        page.navigate(base + "/district/35/")
+        deadline = time.monotonic() + 15
+        text = ""
+        while time.monotonic() < deadline:
+            text = page.evaluate(
+                "(() => { const el = document.querySelector('.staleness');"
+                " return el ? el.textContent : ''; })()"
+            )
+            if text:
+                break
+            time.sleep(0.1)
+        return text
+
+
+class TestTheStalenessNoticeReallyRenders:
+    """§2.12: staleness is computed in the browser, which is what keeps an abandoned
+    site honest.
+
+    phase-1-scope.md §6 criterion 6 claimed this was proven. It was proven over HTTP —
+    `verify.py` fetched the manifest and checked it carried inputs rather than a
+    verdict — and it was false in a browser, because `connect-src` omitted `'self'` and
+    the fetch never happened. The notice is the one piece of the product that only
+    exists at read time, so it is the piece most worth asserting at read time.
+    """
+
+    def test_an_aged_manifest_produces_a_visible_notice(self, notice):
+        assert notice, (
+            "no .staleness element rendered for a manifest dated 2019. If the console "
+            "gate is also failing on connect-src, that is the same bug."
+        )
+
+    def test_it_says_not_to_rely_on_the_meeting_times(self, notice):
+        """The wording matters more than the presence: a reader who sees a soft "this
+        may be out of date" beside a specific hearing time will still turn up to it."""
+        assert "out of date" in notice
+        assert "Do not rely on the meeting times" in notice
+
+    def test_it_names_the_source_and_how_old_it_is(self, notice):
+        assert "days ago" in notice, f"the notice gives no age: {notice!r}"
+        assert "nyc.legistar.com" in notice, "the notice must point somewhere authoritative"

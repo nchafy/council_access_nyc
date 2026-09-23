@@ -8,9 +8,22 @@
 #
 # default-src 'none' means every resource class must be named explicitly below.
 # Adding a directive here is a security decision — see docs/phase-1-scope.md §4.2.
+#
+# connect-src carries 'self' as well as the geocoder, and that 'self' is not a
+# relaxation. Leaving it out refused three same-origin fetches the site depends on:
+# /data/lookup.json, /data/districts.geo.json and /manifest.json. The first two are
+# the privacy feature — a ZIP, a neighbourhood or a district number is supposed to
+# resolve from a committed index and never reach the geocoder — so without 'self'
+# every query fell through to the geocoder, and a policy written to protect the
+# reader's address was causing more of their input to be sent, not less. The third is
+# the staleness notice, which silently never appeared.
+#
+# tests/unit/test_csp.py cross-checks this list against every URL the frontend
+# fetches, and scripts/console_check.py fails on any policy violation in a real
+# browser. Neither existed when this line was first written, which is why it shipped.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Strict-Transport-Security: max-age=31536000; includeSubDomains

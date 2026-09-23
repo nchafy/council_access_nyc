@@ -46,7 +46,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlsplit
 
 #: Where Chrome lives. Shared by every browser-driving script in this repo so
@@ -229,6 +229,16 @@ class Session:
         """Forget buffered events, so a `wait_for` cannot match a stale one."""
         self._events.clear()
 
+    def consume_events(self) -> list[dict[str, Any]]:
+        """Take every buffered event, leaving the buffer empty.
+
+        For callers that want the events themselves rather than to wait for one —
+        console complaints, network requests — where the interesting thing is
+        everything that happened, not the first match.
+        """
+        events, self._events = self._events, []
+        return events
+
     def wait_for(self, method: str, timeout: float = 30.0) -> dict[str, Any]:
         for index, message in enumerate(self._events):
             if message["method"] == method:
@@ -269,25 +279,39 @@ class Session:
         self.call("Page.navigate", url=url)
         self.wait_for("Page.loadEventFired", timeout=timeout)
 
-    def press(self, key: str, *, shift: bool = False) -> None:
-        """Dispatch a real keypress.
+    #: Virtual key code, and the text the key inserts if it inserts any.
+    #:
+    #: The text matters more than it looks. A key with no text is dispatched as
+    #: `rawKeyDown`, because a `keyDown` for a non-text key makes Chrome wait for a
+    #: following `char` event and Tab then never moves focus. But Enter *does* carry
+    #: text, and dispatching it as `rawKeyDown` means Blink never runs the implicit
+    #: form submission — the address box took the typed text and then sat there,
+    #: which read exactly like a broken form rather than a broken test.
+    KEYS: ClassVar[dict[str, tuple[int, str]]] = {
+        "Tab": (9, ""),
+        "Enter": (13, "\r"),
+        "Escape": (27, ""),
+        "Space": (32, " "),
+    }
 
-        `rawKeyDown` rather than `keyDown`: `keyDown` for a non-text key makes
-        Chrome expect a following `char` event, and Tab then does not move focus.
-        """
-        codes = {"Tab": 9, "Enter": 13, "Escape": 27, "Space": 32}
-        if key not in codes:
+    def press(self, key: str, *, shift: bool = False) -> None:
+        """Dispatch a real keypress."""
+        if key not in self.KEYS:
             raise CDPError(f"no virtual key code recorded for {key!r}")
-        for event_type in ("rawKeyDown", "keyUp"):
-            self.call(
-                "Input.dispatchKeyEvent",
-                type=event_type,
-                key=key,
-                code=key,
-                windowsVirtualKeyCode=codes[key],
-                nativeVirtualKeyCode=codes[key],
-                modifiers=8 if shift else 0,
-            )
+        code, text = self.KEYS[key]
+        for event_type in ("keyDown" if text else "rawKeyDown", "keyUp"):
+            params = {
+                "type": event_type,
+                "key": key,
+                "code": key,
+                "windowsVirtualKeyCode": code,
+                "nativeVirtualKeyCode": code,
+                "modifiers": 8 if shift else 0,
+            }
+            if text and event_type == "keyDown":
+                params["text"] = text
+                params["unmodifiedText"] = text
+            self.call("Input.dispatchKeyEvent", **params)
 
     def type_text(self, text: str) -> None:
         """Put text into the focused field.

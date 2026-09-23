@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# The accessibility and performance gates live in `scripts/`, because they are operator
+# tools first — `make axe`, `make a11y`, `make perf`. The tests drive that same code
+# rather than a second copy of it, so the thing CI gates and the thing a developer runs
+# by hand can never disagree.
+if str(REPO_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 
 @pytest.fixture(scope="session")

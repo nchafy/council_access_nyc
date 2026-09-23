@@ -1,32 +1,25 @@
 """Shared setup for the gates that need a real browser.
 
-Two jobs. It puts `scripts/` on the import path, because the gates live there — they
-are operator tools first (`make axe`, `make keyboard`, `make perf`) and the tests
-drive the same code rather than a second copy of it. And it builds one site from
-committed fixtures for the whole session.
+Builds one site from committed fixtures for the whole session, and finds Chrome.
 
-Why a fixture-built site rather than `site/`. `etl/raw/` is gitignored, so a CI
-runner has no upstream cache and cannot build the real site; a gate that only ran
-where the cache happens to exist would not be a gate. Building from
-`tests/fixtures/` makes these run anywhere, hermetically, with the real district
-markup. What it cannot cover is the size of the real simplified geometry, because the
-fixture geometry is 51 synthetic squares — `scripts/perf.py --root site` covers that
-locally, and `tests/unit/test_geo.py` pins the tolerance it came from.
+Why a fixture-built site rather than `site/`. `etl/raw/` is gitignored, so a CI runner
+has no upstream cache and cannot build the real site; a gate that only ran where the
+cache happens to exist would not be a gate. Building from `tests/fixtures/` makes these
+run anywhere, hermetically, with the real district markup. What it cannot cover is the
+size of the real simplified geometry, because the fixture geometry is 51 synthetic
+squares — `scripts/perf.py --root site` covers that locally, and
+`tests/unit/test_geo.py` pins the tolerance it came from.
 """
 
 from __future__ import annotations
 
 import shutil
-import sys
 from datetime import date
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT / "scripts") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "scripts"))
-
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
 
 

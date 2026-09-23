@@ -42,14 +42,16 @@ def district_page_html() -> dict[int, str]:
     return pages
 
 
-# Shared by the integration tests and the guard tests: a minimal but
-# floor-passing raw cache. Lives here rather than in one test file because both
-# need it, and duplicating it would let the two drift.
-@pytest.fixture
-def raw_dir(tmp_path, calendar_html, district_page_html):
-    """A minimal but floor-passing raw cache."""
-    raw = tmp_path / "raw"
-    raw.mkdir()
+# Shared by the integration tests, the guard tests and the browser gates: a minimal
+# but floor-passing raw cache. Lives here rather than in one test file because they
+# all need it, and duplicating it would let the copies drift.
+#
+# A plain function with two fixtures over it, rather than one fixture: the browser
+# gates build a site once for a whole session and drive Chrome against it, while the
+# build tests need a fresh cache per test so they can corrupt it and assert the
+# build fails closed. Same cache, two lifetimes.
+def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int, str]) -> Path:
+    """Populate `raw` with a cache that clears every source floor. Returns `raw`."""
     (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
 
     # All 51 pages must be present to clear the district_pages floor; reuse the
@@ -119,3 +121,24 @@ def raw_dir(tmp_path, calendar_html, district_page_html):
         json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8"
     )
     return raw
+
+
+@pytest.fixture
+def raw_dir(tmp_path, calendar_html, district_page_html) -> Path:
+    """A fresh floor-passing raw cache per test, so a test may corrupt it."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    return write_raw_cache(raw, calendar_html, district_page_html)
+
+
+@pytest.fixture(scope="session")
+def raw_dir_session(tmp_path_factory, calendar_html, district_page_html) -> Path:
+    """The same cache, built once for the session.
+
+    For the browser gates in `tests/browser/`, which build one site and then run
+    several seconds of Chrome against it. Rebuilding per test would multiply that
+    cost for a byte-identical result.
+    """
+    return write_raw_cache(
+        tmp_path_factory.mktemp("raw-session"), calendar_html, district_page_html
+    )

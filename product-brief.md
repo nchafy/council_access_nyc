@@ -5,6 +5,10 @@
 implementing. The outline is the engineering plan — 57 numbered constraints, of which only 8
 come from the product. This file is the 8.
 
+**Status 2026-09-22:** Phase 1 is built and runs locally (`make fetch && make serve`).
+Requirements P1–P5 and P8–P10 are met, P6 is met as a budget but not yet gated in CI, P7 and
+P11 are not built. The per-requirement state is in the §4 table.
+
 Everything here is a claim you should accept or reject. If a line is wrong, the outline is
 wrong downstream of it.
 
@@ -47,29 +51,30 @@ Four sub-questions, which are the four you originally asked, restated as user ou
 | | The user wants to know | Can we answer it? |
 |---|---|---|
 | **J1** | When and where is a meeting I could actually attend, and how do I get in the room? | **Yes, fully.** |
-| **J2** | What is being discussed, and does anyone disagree about it? | **Topics yes. Disagreement only as Council Members' recorded votes — never as public opinion.** |
-| **J2b** | There is far too much in motion. Which are the **big** items right now? | **Yes** — as a shortlist of what the Council is demonstrably spending its time on, ordered by its own observable activity. Not as a claim about what matters to a neighbourhood. See §4 P11 and §7. |
+| **J2** | What is being discussed, and does anyone disagree about it? | **Topics yes. Disagreement only as Council Members' recorded votes — never as public opinion.** *Built: the meeting's published topic and your member's committees. Not built: per-item detail and votes (M6).* |
+| **J2b** | There is far too much in motion. Which are the **big** items right now? | **Yes** — as a shortlist of what the Council is demonstrably spending its time on, ordered by its own observable activity. Not as a claim about what matters to a neighbourhood. See §4 P11 and §7. *Built: the next five meetings, chronological, no ranking. The ranking is not built.* |
 | **J3** | How do I say something, and what is my deadline? | **Yes, fully — and this is the highest-value answer we have.** |
-| **J4** | Who else cares about this, and who do I call? | **Partly.** We can route you to institutions today. Naming the groups that show up depends on an unproven spike. |
+| **J4** | Who else cares about this, and who do I call? | **Partly.** We can route you to institutions today. Naming the groups that show up depends on an unproven spike. *Built: the routing half — member office, community boards, hearings office. Not built: the measured half (M7/M8).* |
 
 ## 4. Product requirements
 
-Ten. Each is a product promise, not an implementation. The outline's 57 constraints all exist
-to deliver one of these; if a constraint cannot be traced to one, it should be cut.
+Eleven. Each is a product promise, not an implementation. The outline's 57 constraints all
+exist to deliver one of these; if a constraint cannot be traced to one, it should be cut.
+The tick marks are build state as of 2026-09-22, keyed below the table.
 
 | # | The product must | Why | From |
 |---|---|---|---|
-| **P1** | Show upcoming meetings with a real street address, date, time, and whether it is in person, hybrid, or remote — and never imply a date is confirmed when it can be deferred without notice. | J1. A wrong address or a stale time costs someone their trip. | you |
-| **P2** | Show what each meeting is actually about, from its agenda — and say plainly when the agenda is not published yet. | J2. "Multiple meeting items" is not an answer. | you |
-| **P3** | Tell the user what they can do and by when: that in-person testimony needs no pre-registration, how long they still have to file in writing, and when an interpreter or ASL request is due. | J3. This is the product's sharpest edge — it changes behaviour this week. | you |
-| **P4** | Give the user a human to contact: their Council Member's office, their community board, and the hearings office. | J4. "Get in touch" means a phone number, not a table. | you |
-| **P5** | Let the user arrive by typing an address, by clicking a district on a map, **or** by neither — browsing what is happening citywide. | Your two interactions, plus people with no fixed or safe address. | you + added |
-| **P6** | Answer in under a second once the page is live. | Your SLA. | you |
-| **P7** | Show the Council's own record where it exists — recorded votes and member attendance — labelled as what it is: how Council Members voted, not what the public thinks. | J2's honest half. | you + added |
-| **P8** | Never mislead. Every date and number carries its source and when we fetched it. Where the City publishes nothing, say so and give the phone number instead of a guess. | The product is advice about deadlines. Being wrong is the worst outcome available. | added |
-| **P9** | Be usable by the people most likely to need it: works on a cheap phone and a screen reader, and never leaks the user's home address. | Our users disproportionately include disabled people, people with limited English, and people with safety reasons to hide an address. | added |
-| **P10** | Still be true in two years, or visibly say it is not. | A civic side project's normal death is going stale while looking authoritative. | added |
-| **P11** | **Shortlist the big items.** Cut "everything in motion" down to a readable few, ordered by what the Council itself is measurably doing — and make each one a doorway to reading further, not a verdict. | J2b. Too much is in play to follow. Triage is the product's second-sharpest edge after deadlines. | you |
+| **P1 ✅** | Show upcoming meetings with a real street address, date, time, and whether it is in person, hybrid, or remote — and never imply a date is confirmed when it can be deferred without notice. | J1. A wrong address or a stale time costs someone their trip. | you |
+| **P2 ⚠️** | Show what each meeting is actually about, from its agenda — and say plainly when the agenda is not published yet. | J2. "Multiple meeting items" is not an answer. | you |
+| **P3 ✅** | Tell the user what they can do and by when: that in-person testimony needs no pre-registration, how long they still have to file in writing, and when an interpreter or ASL request is due. | J3. This is the product's sharpest edge — it changes behaviour this week. | you |
+| **P4 ✅** | Give the user a human to contact: their Council Member's office, their community board, and the hearings office. | J4. "Get in touch" means a phone number, not a table. | you |
+| **P5 ✅** | Let the user arrive by typing an address, by picking a district, **or** by neither — browsing every district and board. *The map itself is cut from Phase 1; the dropdown, link lists and address box all work.* | Your two interactions, plus people with no fixed or safe address. | you + added |
+| **P6 ⚠️** | Answer in under a second once the page is live. | Your SLA. | you |
+| **P7 ❌** | Show the Council's own record where it exists — recorded votes and member attendance — labelled as what it is: how Council Members voted, not what the public thinks. | J2's honest half. | you + added |
+| **P8 ✅** | Never mislead. Every date and number carries its source and when we fetched it. Where the City publishes nothing, say so and give the phone number instead of a guess. | The product is advice about deadlines. Being wrong is the worst outcome available. | added |
+| **P9 ⚠️** | Be usable by the people most likely to need it: works on a cheap phone and a screen reader, and never leaks the user's home address. | Our users disproportionately include disabled people, people with limited English, and people with safety reasons to hide an address. | added |
+| **P10 ✅** | Still be true in two years, or visibly say it is not. | A civic side project's normal death is going stale while looking authoritative. | added |
+| **P11 ❌** | **Shortlist the big items.** Cut "everything in motion" down to a readable few, ordered by what the Council itself is measurably doing — and make each one a doorway to reading further, not a verdict. | J2b. Too much is in play to follow. Triage is the product's second-sharpest edge after deadlines. | you |
 
 P1–P7 and P11 are yours. **P8, P9, P10 are the three additions worth arguing about** — each
 costs real time. If you veto them, say so and the outline gets much smaller.
@@ -185,11 +190,13 @@ Everything else in the outline's §11 is downstream of these.
 3. ~~Do P8, P9, P10 stay?~~ **Resolved 2026-09-21: yes, all three.** And **security is the top
    priority** — see `docs/phase-1-scope.md` §4, which treats injection through scraped upstream
    content as the primary threat, since the product has no accounts to attack.
-4. **Whose name is on it, and what happens when you stop maintaining it?** Still open.
+4. **Whose name is on it, and what happens when you stop maintaining it?** Still open, and it
+   blocks publishing rather than building — the repo is public, the site is not.
 5. ~~How long is the shortlist?~~ **5 items.** In Phase 1 this is literally "the next 5
    meetings", chronological, which needs no analysis at all. Revisit the number when ranking
    arrives.
-6. **Domain name, and whether the site is indexed at Phase 1.** Still open.
+6. ~~Domain name and indexing at Phase 1.~~ **Resolved 2026-09-21: neither.** Phase 1 is local
+   only. Still open for whenever publishing happens, together with question 4.
 
 ---
 

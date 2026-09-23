@@ -33,8 +33,11 @@ and in the same message:
 
 **What the core would be for has not been stated, and that is the largest gap in this file.**
 No one has written down what user-visible outcome it produces, or what the duplication costs.
-Today the duplication costs nothing measurable: council_access has zero lines of Python, so
-nothing has been written twice. A design evaluated against no stated purpose gets evaluated
+As of 2026-09-22 the duplication still costs nothing measurable, but for a different reason
+than before: council_access now has ~3,000 lines of Python, and none of it was copied from
+timemap. The two solved the same-shaped problem independently under different constraints
+(timemap's ingest is stdlib-only with no network; council_access needed HTTP, scraping and
+fail-closed caching), and the result is that nothing has been written twice yet. A design evaluated against no stated purpose gets evaluated
 against nothing, and "views as plugins" then wins by default because it is the only concrete
 phrase in the room. **Open. Only the owner can answer it — see §7.**
 
@@ -44,12 +47,17 @@ never be.
 ## 2. The two repos today
 
 **council_access_nyc** — `~/personal/council_access_nyc`, branch `mainline`, remote
-`git@github.com:nchafy/council_access_nyc.git` (public, created 2026-09-21). Seven
-tracked files, zero lines of Python. `council-access-project-outline.md` is the declared source
-of truth; `docs/exploration-2026-09-21.md` is the research behind it; a throwaway Node spike is
-preserved on `spike/node-etl`. Everything this file says about this repo's pipeline is
-**specified, not built.** Its `ci.yml` runs `uv sync --frozen` with no `pyproject.toml`
-committed, so CI cannot currently pass.
+`git@github.com:nchafy/council_access_nyc.git` (public, created 2026-09-21). **Phase 1 is
+built and runs locally** as of 2026-09-22: ~3,000 lines of Python plus ~2,400 of tests, 100%
+coverage enforced, 110 generated pages, seven fetchers, CI green. Seven
+tracked files, zero lines of Python. `product-brief.md` is the entry point,
+`council-access-project-outline.md` the engineering plan, `docs/phase-1-scope.md` what was
+actually built; `docs/exploration-2026-09-21.md` is the research behind all three. A throwaway
+Node spike is preserved on `spike/node-etl`.
+
+Corrections to what this file said on 2026-09-21: the pipeline is no longer "specified, not
+built", and the CI problem it noted (`uv sync --frozen` with no committed `pyproject.toml`) was
+fixed the same day.
 
 **timemap_nyc** — `git@github.com:nchafy/timemap_nyc.git`, default branch `master`, work on
 `001d-ingest-pipeline`. This is the repo with running code: `src/timemap/places/` is 805 lines
@@ -168,16 +176,19 @@ no.
   produced a published artifact from a run.
 - **T2 — the publisher variety is there.** At least four source adapters across the two repos
   against at least three publisher platforms differing in transport or error semantics — not
-  three files of one format. Today: one platform (Google Takeout, local files, no network, no
-  auth). MTA GTFS and OSM are planned but no committed code ingests them; all of
-  council_access's source types are specified and none is built.
+  three files of one format. **Met as of 2026-09-22.** council_access alone ships four
+  adapters across three platforms whose *error semantics genuinely differ*: Granicus/Legistar
+  ASP.NET (HTTP 200 carrying error bodies), WordPress HTML (plain, but every field
+  independently optional), and Socrata (JSON, reports query errors as a 200 with an `error`
+  key, and needs a stable `$order` or rows silently duplicate across pages). Google Takeout in
+  timemap is a fourth: local files, no network, no auth.
 - **T3 — the duplication is measured.** At least three components written twice, each naming a
   file in each repo, in the two `docs/OBSERVATIONS.md` logs. **T3 measures diligence, not the
   domain:** "no duplication exists" and "nobody logged it" produce identical results. Weight it
   accordingly.
 
 **Nothing schedules this evaluation.** No cron, no CI step, no calendar. Adding one to two
-barely-started repos — one of which cannot currently pass CI — would be noise. The accepted
+personal repos would be noise. The accepted
 consequence is that if nobody asks, nothing happens and the idea dies quietly, which is
 preferred over a calendar keeping it alive.
 
@@ -191,6 +202,18 @@ Evaluations:
 
 - 2026-09-21 — T1 no: timemap's pipeline is on `001d-ingest-pipeline`, and council_access has no
   ETL code. T2 no: 1 platform of 3. T3 no: 0 of 3. **Verdict: do not design.**
+- 2026-09-22 — T1 **still no**, and the reason has moved: council_access now clears its half
+  (committed ETL producing artifacts from a run, though local rather than published), but
+  timemap's pipeline is *still* not on its default branch — `git ls-tree -r --name-only master
+  | grep '^src/'` returns only `src/timemap/__init__.py`. T2 **now yes**: four adapters, three
+  platforms with genuinely different error semantics (see above). T3 **still no, 0 of 3** —
+  and this is the interesting one. council_access built its ETL from scratch rather than
+  copying timemap's, because the constraints differed (network and fail-closed caching versus
+  a single local file), so *nothing has been written twice*. Two things that look like
+  duplication are recorded in `docs/OBSERVATIONS.md` as **misfits** instead: "privacy guard"
+  and "contract test" each name materially different mechanisms in the two repos.
+  **Verdict: do not design.** One clause moved, and the one that actually measures shared
+  substance did not.
 
 ## 7. Questions only the owner can answer
 

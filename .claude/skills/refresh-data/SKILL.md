@@ -60,7 +60,14 @@ Do not raise the floor to make it pass. Work out what changed upstream:
   `council-geometry` demands *exactly* 51 features and the address lookup depends
   on it.
 - **One source failed, others succeeded** — deliberate. A dead host does not block
-  the rest, and the build's own floors catch a partly-refreshed cache.
+  the rest, and the build's own floors catch a partly-refreshed cache. Re-run with
+  `--only <source> --force`; the rest stay cached.
+- **`47 of 51 district pages have content`** — transient network failures during the
+  9-minute crawl. Failed pages now get one automatic retry pass, added after a cold
+  run on a fresh clone lost four to DNS blips. If it refuses twice, re-run
+  `--only districts --force`. Note the asymmetry worth remembering: "fail closed and
+  keep the last good copy" degrades to plain "fail" on a **first** run, when there is
+  no previous copy — which is why the retry exists.
 
 ## Why body invariants and not status codes
 

@@ -389,6 +389,15 @@ These are consequences, not options. Two of them correct decisions made earlier 
 
 Shipped artifacts under `site/data/`. All are public, re-fetchable, and therefore carry their guards as **fields**, not page chrome.
 
+> **Built as of 2026-09-22:** `manifest.json` (at the site root, not under `data/`),
+> `data/districts.geo.json`, and `data/lookup.json` — the last combining what this section
+> calls `districts.index.json` with the ZIP and board indexes the address box needs.
+> Everything from `hearings.json` onward is **planned, not built**, and so are the
+> `crosswalks/*.yaml` files below: the only crosswalk that exists is
+> `crosswalks/council_to_boards.json`, and the procedures content lives in `src/showup/render.py`
+> rather than in YAML. Do not go looking for the rest — read the §8 milestone table for what
+> exists. The package is `showup`; there is no `council_access` package.
+
 **`manifest.json`**
 ```json
 { "built_at": "2026-09-21T18:14:02Z", "git_sha": "…",
@@ -445,11 +454,24 @@ No `degraded`, no `age_hours`. The client derives staleness.
 
 ## 8. Milestones
 
-> **Superseded for the near term by `docs/phase-1-scope.md`.** The owner scoped a barebones
-> Phase 1 on 2026-09-21: district dropdown or address input, one page of facts and links, **no
-> map and no analysis**, security first, ~10–13 days. It draws from M0–M2 and M4 and drops M3's
-> map, M6's parsing and analysis, and M7–M8 entirely. The M-table below remains the right
-> sequence for everything after Phase 1 ships; read the phase doc first.
+> **Status as of 2026-09-22 — Phase 1 is built and runs locally.** Read
+> `docs/phase-1-scope.md` first; it is what was actually scoped and built.
+>
+> | M | State |
+> |---|---|
+> | **M0–M2** | ✅ **Done.** Skeleton, live calendar with fail-closed refresh, deadline ledger. |
+> | **M3** | ⚠️ **Partly.** Address / ZIP / neighbourhood / district-number resolution and keyboard-navigable lists are done. The **map is deliberately cut** from Phase 1 — geometry ships for resolution only, never display. |
+> | **M4** | ✅ **Done.** District pages, members, and community boards joined by geometry. |
+> | **M5** | ❌ **Open — the one remaining Phase 1 item.** axe over every page, a documented keyboard and screen-reader pass, and the 60 KB / 3 s throttled-3G gate in CI. |
+> | **M6–M8** | ❌ Not started. The vote and transcript data is verified reachable (`docs/OBSERVATIONS.md`); none of it is built. |
+>
+> Built beyond the original M-sequence: the **fetch stage** (`showup fetch`, seven sources with
+> per-source floors and body invariants), a **second view** (59 community board pages), and the
+> testing regime in `CLAUDE.md` — 100% enforced coverage, a committed fuzz corpus, 357 live checks.
+>
+> Deferred together and not in any milestone: **hosting, a domain, and a scheduled refresh.**
+> The site is correct-on-demand rather than self-maintaining; the browser-side staleness banner
+> is what covers that gap.
 
 Estimates are days for one person, and are deliberately calibrated against measured output: `~/personal/timemap_nyc` is 805 lines of `src` plus 1,022 of tests, reached in 11 commits over 5.5 months, with one CI workflow and **zero scheduled refresh jobs ever operated**. Operating crons is a first-time capability with its own cost, priced into M1.
 
@@ -519,7 +541,7 @@ Ranked by expected harm × likelihood. Each carries the trigger that tells you i
  *Mitigation:* any card that can render near-empty carries an in-place sentence that absence is a property of the published record, not of the neighbourhood, plus the routes that remain. If a card cannot carry that sentence credibly, it does not ship. The M7 kill criterion exists precisely so a thin participation panel never launches.
  *Trigger:* M7 measures affiliation yield under 50%; a district page renders with zero organisations and zero open windows.
 6. **The Legistar scrape breaks and the forward layer empties.** `nyc.legistar.com` is a Granicus-operated vendor ASP.NET deployment with no robots.txt (404), no published terms we have read, no versioning and no SLA.
- *Mitigation:* one adapter (`src/council_access/sources/legistar.py`) as the single seam; body invariants; failover host; `contract.yml` on an independent schedule so breakage surfaces without a commit; degrade to stale-but-labelled, then to a Legistar link; request the API key now (§11.E) so it exists behind the seam if needed.
+ *Mitigation:* one adapter (`src/showup/sources/calendar.py`) as the single seam; body invariants; failover host; `contract.yml` on an independent schedule so breakage surfaces without a commit; degrade to stale-but-labelled, then to a Legistar link; request the API key now (§11.E) so it exists behind the seam if needed.
  *Trigger:* `test_calendar_shape` or `test_calendar_sort_order` fails; a 403 or 429 from `nyc.legistar.com`.
 7. **Misattributing a statement, a vote, or an organisational affiliation to a named person.** PDF text extraction plus regex, in a product about who speaks for whom.
  *Mitigation:* organisation-level aggregation only; no individual resident named anywhere; tally invariant with document-level quarantine; APPEARANCES and self-introduction must agree or emit `null`; ≥98% name-resolution floor with the remainder quarantined, never guessed; every claim links its source PDF; published correction and removal channels.

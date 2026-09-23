@@ -14,6 +14,9 @@ before committing; run pieces while iterating.
 make verify
 ```
 
+(On a fresh clone, `make fetch` first — `etl/raw/` is gitignored and the build
+refuses without it.)
+
 Builds, lints, runs the tests, then starts the real local server and asserts
 against live responses. Exit code is non-zero on the first failure. If this
 passes, the change is good.
@@ -58,7 +61,7 @@ layout — a silent crop that looks exactly like a CSS overflow bug. Do not
 
 ## What verify actually checks
 
-230 assertions across: the security headers being served (not just present in
+357 assertions across: the security headers being served (not just present in
 `_headers`), no inline `<script>` or `style=` attribute anywhere, no
 `javascript:` URL, every internal link resolving to a real file, every external
 link being https and on the allowlist, the six content blocks present on district

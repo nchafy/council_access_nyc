@@ -3,6 +3,10 @@
 **What this is for:** the exact, small thing to build first. **When to read it:** before writing
 any code, and instead of the outline's §8 milestones, which this supersedes for the near term.
 
+**Status: built and running locally as of 2026-09-22.** Exit criteria in §6 are ticked
+individually; one remains open (accessibility and performance, criterion 5). Run it with
+`make fetch && make serve`.
+
 Decided by the owner 2026-09-21: barebones. One input — a dropdown or an address — produces one
 page of information and links. No map. No analysis. Security is the top priority. P8, P9 and P10
 (never mislead / accessible and private / still true in two years) are all in.
@@ -212,20 +216,27 @@ achieves the same latency more simply. Those constraints return when the map doe
 
 ## 6. Exit criteria
 
-1. `scripts/serve.py` serves the built site locally, and picking any of the 51 districts from the
-   dropdown, or typing any NYC address, renders all six blocks correctly.
-2. An address outside NYC is refused by name ("that looks like Newark") rather than silently
-   mis-assigned.
-3. Response headers from the local server match §4.2, asserted by a test. `_headers` is committed
-   for the later deploy and the test is written so it can be pointed at a real host unchanged.
-4. The hostile-content fixture renders inert, asserted by a test.
-5. axe clean on the two page types; full keyboard navigation; works with JavaScript disabled for
-   everything except the address box.
+1. ✅ `scripts/serve.py` serves the built site locally, and picking any of the 51 districts from
+   the dropdown — or typing an address, ZIP, neighbourhood or district number — renders all six
+   blocks correctly. 59 community board pages as well, which was added after this list was written.
+2. ✅ An address outside NYC is refused by name ("that looks like Newark") rather than silently
+   mis-assigned, checked against what the geocoder says it *parsed* before anything renders.
+3. ✅ Response headers from the local server match §4.2, asserted by `scripts/verify.py` against
+   live responses. `_headers` is committed for the later deploy and the assertion can be pointed
+   at a real host unchanged.
+4. ✅ The hostile-content fixture renders inert, asserted end to end — plus ~8,500 generated fuzz
+   cases over the parsers and a committed corpus of 104 input/expected pairs.
+5. ❌ **OPEN — the one remaining item.** axe clean on every page type; a documented keyboard and
+   screen-reader pass; the 60 KB / 3 s throttled-3G budget gated in CI. The site *is* built to
+   work with JavaScript disabled for everything except the address box (plain link lists, and the
+   dropdown degrades to `/district/`), but that has not been verified with a real screen reader
+   and the performance budget is not yet enforced.
 6. ✅ The refresh is runnable as one local command (`make fetch`), fails closed on a bad fetch,
    and the staleness notice provably appears when `manifest.json` is hand-aged. Running it *on a
    schedule* is deferred with hosting. Crawl rates come from each host's own `robots.txt`, and an
    `upstream` test fails if the City raises its delay above ours.
-7. Every fact on the page carries its source link and fetch date.
+7. ✅ Every fact on the page carries its source link, and the footer carries each source's fetch
+   date with the covered forward window stated literally.
 
 ## 7. Open, for the owner
 

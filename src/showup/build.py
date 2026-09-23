@@ -1,7 +1,7 @@
 """Assemble the static site.
 
 Reads cached upstream payloads, produces `site/`. Nothing here talks to the
-network: fetching is a separate stage (`etl/raw/` today, `showup fetch` next), so
+network: fetching is a separate stage (`showup fetch` writes `etl/raw/`), so
 the build is reproducible and testable offline, and a network failure can never
 half-write a site.
 

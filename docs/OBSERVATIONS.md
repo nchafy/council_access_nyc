@@ -44,3 +44,64 @@ exploration doc.
   resumable never-refetch cache, and no retry at all. | misfit: the genuinely twice-written part
   is politeness plus never-refetch; retry classification is 1x, so it is not convergence. Note
   the spike puts Socrata's `X-App-Token` inside the same function body as the generic retry.
+- 2026-09-21 | `ruf7-3wgc.council_district` | 59 community-board rows carry only 44 distinct
+  council-district values; districts 5, 8, 15, 20, 27, 32 and 40 appear nowhere, because the
+  column records the district of the board's *office*, not the districts it covers. | refused:
+  the obvious one-line join would have left 7 of 51 districts with no board. Any
+  administrative-geography crosswalk must come from geometry, and a second jurisdiction will
+  have the same trap under a different column name.
+- 2026-09-21 | `crosswalks/council_to_boards.json`, `src/showup/geo.py` (`overlap_shares`) | A
+  ~110 m lattice sampled over the city resolves council-to-community-district overlap in ~35 s
+  with no polygon-clipping dependency; results validated against known geography (D35 → Brooklyn
+  CB 2/8/9). | generic: "sample a lattice instead of taking a clipping dependency" survives any
+  jurisdiction; committing the result so a boundary change is a reviewable diff is the part
+  worth copying.
+- 2026-09-21 | `uvw5-9znb` district 3 vs `council.nyc.gov/district-3/` | The open dataset records
+  a term ending 2026-02-03 with no successor row while the scraped page already names the new
+  member — the scrape is *fresher* than the official dataset after a special election. | generic:
+  when two public sources disagree, resolve toward the reading that does not remove information
+  from the user, and disclose the conflict on the page. A seat is filled if either source says so.
+- 2026-09-22 | `nyc.gov/site/communityboards` | Board committees seat **non-board members of the
+  public** — join the discussion, cannot vote, most boards want an application and a resume.
+  Almost nobody knows this and the bar is far lower than testifying. | generic: the highest-value
+  participation route is often the least advertised one; look for it before building analytics.
+- 2026-09-22 | `src/showup/text.py` (`strip_tags`), `tests/corpus/strip_tags.jsonl` | The fuzzer
+  disproved two invariants asserted confidently: `strip_tags` output CAN contain the characters
+  `<script>` (from `&#60;script&#62;`, decoded correctly once), and it is NOT idempotent
+  (`"Defer&#x3C;red"` → `"Defer<red"` → `"Defer"`). | generic: for an HTML-stripping boundary the
+  guarantee lives at the ESCAPER, not the stripper; assert it there. Apply stripping exactly once,
+  to raw upstream text, and audit the call sites rather than trusting idempotence.
+- 2026-09-22 | `tests/test_privacy_guard.py` (timemap) vs `scripts/verify.py` (this repo) | Both
+  repos have a "privacy guard" and they protect opposite parties: timemap's asserts the *owner's*
+  data is absent from fixtures, this one asserts *third parties'* names are absent from published
+  pages. | misfit: a shared guard would have to parameterise *whose* privacy, and a passing guard
+  protecting the wrong party is worse than none. Not a duplication — do not count it as one.
+- 2026-09-22 | `tests/contract/test_output_contract.py` (timemap) vs the twelve upstream contract
+  tests here | Same name, different mechanism: timemap validates its *own output* against a JSON
+  Schema; this repo asserts *upstream* still returns the shape it parses, on a job that never
+  gates a deploy. | misfit: two features wearing one word. Any shared vocabulary needs both
+  concepts named separately before either is abstracted.
+- 2026-09-22 | robots.txt for the three scraped hosts | `council.nyc.gov` publishes
+  `Crawl-delay: 10` (51 pages ≈ 8.5 min), `data.cityofnewyork.us` publishes 1, and
+  `nyc.legistar.com` serves **no robots.txt at all** (404). | generic: read each host's own file
+  rather than assuming a global rate, and where none exists the delay is your choice and not a
+  permission you were granted. An `upstream` test re-reads it so following it is not a memory.
+- 2026-09-22 | `src/showup/geo.py` (`SIMPLIFY_TOLERANCE_DEG`) | Measured over a 37,000-point
+  lattice against full precision: 11 m tolerance → 60 KB gzipped and 0.059% of points assigned to
+  the *wrong* district; 2.2 m → 132 KB and 0.011%; unsimplified → 372 KB and 0.005%. The floor is
+  not zero — points on a shared edge are ambiguous even unsimplified. | generic: choose a
+  simplification tolerance by measuring assignment *correctness*, not file size, and keep the test
+  so loosening it cannot pass silently. A first attempt at this sweep was a no-op because the
+  tolerance default binds at function definition.
+- 2026-09-22 | Chrome `--headless=new --dump-dom` | Returns the page's *original source*, not the
+  live DOM — even a synchronous `textContent` change is invisible. Also, macOS clamps a Chrome
+  window's minimum width below ~500 px, so `--window-size=390` yields a 390-wide image of a
+  ~704-wide layout, which reads exactly like a CSS overflow bug. | generic: for browser assertions
+  without a CDP dependency, have the page report over HTTP to a recording server. Do not trust a
+  screenshot's width to be the layout width.
+- 2026-09-22 | `src/showup/fetch.py` (`_fetch_district_pages`), cold run on a fresh clone | A
+  9-minute polite crawl of 51 pages lost 4 to transient DNS failures, so the invariant correctly
+  refused 47/51 — but a fresh clone has **no previous cache to keep**, so the build could not run
+  at all and the operator had to repeat the whole crawl. Fixed with one retry pass over just the
+  failures. | generic: "fail closed and keep the last good copy" degrades to "fail" on first run.
+  Any long polite crawl needs a retry pass over its own failures, or the cold path is a coin flip.

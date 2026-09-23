@@ -9,7 +9,7 @@ registering, and how many hours are left to file written testimony.
 
 ```bash
 make fetch    # refresh the upstream cache (~9 min cold; skips anything fresh)
-make verify   # build + lint + test + 337 live-response assertions. The gate.
+make verify   # build + lint + ~9,000 tests + 357 live-response assertions. The gate.
 make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
 make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
 make browser  # drive the address box in real headless Chrome
@@ -29,10 +29,21 @@ would surface for the first time at deploy. `scripts/serve.py` applies the real
 source-conflict notice, missing committees, designed empty states. Check it after
 any renderer change.
 
-**Building right now? Read `docs/phase-1-scope.md`** — the owner scoped a barebones
-Phase 1: district dropdown or address input, one page of facts and links, no map,
-no analysis, security first. It supersedes the outline's milestones for the near
-term.
+**State of play (2026-09-22).** Phase 1 is **built and runs locally**: 110 pages
+(51 district, 59 board), seven fetchers, 100% enforced coverage, CI green. Not
+deployed — no domain, no hosting, no scheduled refresh, all deferred together.
+The one open Phase 1 item is the accessibility and performance pass (axe, a
+keyboard and screen-reader run, the 60 KB / 3 s gate in CI). `README.md` has the
+done/not-done list; `docs/phase-1-scope.md` §6 has the exit criteria ticked
+individually.
+
+**On a fresh clone, run `make fetch` first.** `etl/raw/` is gitignored, so there is
+no data until you do; `make build` exits 2 and says so. Roughly 9 minutes cold,
+almost all of it the 51 district pages at the crawl delay `council.nyc.gov` asks
+for.
+
+**Building right now? Read `docs/phase-1-scope.md`** — it is what was scoped and
+built, and it supersedes the outline's milestones.
 
 For context: `product-brief.md` has the purpose, users and the eleven product
 requirements; `council-access-project-outline.md` is the engineering plan beneath

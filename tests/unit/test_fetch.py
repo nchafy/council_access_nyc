@@ -404,29 +404,11 @@ class TestHttpLayer:
         with pytest.raises(FetchError, match="Socrata error"):
             fetcher(lambda m: None)
 
-    def test_district_scrape_records_a_failure_without_aborting(self, monkeypatch):
-        """One dead page must not lose the other 50 — the invariant rejects the
-        incomplete set afterwards, which keeps the previous cache."""
-        import urllib.error
-
-        from showup import fetch as fetch_module
-
-        monkeypatch.setattr(fetch_module.time, "sleep", lambda s: None)
-        monkeypatch.setattr(fetch_module, "_polite_wait", lambda host: None)
-
-        responses: list[object] = []
-        for n in range(1, 52):
-            if n == 7:
-                responses.extend([urllib.error.HTTPError("u", 500, "x", {}, None)] * 3)
-            else:
-                responses.append(f"<h1>District {n}</h1>".encode())
-        monkeypatch.setattr(fetch_module.urllib.request, "urlopen", self._fake_urlopen(responses))
-
-        messages: list[str] = []
-        pages = json.loads(fetch_module._fetch_district_pages(messages.append))
-        assert pages["7"] is None
-        assert pages["8"] is not None
-        assert any("district-7 FAILED" in m for m in messages)
+    # `test_district_scrape_records_a_failure_without_aborting` lived here. It drove
+    # the scrape with a fixed response queue, which the retry pass added in
+    # TestDistrictScrapeRetry exhausts. Its intent — one dead page must not abort
+    # the other fifty — is covered there with a mechanism that survives retries, so
+    # it was removed rather than padded.
 
     def test_polite_wait_actually_waits(self, monkeypatch):
         from showup import fetch as fetch_module
@@ -440,3 +422,90 @@ class TestHttpLayer:
         fetch_module._polite_wait("council.nyc.gov")  # first call: no wait
         fetch_module._polite_wait("council.nyc.gov")  # 0.5 s later: must wait ~9.5 s
         assert slept and 9.0 < slept[0] <= 10.0, slept
+
+
+class TestDistrictScrapeRetry:
+    """The whole set gets one retry pass before the fetch is refused.
+
+    A cold run on a fresh clone lost four of 51 pages to transient DNS failures. The
+    invariant correctly refused the incomplete set, but a fresh clone has no previous
+    cache to keep, so the operator had to repeat nine minutes of polite crawling for
+    a blip. One retry pass over only the failures fixes that.
+    """
+
+    @staticmethod
+    def _urlopen_failing_once(fail_for: set[int]):
+        """Fail the given district numbers on first request, succeed afterwards."""
+        import io
+        import urllib.error
+
+        seen: dict[int, int] = {}
+
+        class _Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+                return False
+
+        def fake(request, timeout=None):
+            number = int(request.full_url.rstrip("/").rsplit("-", 1)[1])
+            seen[number] = seen.get(number, 0) + 1
+            if number in fail_for and seen[number] <= 3:
+                raise urllib.error.URLError("nodename nor servname provided")
+            return _Response(f"<h1>District {number}</h1>".encode())
+
+        return fake, seen
+
+    def test_a_transient_failure_is_rescued_by_the_retry_pass(self, monkeypatch):
+        from showup import fetch as fetch_module
+
+        fake, _seen = self._urlopen_failing_once({19, 20, 21, 22})
+        monkeypatch.setattr(fetch_module.time, "sleep", lambda s: None)
+        monkeypatch.setattr(fetch_module, "_polite_wait", lambda host: None)
+        monkeypatch.setattr(fetch_module.urllib.request, "urlopen", fake)
+
+        messages: list[str] = []
+        pages = json.loads(fetch_module._fetch_district_pages(messages.append))
+
+        assert all(pages[str(n)] for n in range(1, 52)), "the retry pass did not rescue them"
+        assert any("retrying 4 page(s)" in m for m in messages)
+        # And the resulting file clears the invariant, which is the point.
+        source = next(s for s in SOURCES if s.name == "districts")
+        assert source.invariant(json.dumps(pages).encode()) is None
+
+    def test_a_page_that_fails_twice_is_reported_and_left_null(self, monkeypatch):
+        import urllib.error
+
+        from showup import fetch as fetch_module
+
+        def always_fail_seven(request, timeout=None):
+            import io
+
+            number = int(request.full_url.rstrip("/").rsplit("-", 1)[1])
+            if number == 7:
+                raise urllib.error.URLError("permanently gone")
+
+            class _Response(io.BytesIO):
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    self.close()
+                    return False
+
+            return _Response(f"<h1>District {number}</h1>".encode())
+
+        monkeypatch.setattr(fetch_module.time, "sleep", lambda s: None)
+        monkeypatch.setattr(fetch_module, "_polite_wait", lambda host: None)
+        monkeypatch.setattr(fetch_module.urllib.request, "urlopen", always_fail_seven)
+
+        messages: list[str] = []
+        pages = json.loads(fetch_module._fetch_district_pages(messages.append))
+
+        assert pages["7"] is None
+        assert any("failed twice: [7]" in m for m in messages)
+        # A genuinely missing page must still refuse the fetch.
+        source = next(s for s in SOURCES if s.name == "districts")
+        assert "of 51 district pages" in source.invariant(json.dumps(pages).encode())

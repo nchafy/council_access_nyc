@@ -201,19 +201,38 @@ def _fetch_district_pages(log: Callable[[str], None]) -> bytes:
     """All 51 pages, at the rate council.nyc.gov's robots.txt asks for.
 
     ~8.5 minutes at Crawl-delay: 10. A page that fails is recorded as null rather
-    than aborting the run, and the invariant then rejects the whole file — so a
-    partial scrape never replaces a complete cached one.
+    than aborting, and the invariant then rejects an incomplete file — so a partial
+    scrape never replaces a complete cached one.
+
+    **The whole set is retried once before giving up.** A cold run on a fresh clone
+    measured four pages lost to transient DNS failures out of 51, which refused the
+    whole fetch — correct, but on a fresh clone there is no previous cache to fall
+    back to, so the build could not proceed at all and the operator had to repeat
+    nine minutes of crawling. A second pass over only the failures costs seconds in
+    the normal case and rescues exactly this.
     """
     pages: dict[str, str | None] = {}
-    for number in range(1, 52):
-        url = f"https://council.nyc.gov/district-{number}/"
-        try:
-            pages[str(number)] = _get(url, tries=3).decode("utf-8", errors="replace")
-        except FetchError as error:
-            log(f"    district-{number} FAILED: {error}")
-            pages[str(number)] = None
-        if number % 10 == 0:
-            log(f"    {number}/51 district pages")
+
+    def attempt(numbers: list[int], label: str) -> list[int]:
+        failed: list[int] = []
+        for number in numbers:
+            url = f"https://council.nyc.gov/district-{number}/"
+            try:
+                pages[str(number)] = _get(url, tries=3).decode("utf-8", errors="replace")
+            except FetchError as error:
+                log(f"    district-{number} failed{label}: {error}")
+                pages[str(number)] = None
+                failed.append(number)
+            if number % 10 == 0:
+                log(f"    {number}/51 district pages")
+        return failed
+
+    failed = attempt(list(range(1, 52)), "")
+    if failed:
+        log(f"    retrying {len(failed)} page(s) that failed: {failed}")
+        still_failed = attempt(failed, " again")
+        if still_failed:
+            log(f"    {len(still_failed)} page(s) failed twice: {still_failed}")
     return json.dumps(pages).encode()
 
 

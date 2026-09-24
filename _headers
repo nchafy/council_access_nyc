@@ -8,9 +8,14 @@
 #
 # default-src 'none' means every resource class must be named explicitly below.
 # Adding a directive here is a security decision — see docs/phase-1-scope.md §4.2.
+#
+# connect-src needs 'self' for /data/lookup.json, /data/districts.geo.json and
+# /manifest.json. Omitting it broke local address resolution and the staleness notice
+# (docs/OBSERVATIONS.md, 2026-09-23). tests/unit/test_csp.py now checks this list
+# against every URL the frontend fetches.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Strict-Transport-Security: max-age=31536000; includeSubDomains

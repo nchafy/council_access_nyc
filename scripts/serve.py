@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -93,6 +96,30 @@ class HeaderApplyingHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         if not self.quiet:
             super().log_message(fmt, *args)
+
+
+@contextmanager
+def background_server(root: Path, headers: Path | None = None) -> Iterator[str]:
+    """Serve `root` behind the real `_headers` for the life of the block; yield its base URL.
+
+    The port is OS-assigned so two gates can run at once. Handler configuration is
+    class-level, so two of these in one process would share it — no caller does that.
+    """
+    rules = parse_headers_file(headers or REPO_ROOT / "_headers")
+    if not rules:
+        raise RuntimeError("no header rules found; refusing to serve a site without its CSP")
+    HeaderApplyingHandler.header_rules = rules
+    HeaderApplyingHandler.quiet = True
+    handler = partial(HeaderApplyingHandler, directory=str(root))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    serve_thread = Thread(target=httpd.serve_forever, daemon=True)
+    serve_thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        serve_thread.join(timeout=5)
 
 
 def main(argv: list[str] | None = None) -> int:

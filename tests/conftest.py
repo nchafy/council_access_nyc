@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# The a11y and perf gates live in `scripts/` as operator tools; the tests drive that
+# same code rather than a second copy, so CI and `make axe` can never disagree.
+if str(REPO_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 
 @pytest.fixture(scope="session")
@@ -42,14 +49,10 @@ def district_page_html() -> dict[int, str]:
     return pages
 
 
-# Shared by the integration tests and the guard tests: a minimal but
-# floor-passing raw cache. Lives here rather than in one test file because both
-# need it, and duplicating it would let the two drift.
-@pytest.fixture
-def raw_dir(tmp_path, calendar_html, district_page_html):
-    """A minimal but floor-passing raw cache."""
-    raw = tmp_path / "raw"
-    raw.mkdir()
+# A plain function with two fixtures over it, because the same cache is needed with two
+# lifetimes: per-session for the browser gates, per-test for the build tests.
+def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int, str]) -> Path:
+    """Populate `raw` with a cache that clears every source floor. Returns `raw`."""
     (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
 
     # All 51 pages must be present to clear the district_pages floor; reuse the
@@ -119,3 +122,19 @@ def raw_dir(tmp_path, calendar_html, district_page_html):
         json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8"
     )
     return raw
+
+
+@pytest.fixture
+def raw_dir(tmp_path, calendar_html, district_page_html) -> Path:
+    """A fresh floor-passing raw cache per test, so a test may corrupt it."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    return write_raw_cache(raw, calendar_html, district_page_html)
+
+
+@pytest.fixture(scope="session")
+def raw_dir_session(tmp_path_factory, calendar_html, district_page_html) -> Path:
+    """The same cache, built once for the session, for the browser gates."""
+    return write_raw_cache(
+        tmp_path_factory.mktemp("raw-session"), calendar_html, district_page_html
+    )

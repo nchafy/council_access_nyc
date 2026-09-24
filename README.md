@@ -105,8 +105,8 @@ deliberately different kinds:
 
 | Gate | How | Measured |
 |---|---|---|
-| Page weight ≤ 60 KB gzipped | arithmetic over the built bytes, no browser | 13.7 KB heaviest |
-| All JavaScript ≤ 12 KB gzipped | the same arithmetic | 6.5 KB |
+| Page weight ≤ 60 KB gzipped | arithmetic over the built bytes, no browser | 13.9 KB heaviest |
+| All JavaScript ≤ 12 KB gzipped | the same arithmetic | 6.7 KB |
 | Geometry ≤ 300 KB, after first paint | plus "no page names it as a subresource" | 132 KB |
 | Cold load to interactive ≤ 3 s | Chrome, network-shaped, 4× CPU, 20 cold runs, p95 | 906 ms |
 

@@ -43,7 +43,7 @@ deployed — no domain, no hosting, no scheduled refresh, all deferred together.
 
 The accessibility and performance pass is now built and gated in CI: axe clean on all
 114 pre-rendered pages at WCAG 2.2 AA, 122 keyboard and accessibility-tree checks over
-9 page types, no console error or CSP violation on any page, 13.7 KB gzipped on the
+9 page types, no console error or CSP violation on any page, 13.9 KB gzipped on the
 heaviest page against the 60 KB budget, and a 906 ms cold-load p95 on throttled 3G
 against the 3 s promise. **The one open Phase 1 item is a real screen-reader pass**,
 which is the one part of R39 no gate can stand in for — the procedure and the record

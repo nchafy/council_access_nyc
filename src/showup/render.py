@@ -729,8 +729,9 @@ def render_board(
             (
                 "Website",
                 _link(board.website, board.website.replace("https://", "").rstrip("/"))
-                + "<br><small>The board's own site is the only place its agendas and "
-                "minutes are published — no City dataset carries them.</small>",
+                + "<br><small>The board's own site is where its agendas, minutes and "
+                "meeting location are published. No City dataset carries a board "
+                "meeting calendar.</small>",
             )
         )
 
@@ -744,15 +745,20 @@ def render_board(
         f"""<section class="meetings">
   <h2>When it meets</h2>
   <p class="why">
-    Quoted exactly as the board publishes it. Unlike Council committees, which are
-    called by their chair, a community board meets on a standing monthly cadence —
-    which makes it the easier of the two to plan around.
+    Quoted exactly as the City's dataset records it. Unlike Council committees, which
+    are called by their chair, a community board meets on a standing monthly cadence.
   </p>
 {_dl(meetings)}
   <p class="refusal">
-    We do not have this board's calendar. No City dataset publishes community board
-    agendas or meeting dates, so the cadence above is a pattern, not a confirmed
-    date. <strong>Confirm with the board before you travel.</strong>
+    <strong>Treat this as a hint, not a schedule, and confirm with the board before
+    you travel.</strong> Two things are missing and one may be wrong. We cannot tell
+    you <em>where</em> the board meets: the City publishes the board's office address,
+    which is often not the meeting venue. We have no dated calendar: no City dataset
+    publishes one, and the City Record
+    (<a href="https://data.cityofnewyork.us/d/dg92-zbpx" rel="noopener noreferrer">dg92-zbpx</a>)
+    carries only a few dozen land-use hearing notices a year across all 59 boards. And
+    the cadence above is the City's record of it, which we have found to disagree with
+    what boards publish on their own sites.
   </p>
 </section>
 """

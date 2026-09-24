@@ -100,18 +100,10 @@ class HeaderApplyingHandler(SimpleHTTPRequestHandler):
 
 @contextmanager
 def background_server(root: Path, headers: Path | None = None) -> Iterator[str]:
-    """Serve `root` with the real headers for the life of the block; yield its base URL.
+    """Serve `root` behind the real `_headers` for the life of the block; yield its base URL.
 
-    The accessibility and performance gates all need the same thing: the built site,
-    on a real port, behind the real `Content-Security-Policy`. Running them against a
-    bare `SimpleHTTPRequestHandler` would measure a site that does not exist — a
-    stylesheet blocked by a policy mistake changes both the colour-contrast result
-    and the load time, and changes them in the flattering direction.
-
-    The port is OS-assigned, so two gates can run at once without colliding. The
-    handler's configuration is class-level, which is how `http.server` is meant to be
-    parameterised but does mean two servers in *one* process would share it. No
-    caller does that; this note is here so nobody starts.
+    The port is OS-assigned so two gates can run at once. Handler configuration is
+    class-level, so two of these in one process would share it — no caller does that.
     """
     rules = parse_headers_file(headers or REPO_ROOT / "_headers")
     if not rules:
@@ -120,14 +112,14 @@ def background_server(root: Path, headers: Path | None = None) -> Iterator[str]:
     HeaderApplyingHandler.quiet = True
     handler = partial(HeaderApplyingHandler, directory=str(root))
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
+    serve_thread = Thread(target=httpd.serve_forever, daemon=True)
+    serve_thread.start()
     try:
         yield f"http://127.0.0.1:{httpd.server_address[1]}"
     finally:
         httpd.shutdown()
         httpd.server_close()
-        thread.join(timeout=5)
+        serve_thread.join(timeout=5)
 
 
 def main(argv: list[str] | None = None) -> int:

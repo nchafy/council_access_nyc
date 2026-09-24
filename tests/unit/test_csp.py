@@ -1,23 +1,6 @@
-"""Cross-check the CSP in `_headers` against what the frontend actually fetches.
+"""Cross-check the CSP in `_headers` against every URL the frontend fetches.
 
-This exists because of a bug it would have caught. `connect-src` named the geocoder
-and nothing else, omitting `'self'`, so under the real policy every same-origin fetch
-the site makes was refused: `/data/lookup.json`, `/data/districts.geo.json` and
-`/manifest.json`. Nothing noticed, because the only browser test served the site with
-no CSP at all and the manifest was otherwise only fetched over plain HTTP by
-`scripts/verify.py`.
-
-The consequences were not cosmetic. Local resolution of a ZIP, a neighbourhood or a
-district number is the privacy feature — those answers are supposed to come from a
-committed index and never reach the geocoder. With the index unfetchable, every query
-fell through to the geocoder instead, which inverts §4.4. And the staleness notice,
-the mechanism that keeps an abandoned site honest, silently never appeared.
-
-So this test asserts the general property rather than the instance: every URL the
-frontend fetches must be permitted by the policy that will be served with it. It is
-hermetic and needs no browser, so it runs in the default suite;
-`tests/browser/test_console.py` checks the same thing from the other end, in a real
-browser, where a mistake shows up as a refused request.
+`tests/browser/test_console.py` asserts the same property from the browser end.
 """
 
 from __future__ import annotations
@@ -32,6 +15,13 @@ HEADERS = REPO_ROOT / "_headers"
 ASSETS = REPO_ROOT / "src" / "showup" / "assets"
 FRONTEND = ("site.js", "address.js")
 
+LITERAL_FETCH_TARGET_PATTERNS = (
+    r'fetch\(\s*"([^"]+)"',
+    r'loadJSON\(\s*"([^"]+)"',
+    r'"(https://[^"]+)"',
+)
+VARIABLE_FETCH_CALL_PATTERN = r"fetch\(\s*[a-zA-Z_$]"
+
 
 def csp_directives() -> dict[str, list[str]]:
     """The `/*` Content-Security-Policy from `_headers`, as directive -> sources."""
@@ -39,97 +29,83 @@ def csp_directives() -> dict[str, list[str]]:
     match = re.search(r"^\s+Content-Security-Policy:\s*(.+)$", text, re.MULTILINE)
     assert match, "_headers carries no Content-Security-Policy"
     directives = {}
-    for part in match.group(1).split(";"):
-        tokens = part.split()
-        if tokens:
-            directives[tokens[0]] = tokens[1:]
+    for clause in match.group(1).split(";"):
+        tokens = clause.split()
+        if not tokens:
+            continue
+        directive_name, *sources = tokens
+        directives[directive_name] = sources
     return directives
 
 
 def fetched_urls() -> dict[str, str]:
-    """Every URL the frontend fetches, as url -> the file that fetches it.
+    """Every URL the frontend fetches literally, as url -> the file that fetches it.
 
-    Matches the two call shapes the frontend actually uses — `fetch("…")` and the
-    `loadJSON("…")` wrapper over it — plus any absolute URL in a string literal. A
-    fetch built entirely from runtime pieces would slip through; there is none today,
-    and `test_every_fetch_call_site_is_a_literal` fails if one appears.
+    Targets assembled at runtime are invisible here;
+    `test_there_are_only_two_variable_fetch_call_sites` fails if a new one appears.
     """
-    found = {}
-    for name in FRONTEND:
-        source = (ASSETS / name).read_text(encoding="utf-8")
-        for pattern in (r'fetch\(\s*"([^"]+)"', r'loadJSON\(\s*"([^"]+)"', r'"(https://[^"]+)"'):
+    url_to_source_file = {}
+    for source_file in FRONTEND:
+        source = (ASSETS / source_file).read_text(encoding="utf-8")
+        for pattern in LITERAL_FETCH_TARGET_PATTERNS:
             for match in re.finditer(pattern, source):
-                found[match.group(1)] = name
-    return found
+                url_to_source_file[match.group(1)] = source_file
+    return url_to_source_file
 
 
 class TestConnectSrc:
     def test_every_fetched_url_is_allowed(self):
-        connect = csp_directives().get("connect-src", [])
-        for url, source in fetched_urls().items():
+        connect_src = csp_directives().get("connect-src", [])
+        for url, source_file in fetched_urls().items():
             if url.startswith("/"):
-                assert "'self'" in connect, (
-                    f"{source} fetches the same-origin {url}, but connect-src is "
-                    f"{connect!r} and does not include 'self'. Under this policy the "
+                assert "'self'" in connect_src, (
+                    f"{source_file} fetches the same-origin {url}, but connect-src is "
+                    f"{connect_src!r} and does not include 'self'. Under this policy the "
                     "request is refused and the feature silently does nothing."
                 )
             else:
-                host = url.split("/")[0] + "//" + url.split("/")[2]
-                assert any(allowed.startswith(host) for allowed in connect), (
-                    f"{source} fetches {url}, which connect-src {connect!r} forbids"
+                scheme, _, host = url.split("/")[:3]
+                origin = f"{scheme}//{host}"
+                assert any(allowed.startswith(origin) for allowed in connect_src), (
+                    f"{source_file} fetches {url}, which connect-src {connect_src!r} forbids"
                 )
 
-    def test_connect_src_allows_nothing_else(self):
-        """The allowlist must stay exactly as wide as the code needs.
-
-        `'self'` plus one host. If a third entry appears, it is either a new
-        third-party dependency — which §4.3 forbids outright — or a leftover.
-        """
-        connect = csp_directives().get("connect-src", [])
-        assert sorted(connect) == ["'self'", "https://geosearch.planninglabs.nyc"], (
-            f"connect-src is {connect!r}; zero third parties means exactly one host"
+    def test_connect_src_allows_nothing_but_self_and_the_geocoder(self):
+        connect_src = csp_directives().get("connect-src", [])
+        assert sorted(connect_src) == ["'self'", "https://geosearch.planninglabs.nyc"], (
+            f"connect-src is {connect_src!r}; zero third parties means exactly one host"
         )
 
     def test_the_geocoder_is_the_only_external_host_anywhere(self):
-        """No directive may name a second external origin."""
-        for directive, sources in csp_directives().items():
-            for source in sources:
-                if source.startswith(("http://", "https://")):
-                    assert source == "https://geosearch.planninglabs.nyc", (
-                        f"{directive} names {source}, a second external origin"
+        for directive_name, sources in csp_directives().items():
+            for source_expression in sources:
+                if source_expression.startswith(("http://", "https://")):
+                    assert source_expression == "https://geosearch.planninglabs.nyc", (
+                        f"{directive_name} names {source_expression}, a second external origin"
                     )
 
 
 class TestTheRestOfThePolicyIsStillClosed:
-    """`'self'` had to be added to one directive; assert it was not added to others."""
-
     @pytest.mark.parametrize("directive", ["default-src", "form-action", "base-uri"])
-    def test_stays_none(self, directive):
+    def test_the_directive_stays_none(self, directive):
         assert csp_directives().get(directive) == ["'none'"], (
             f"{directive} must remain 'none'; widening it is a security decision"
         )
 
     @pytest.mark.parametrize("directive", ["script-src", "style-src", "img-src"])
-    def test_is_self_and_nothing_more(self, directive):
+    def test_the_directive_is_self_and_nothing_more(self, directive):
         assert csp_directives().get(directive) == ["'self'"]
 
     def test_no_unsafe_inline_or_eval_anywhere(self):
-        for directive, sources in csp_directives().items():
-            for source in sources:
-                assert source not in {"'unsafe-inline'", "'unsafe-eval'"}, (
-                    f"{directive} allows {source}"
+        for directive_name, sources in csp_directives().items():
+            for source_expression in sources:
+                assert source_expression not in {"'unsafe-inline'", "'unsafe-eval'"}, (
+                    f"{directive_name} allows {source_expression}"
                 )
 
 
 class TestTheCrossCheckStillSeesEverything:
-    """Guard this file's own premise: that the fetch targets are greppable.
-
-    Two call sites legitimately take a variable — `loadJSON`'s body, and the geocoder
-    URL assembled from the `GEOCODER` constant and the query. Everything else is a
-    literal. If a third variable call site appears, the cross-check above stops seeing
-    it and starts passing for the wrong reason, so the count is pinned rather than the
-    shape.
-    """
+    """Guards this file's own premise: that every fetch target is greppable."""
 
     def test_the_same_origin_fetch_targets_are_exactly_these_three(self):
         same_origin = {url for url in fetched_urls() if url.startswith("/")}
@@ -140,15 +116,16 @@ class TestTheCrossCheckStillSeesEverything:
         }, f"the set of same-origin fetches changed: {sorted(same_origin)}"
 
     def test_there_are_only_two_variable_fetch_call_sites(self):
-        sites = []
-        for name in FRONTEND:
-            source = (ASSETS / name).read_text(encoding="utf-8")
-            sites += [
-                f"{name}:{source[: match.start()].count(chr(10)) + 1}"
-                for match in re.finditer(r"fetch\(\s*[a-zA-Z_$]", source)
+        variable_call_sites = []
+        for source_file in FRONTEND:
+            source = (ASSETS / source_file).read_text(encoding="utf-8")
+            variable_call_sites += [
+                f"{source_file}:{source[: match.start()].count('\n') + 1}"
+                for match in re.finditer(VARIABLE_FETCH_CALL_PATTERN, source)
             ]
-        assert len(sites) == 2, (
+        assert len(variable_call_sites) == 2, (
             f"expected two variable fetch call sites (the loadJSON wrapper and the "
-            f"geocoder), found {len(sites)}: {sites}. A new one needs a matching "
-            "entry in this file, or the CSP cross-check no longer covers it."
+            f"geocoder), found {len(variable_call_sites)}: {variable_call_sites}. A new "
+            "one needs a matching entry in this file, or the CSP cross-check no longer "
+            "covers it."
         )

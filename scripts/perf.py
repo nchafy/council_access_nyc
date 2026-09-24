@@ -1,22 +1,12 @@
 #!/usr/bin/env python3
 """The R40 performance gate: 60 KB gzipped on the critical path, 3 s cold on 3G.
 
-Two measurements, deliberately different in kind.
-
-**Page weight** is arithmetic. Gzip the document and everything it must have before it
-is readable and the dropdowns work, and compare against the budget. No browser, no
-timing, no variance — which means it runs in CI on every commit, it can never be flaky,
-and it fails with an exact number of bytes and the file that grew. This is the half of
-R40 that is genuinely *enforced*.
-
-**Cold load** is a measurement, with a distribution. Chrome loads each page with its
-network shaped and its CPU throttled to the reference profile, cache cleared, twenty
-times, and the p95 is compared against 3 s. Thresholds and profiles live in the
-committed `perf-budget.json` so changing a promise is a diff, not an edit inside a
-script.
-
-Both figures are synthetic. There is no real-user monitoring because analytics are
-banned, so nothing here is an observed field percentile and the reports say so.
+Page weight is arithmetic — gzip the document and everything it blocks on, compare
+against the budget — so it runs on every commit, cannot be flaky, and fails with an
+exact byte count. Cold load is a measurement with a distribution: Chrome loads each
+page throttled to the reference profile on a cold cache, and the p95 is compared
+against 3 s. Thresholds live in the committed `perf-budget.json`. Both figures are
+synthetic; analytics are banned, so no number here is an observed field percentile.
 
     python3 scripts/perf.py                 # both, against site/
     python3 scripts/perf.py --weight-only   # the arithmetic half, no browser needed
@@ -42,14 +32,10 @@ from serve import background_server
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BUDGET_FILE = REPO_ROOT / "perf-budget.json"
 
-#: The pages the timed half runs against. One of each type is enough: a district page
-#: and a board page differ from their siblings only in data, and twenty throttled
-#: loads each is already most of the runtime.
+#: One page of each type; siblings differ only in data, and throttled loads are the runtime.
 TIMED_PAGES = ("/", "/district/35/", "/board/302/")
 
-#: Pulled out of the document because these are what the browser must have in hand.
-#: Deliberately does not follow @import or a preload hint — neither is used, and
-#: `test_no_new_subresource_kinds` fails if one appears.
+#: No @import or preload following — neither is used, and `test_no_new_subresource_kinds` guards.
 STYLESHEET_RE = re.compile(r"""<link[^>]+rel=["']?stylesheet["']?[^>]*>""", re.IGNORECASE)
 SCRIPT_RE = re.compile(r"""<script[^>]+src=["']([^"']+)["']""", re.IGNORECASE)
 HREF_RE = re.compile(r"""href=["']([^"']+)["']""", re.IGNORECASE)
@@ -78,27 +64,26 @@ class Weight:
 
 def page_weight(root: Path, path: str) -> Weight:
     """Gzipped bytes of the document plus every subresource it blocks on."""
-    document = root / (path.lstrip("/") or "index.html")
-    if document.is_dir() or path.endswith("/"):
-        document = root / path.strip("/") / "index.html"
-    html = document.read_bytes()
+    document_file = root / (path.lstrip("/") or "index.html")
+    if document_file.is_dir() or path.endswith("/"):
+        document_file = root / path.strip("/") / "index.html"
+    html_bytes = document_file.read_bytes()
 
-    weight = Weight(path, {"(document)": gzipped_size(html)})
-    text = html.decode("utf-8", errors="replace")
-    references = [
+    weight = Weight(path, {"(document)": gzipped_size(html_bytes)})
+    html_text = html_bytes.decode("utf-8", errors="replace")
+    blocking_references = [
         match.group(1)
-        for tag in STYLESHEET_RE.findall(text)
+        for tag in STYLESHEET_RE.findall(html_text)
         for match in [HREF_RE.search(tag)]
         if match
-    ] + SCRIPT_RE.findall(text)
+    ] + SCRIPT_RE.findall(html_text)
 
-    for reference in references:
+    for reference in blocking_references:
         if reference.startswith(("http://", "https://", "//")):
-            # A third-party subresource would be a §4.3 violation, not a weight
-            # problem, and it is not this gate's job to be the one that reports it.
+            # A third-party subresource is a §4.3 violation, not this gate's business.
             raise ValueError(f"{path} loads an off-site subresource: {reference}")
-        asset = root / reference.lstrip("/")
-        weight.parts[reference] = gzipped_size(asset.read_bytes())
+        asset_file = root / reference.lstrip("/")
+        weight.parts[reference] = gzipped_size(asset_file.read_bytes())
     return weight
 
 
@@ -111,11 +96,8 @@ def measure_cold_load(
 ) -> dict[str, list[float]]:
     """Load each page `runs` times on a cold cache under `profile`; return the samples.
 
-    `domContentLoadedEventEnd` is the number reported, because that is when the
-    document is parsed, styled and the dropdown's script is live — SLA-4's "interactive"
-    for a pre-rendered page. First contentful paint is collected too and printed, since
-    it is when the reader can actually read the answer, but it is not what the promise
-    was written about.
+    The sample recorded is `domContentLoadedEventEnd` — SLA-4's "interactive" for a
+    pre-rendered page. First contentful paint is collected and printed but not gated.
     """
     samples: dict[str, list[float]] = {path: [] for path in paths}
     with background_server(root) as base, Browser() as browser:
@@ -128,8 +110,7 @@ def measure_cold_load(
         )
         for _ in range(runs):
             for path in paths:
-                # Cleared every run, or run two measures a warm cache and the p95
-                # becomes a measurement of Chrome's disk.
+                # Cleared every run, or the p95 becomes a measurement of Chrome's disk.
                 page.clear_cache()
                 page.navigate(base + path, timeout=120)
                 timing = page.evaluate(
@@ -150,14 +131,13 @@ def measure_cold_load(
 
 
 def percentile(values: list[float], fraction: float) -> float:
-    """The nearest-rank percentile: the value at ceil(n*fraction), 1-indexed.
+    """The nearest-rank percentile, not interpolated.
 
-    Not interpolated. With 20 samples and 0.95 this is the 19th ordered value, so one
-    slow run cannot be averaged away and one fast run cannot rescue the set.
+    One slow run cannot be averaged away, and one fast run cannot rescue the set.
     """
     ordered = sorted(values)
-    index = max(0, min(len(ordered) - 1, -(-len(ordered) * fraction // 1) - 1))
-    return ordered[int(index)]
+    rank_index = max(0, min(len(ordered) - 1, -(-len(ordered) * fraction // 1) - 1))
+    return ordered[int(rank_index)]
 
 
 def format_weights(weights: list[Weight], limit: int) -> str:
@@ -169,7 +149,7 @@ def format_weights(weights: list[Weight], limit: int) -> str:
             f"({weight.total * 100 // limit}% of budget)"
         )
         if weight.total > limit:
-            for name, size in sorted(weight.parts.items(), key=lambda item: -item[1]):
+            for name, size in sorted(weight.parts.items(), key=lambda part: -part[1]):
                 lines.append(f"       {name:<28} {size / 1024:6.1f} KB")
     heaviest = max(weights, key=lambda weight: weight.total)
     lines.append(
@@ -212,15 +192,15 @@ def main(argv: list[str] | None = None) -> int:
         f"({', '.join(f'{name} {size / 1024:.1f}' for name, size in sorted(scripts.items()))})"
     )
 
-    geometry = root / "data" / "districts.geo.json"
-    if geometry.exists():
-        size = gzipped_size(geometry.read_bytes())
+    geometry_file = root / "data" / "districts.geo.json"
+    if geometry_file.exists():
+        geometry_size = gzipped_size(geometry_file.read_bytes())
         geometry_limit = settings["geometry_gzip_bytes"]
-        ok = size <= geometry_limit
-        failed = failed or not ok
+        within_geometry_budget = geometry_size <= geometry_limit
+        failed = failed or not within_geometry_budget
         print(
-            f"{'ok  ' if ok else 'FAIL'} geometry (after first paint) "
-            f"{size / 1024:.0f} KB of the {geometry_limit / 1024:.0f} KB budget"
+            f"{'ok  ' if within_geometry_budget else 'FAIL'} geometry (after first paint) "
+            f"{geometry_size / 1024:.0f} KB of the {geometry_limit / 1024:.0f} KB budget"
         )
 
     if args.weight_only:
@@ -231,19 +211,20 @@ def main(argv: list[str] | None = None) -> int:
 
     threshold = settings["cold_load_ms_p95"]
     for name, profile in settings["profiles"].items():
-        gating = name == settings["gating_profile"]
+        is_gating_profile = name == settings["gating_profile"]
         try:
             samples = measure_cold_load(root, TIMED_PAGES, profile, args.runs)
         except CDPError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
-        print(f"\n{name} — {profile['label']}{'  [GATED]' if gating else '  [reported only]'}")
+        gating_note = "  [GATED]" if is_gating_profile else "  [reported only]"
+        print(f"\n{name} — {profile['label']}{gating_note}")
         for path, values in samples.items():
             p95 = percentile(values, 0.95)
-            over = gating and p95 > threshold
-            failed = failed or over
+            over_threshold = is_gating_profile and p95 > threshold
+            failed = failed or over_threshold
             print(
-                f"{'FAIL' if over else 'ok  '} {path:<18} p95 {p95:7.0f} ms  "
+                f"{'FAIL' if over_threshold else 'ok  '} {path:<18} p95 {p95:7.0f} ms  "
                 f"median {statistics.median(values):7.0f} ms  "
                 f"n={len(values)}  (threshold {threshold} ms)"
             )

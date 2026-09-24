@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
 """Run axe-core over the built site and fail on any WCAG 2.2 AA violation.
 
-R39. The site is served with its real `_headers`, so the policy that will be in
-force at deploy is in force here: a stylesheet blocked by a CSP mistake would change
-every colour-contrast result, and in the flattering direction.
-
-axe itself is injected over the DevTools protocol rather than added to the page.
-That matters for two reasons. The CSP is `script-src 'self'` with no
-`unsafe-inline`, so a `<script>` tag carrying axe could not run without weakening
-the policy we are trying to test; and injecting nothing into the document means the
-page under test is byte-identical to the page we publish.
+R39. The site is served with its real `_headers`, and axe is injected over the DevTools
+protocol rather than added to the page, so the document under test is byte-identical to
+the one we publish and the CSP under test is the one in force at deploy.
 
     python3 scripts/axe_check.py                  # every page type, ~10 pages
     python3 scripts/axe_check.py --all            # every pre-rendered page
     python3 scripts/axe_check.py --json out.json  # the full result, for triage
 
-**What this does not prove.** Automated checking reaches a minority of WCAG —
-Deque's own figure for axe is around a third to a half of issues, and the ones it
-cannot see are the ones that matter most: whether the reading order makes sense,
-whether a link's text means anything out of context, whether an error message tells
-you what to do. `docs/accessibility-pass.md` carries the human pass that covers
-those, and this gate is the floor beneath it, not a substitute for it.
+Automated checking reaches a minority of WCAG. `docs/accessibility-pass.md` carries the
+human pass, and this gate is the floor beneath it rather than a substitute for it.
 """
 
 from __future__ import annotations
@@ -33,26 +23,21 @@ from pathlib import Path
 from typing import Any
 
 from cdp import Browser, CDPError, find_chrome
+from fetch_axe import AXE_SOURCE, AxeFetchError, ensure_axe
 from pageset import REPRESENTATIVE, every_page
 from serve import background_server
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-AXE_SOURCE = REPO_ROOT / "vendor" / "axe-core" / "axe.min.js"
 
-#: The conformance target, as tags axe understands. R39 says WCAG 2.2 AA, and 2.2
-#: conformance implies 2.1 and 2.0, so all six tags are the one requirement spelled
-#: out — not a widening of it.
+#: WCAG 2.2 AA as tags axe understands. 2.2 conformance implies 2.1 and 2.0, so all six
+#: are the one requirement spelled out rather than a widening of it.
 GATING_TAGS = ("wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa")
 
-#: Run these too, and report them, but do not fail the build on them. They are
-#: house style rather than conformance, and a gate that fails on advice is a gate
-#: people learn to disable.
+#: Reported but never gating: house style rather than conformance.
 ADVISORY_TAGS = ("best-practice",)
 
-#: The floor on rules that must actually have run — passed, failed or been left for
-#: review. The simplest page in the set, the 404, exercised 11 when this was written
-#: and a district page exercised 14. If a page reports fewer, axe did not really
-#: inspect it and "0 violations" is not a result.
+#: Rules that must actually have run. Fewer means axe did not inspect the page, so
+#: "0 violations" is not a result. The 404 exercised 11 here, a district page 14.
 MINIMUM_RULES_EXERCISED = 8
 
 
@@ -63,12 +48,10 @@ def _run_axe(page: Any, tags: tuple[str, ...]) -> dict[str, Any]:
 
 
 def _summarise(result: dict[str, Any]) -> list[dict[str, Any]]:
-    """Reduce axe's result to what a failure message needs.
+    """Reduce axe's result to what a failure message needs: the rule, and where.
 
-    axe returns the full DOM snippet for every node; a page with one bad colour pair
-    in a repeated component produces hundreds of kilobytes of near-identical JSON.
-    Keep the rule, why it failed, and the first few selectors — enough to find it,
-    with `--json` available when it is not.
+    axe's own output carries the full DOM snippet per node, which runs to hundreds of
+    kilobytes on a repeated component. `--json` is there when the detail is wanted.
     """
     return [
         {
@@ -87,9 +70,15 @@ def _summarise(result: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def axe_source_text() -> str:
+    """The pinned axe build, fetched into the gitignored cache on first use."""
+    ensure_axe()
+    return AXE_SOURCE.read_text(encoding="utf-8")
+
+
 def check(root: Path, paths: list[str]) -> dict[str, Any]:
     """Run axe over each path. One browser, one server, one page target for all of them."""
-    axe_source = AXE_SOURCE.read_text(encoding="utf-8")
+    axe_source = axe_source_text()
     report: dict[str, Any] = {"pages": {}, "violations": 0, "advisory": 0, "incomplete": 0}
 
     with background_server(root) as base, Browser() as browser:
@@ -102,19 +91,11 @@ def check(root: Path, paths: list[str]) -> dict[str, Any]:
             conformance = _run_axe(page, GATING_TAGS)
             gating = _summarise(conformance)
             advisory = _summarise(_run_axe(page, ADVISORY_TAGS))
-            # "Incomplete" is axe declining to decide — usually contrast against an
-            # image or a gradient. Not a failure, but silence about it would be a
-            # way to pass by not looking.
+            # Reported, not failed: "incomplete" is axe declining to decide.
             incomplete = [item["id"] for item in (conformance.get("incomplete") or [])]
-            # Rules *exercised*, not rules passed: a rule that failed was still run,
-            # and counting only passes made a correctly-detected broken page look
-            # like a page that had not been inspected.
+            # Exercised, not passed: a rule that failed was still run.
             exercised = len(conformance.get("passes") or []) + len(gating) + len(incomplete)
             if exercised < MINIMUM_RULES_EXERCISED:
-                # The failure mode this guards against is the quiet one: axe fails to
-                # inject, or a navigation silently lands on the 404, and the page
-                # reports zero violations because zero rules ran. A clean result only
-                # means something if we can say what it was clean against.
                 raise CDPError(
                     f"{path}: axe exercised only {exercised} rules, expected at least "
                     f"{MINIMUM_RULES_EXERCISED}. The page probably did not load, or "
@@ -172,12 +153,14 @@ def main(argv: list[str] | None = None) -> int:
     if not (root / "index.html").exists():
         print(f"error: no built site at {root} — run `make build` first", file=sys.stderr)
         return 2
-    if not AXE_SOURCE.exists():
-        print(f"error: {AXE_SOURCE} is missing; see vendor/axe-core/PROVENANCE.md", file=sys.stderr)
+    try:
+        ensure_axe()
+    except AxeFetchError as error:
+        # Loud, not skipped: a gate that quietly does nothing reports success.
+        print(f"error: {error}", file=sys.stderr)
+        print("       run `make axe-fetch` once the network is reachable", file=sys.stderr)
         return 2
     if not find_chrome():
-        # Loud, not skipped. A gate that quietly does nothing is worse than no gate,
-        # because it reports success.
         print("error: no Chrome or Chromium found, so nothing was checked", file=sys.stderr)
         return 2
 

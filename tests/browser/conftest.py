@@ -1,14 +1,7 @@
-"""Shared setup for the gates that need a real browser.
+"""Shared setup for the gates that need a real browser: one built site, and Chrome.
 
-Builds one site from committed fixtures for the whole session, and finds Chrome.
-
-Why a fixture-built site rather than `site/`. `etl/raw/` is gitignored, so a CI runner
-has no upstream cache and cannot build the real site; a gate that only ran where the
-cache happens to exist would not be a gate. Building from `tests/fixtures/` makes these
-run anywhere, hermetically, with the real district markup. What it cannot cover is the
-size of the real simplified geometry, because the fixture geometry is 51 synthetic
-squares — `scripts/perf.py --root site` covers that locally, and
-`tests/unit/test_geo.py` pins the tolerance it came from.
+The site is built from `tests/fixtures/` rather than `site/` because `etl/raw/` is
+gitignored, so a CI runner has no upstream cache and could not build the real site.
 """
 
 from __future__ import annotations
@@ -25,11 +18,9 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures"
 
 @pytest.fixture(scope="session")
 def chrome() -> str:
-    """Skip the whole module when there is no browser, and say so out loud.
+    """Path to a local Chrome, skipping the module when there is none.
 
-    Skipping is right locally — not every contributor has Chrome — and wrong in CI,
-    where a silently skipped gate reports success. The CI job therefore asserts
-    Chrome exists as its own step before pytest runs, so the skip can never be the
+    The CI job asserts Chrome exists as its own step, so a skip can never be the
     reason CI is green.
     """
     from cdp import find_chrome
@@ -44,8 +35,8 @@ def chrome() -> str:
 def built_site(raw_dir_session, tmp_path_factory) -> Path:
     """A whole site built from committed fixtures, once per session.
 
-    `today` is pinned to the same date the integration tests use, so the calendar
-    window and the deadline arithmetic are the ones those tests already assert.
+    `today` is pinned to the date the integration tests use, so the calendar window
+    and the deadline arithmetic are the ones those tests already assert.
     """
     from showup.build import build_site
 
@@ -56,10 +47,10 @@ def built_site(raw_dir_session, tmp_path_factory) -> Path:
 
 @pytest.fixture(scope="session")
 def broken_site(tmp_path_factory) -> Path:
-    """A one-page site serving the deliberately inaccessible fixture as its index.
+    """The deliberately inaccessible fixture as a one-page site.
 
     Copied rather than served in place so the fixture's `/broken.css` resolves at the
-    server root, which is what the real site's `/assets/site.css` does too.
+    server root, as the real site's `/assets/site.css` does.
     """
     out = tmp_path_factory.mktemp("broken-site")
     shutil.copytree(FIXTURES / "a11y_broken", out, dirs_exist_ok=True)

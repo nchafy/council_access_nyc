@@ -1,30 +1,11 @@
 #!/usr/bin/env python3
-"""Drive a real Chrome over the DevTools Protocol, with nothing but the stdlib.
+"""Drive a real Chrome over the DevTools Protocol, using nothing but the stdlib.
 
-Why this exists. Three of the four things M5 has to prove cannot be proved from
-outside a browser:
-
-- **axe** needs the rendered accessibility tree, not the HTML we emitted.
-- **The keyboard pass** needs real `Tab` keypresses moving real focus. Reading
-  `tabindex` out of the markup proves nothing about what a browser does with it.
-- **The 3 s throttled-3G budget** needs the browser's own clock while the browser's
-  own network stack is shaped. A number computed as bytes ÷ bandwidth is a model,
-  and R40 asks for a measurement.
-
-Why not Playwright or Selenium. `pyproject.toml` explains the dependency posture:
-every dependency is attack surface, and this project's primary threat is untrusted
-upstream content. Playwright would add a package that downloads and executes its
-own browser binaries, for a build that today needs no secrets and pulls nothing at
-run time. CDP is a JSON protocol over a WebSocket on loopback, and the useful
-subset is small enough to own outright — which is what this file is.
-
-The existing `shot.py` and `tests/browser/test_address_box.py` drive Chrome through
-one-shot command lines instead, because a screenshot and a
-report-over-HTTP harness need nothing better. They keep doing that; this is for the
-cases where we have to ask the page a question and read the answer back.
-
-Used as a library by `scripts/axe_check.py`, `scripts/a11y_keyboard.py` and
-`scripts/perf.py`. Run directly for a smoke test:
+A rendered accessibility tree, real `Tab` keypresses, and the browser's own clock
+under the browser's own throttling cannot be obtained from outside a browser. CDP is
+JSON over a loopback WebSocket, so the useful subset is small enough to own outright
+instead of depending on Playwright. Used as a library by `axe_check`, `a11y_audit`,
+`console_check` and `perf`. Run directly for a smoke test:
 
     python3 scripts/cdp.py https://example.com
 """
@@ -49,8 +30,7 @@ from types import TracebackType
 from typing import Any, ClassVar
 from urllib.parse import urlsplit
 
-#: Where Chrome lives. Shared by every browser-driving script in this repo so
-#: there is one list to update, not three that drift.
+#: Shared by every browser-driving script here, so there is one list to update.
 CHROME_CANDIDATES = (
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -74,29 +54,31 @@ class WebSocket:
     """The smallest RFC 6455 client that can carry CDP.
 
     Deliberately partial: a text channel over an unencrypted loopback socket, with
-    continuation frames reassembled and pings answered. No TLS, no extensions, no
-    permessage-deflate — Chrome's debugging endpoint is plain `ws://` on 127.0.0.1,
-    and negotiating nothing means there is nothing to negotiate wrong.
+    continuation frames reassembled and pings answered. No TLS and no extensions,
+    because Chrome's debugging endpoint is plain `ws://` on 127.0.0.1.
     """
 
-    #: A full accessibility tree for the index page is a few megabytes, so the
-    #: cap has to be generous. It exists to turn a corrupt length field into an
-    #: error instead of an allocation.
+    OPCODE_TEXT = 0x1
+    OPCODE_CLOSE = 0x8
+    OPCODE_PING = 0x9
+    OPCODE_PONG = 0xA
+
+    #: Generous — trees run to megabytes; it turns a corrupt length into an error, not an alloc.
     MAX_FRAME_BYTES = 256 * 1024 * 1024
 
     def __init__(self, url: str, timeout: float = 30.0) -> None:
-        parts = urlsplit(url)
-        if parts.scheme != "ws":
+        url_parts = urlsplit(url)
+        if url_parts.scheme != "ws":
             raise CDPError(f"expected a ws:// url, got {url!r}")
-        host, port = parts.hostname or "127.0.0.1", parts.port or 80
+        host, port = url_parts.hostname or "127.0.0.1", url_parts.port or 80
         self._socket = socket.create_connection((host, port), timeout=timeout)
         self._socket.settimeout(timeout)
         self._buffer = b""
 
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
-        target = parts.path or "/"
-        if parts.query:
-            target = f"{target}?{parts.query}"
+        target = url_parts.path or "/"
+        if url_parts.query:
+            target = f"{target}?{url_parts.query}"
         self._socket.sendall(
             "\r\n".join(
                 [
@@ -111,9 +93,9 @@ class WebSocket:
                 ]
             ).encode("ascii")
         )
-        status = self._read_until(b"\r\n\r\n").split(b"\r\n", 1)[0]
-        if b" 101 " not in status:
-            raise CDPError(f"websocket upgrade refused: {status!r}")
+        status_line = self._read_until(b"\r\n\r\n").split(b"\r\n", 1)[0]
+        if b" 101 " not in status_line:
+            raise CDPError(f"websocket upgrade refused: {status_line!r}")
 
     def _read_until(self, marker: bytes) -> bytes:
         while marker not in self._buffer:
@@ -121,9 +103,9 @@ class WebSocket:
             if not chunk:
                 raise CDPError("connection closed during the handshake")
             self._buffer += chunk
-        head, _, rest = self._buffer.partition(marker)
-        self._buffer = rest
-        return head
+        before_marker, _, after_marker = self._buffer.partition(marker)
+        self._buffer = after_marker
+        return before_marker
 
     def _read_exactly(self, count: int) -> bytes:
         while len(self._buffer) < count:
@@ -131,8 +113,8 @@ class WebSocket:
             if not chunk:
                 raise CDPError("connection closed mid-frame")
             self._buffer += chunk
-        head, self._buffer = self._buffer[:count], self._buffer[count:]
-        return head
+        requested, self._buffer = self._buffer[:count], self._buffer[count:]
+        return requested
 
     def _send_frame(self, opcode: int, payload: bytes) -> None:
         header = bytearray([0x80 | opcode])
@@ -148,26 +130,26 @@ class WebSocket:
             header += struct.pack("!Q", length)
         mask = secrets.token_bytes(4)
         header += mask
-        # axe.min.js goes over this channel, so the masking loop runs over ~600 KB.
-        # int.from_bytes/to_bytes does it in C rather than a Python-level loop.
-        masked = (
-            int.from_bytes(payload, "big")
-            ^ int.from_bytes(mask * (length // 4) + mask[: length % 4], "big")
+        # Big-int XOR keeps the ~600 KB axe.min.js masking loop in C, not in Python.
+        repeated_mask = mask * (length // 4) + mask[: length % 4]
+        masked_payload = (
+            int.from_bytes(payload, "big") ^ int.from_bytes(repeated_mask, "big")
         ).to_bytes(length, "big")
-        self._socket.sendall(bytes(header) + masked)
+        self._socket.sendall(bytes(header) + masked_payload)
 
     def send_text(self, text: str) -> None:
-        self._send_frame(0x1, text.encode("utf-8"))
+        self._send_frame(self.OPCODE_TEXT, text.encode("utf-8"))
 
     def recv_text(self) -> str:
         """The next complete text message, reassembling continuation frames."""
         chunks: list[bytes] = []
         while True:
-            first, second = self._read_exactly(2)
-            final, opcode = bool(first & 0x80), first & 0x0F
-            if second & 0x80:
+            flags_byte, length_byte = self._read_exactly(2)
+            is_final_frame = bool(flags_byte & 0x80)
+            opcode = flags_byte & 0x0F
+            if length_byte & 0x80:
                 raise CDPError("a server frame must not be masked")
-            length = second & 0x7F
+            length = length_byte & 0x7F
             if length == 126:
                 length = struct.unpack("!H", self._read_exactly(2))[0]
             elif length == 127:
@@ -176,33 +158,31 @@ class WebSocket:
                 raise CDPError(f"refusing a {length}-byte frame")
             payload = self._read_exactly(length)
 
-            if opcode == 0x8:
+            if opcode == self.OPCODE_CLOSE:
                 raise CDPError("Chrome closed the connection")
-            if opcode == 0x9:  # ping — answer it or Chrome eventually hangs up
-                self._send_frame(0xA, payload)
+            if opcode == self.OPCODE_PING:
+                # Unanswered pings make Chrome eventually hang up.
+                self._send_frame(self.OPCODE_PONG, payload)
                 continue
-            if opcode == 0xA:  # unsolicited pong
+            if opcode == self.OPCODE_PONG:
                 continue
             chunks.append(payload)
-            if final:
+            if is_final_frame:
                 return b"".join(chunks).decode("utf-8")
 
     def close(self) -> None:
-        # Best-effort by design: if Chrome has already gone, there is nothing to
-        # say goodbye to and the socket still needs closing.
+        """Close the socket, tolerating a Chrome that has already gone."""
         with contextlib.suppress(OSError):
-            self._send_frame(0x8, b"")
+            self._send_frame(self.OPCODE_CLOSE, b"")
         self._socket.close()
 
 
 class Session:
     """A CDP session against one page target.
 
-    Every `call` is synchronous: it writes a request and reads until the matching
-    id comes back, buffering any events that arrive in between so a later
-    `wait_for` can still find them. That ordering is the whole reason this stays
-    simple — there is never more than one request in flight, so there is no need
-    for a reader thread or a future registry.
+    Every `call` is synchronous, buffering events that arrive before the matching
+    response so a later `wait_for` can still find them. Because there is never more
+    than one request in flight, no reader thread or future registry is needed.
     """
 
     def __init__(self, websocket: WebSocket) -> None:
@@ -232,9 +212,7 @@ class Session:
     def consume_events(self) -> list[dict[str, Any]]:
         """Take every buffered event, leaving the buffer empty.
 
-        For callers that want the events themselves rather than to wait for one —
-        console complaints, network requests — where the interesting thing is
-        everything that happened, not the first match.
+        For callers that want everything that happened rather than the first match.
         """
         events, self._events = self._events, []
         return events
@@ -257,9 +235,8 @@ class Session:
     def evaluate(self, expression: str, *, await_promise: bool = False) -> Any:
         """Run JavaScript in the page and return the value.
 
-        A page exception is raised here rather than returned, because every caller
-        treats "the check could not run" as a failure. Silently returning None
-        would let a broken check report clean.
+        A page exception is raised, not returned as None, so a check that could not
+        run cannot report clean.
         """
         result = self.call(
             "Runtime.evaluate",
@@ -279,14 +256,7 @@ class Session:
         self.call("Page.navigate", url=url)
         self.wait_for("Page.loadEventFired", timeout=timeout)
 
-    #: Virtual key code, and the text the key inserts if it inserts any.
-    #:
-    #: The text matters more than it looks. A key with no text is dispatched as
-    #: `rawKeyDown`, because a `keyDown` for a non-text key makes Chrome wait for a
-    #: following `char` event and Tab then never moves focus. But Enter *does* carry
-    #: text, and dispatching it as `rawKeyDown` means Blink never runs the implicit
-    #: form submission — the address box took the typed text and then sat there,
-    #: which read exactly like a broken form rather than a broken test.
+    #: Key name -> (virtual key code, the text the key inserts, if it inserts any).
     KEYS: ClassVar[dict[str, tuple[int, str]]] = {
         "Tab": (9, ""),
         "Enter": (13, "\r"),
@@ -294,40 +264,46 @@ class Session:
         "Space": (32, " "),
     }
 
+    @staticmethod
+    def _event_type_for_key(inserted_text: str) -> str:
+        """`keyDown` for a key that inserts text, `rawKeyDown` for one that does not.
+
+        A text-less `keyDown` leaves Chrome waiting for a `char` event and Tab never
+        moves focus; Enter as `rawKeyDown` skips Blink's implicit form submission.
+        """
+        return "keyDown" if inserted_text else "rawKeyDown"
+
     def press(self, key: str, *, shift: bool = False) -> None:
         """Dispatch a real keypress."""
         if key not in self.KEYS:
             raise CDPError(f"no virtual key code recorded for {key!r}")
-        code, text = self.KEYS[key]
-        for event_type in ("keyDown" if text else "rawKeyDown", "keyUp"):
+        virtual_key_code, inserted_text = self.KEYS[key]
+        for event_type in (self._event_type_for_key(inserted_text), "keyUp"):
             params = {
                 "type": event_type,
                 "key": key,
                 "code": key,
-                "windowsVirtualKeyCode": code,
-                "nativeVirtualKeyCode": code,
+                "windowsVirtualKeyCode": virtual_key_code,
+                "nativeVirtualKeyCode": virtual_key_code,
                 "modifiers": 8 if shift else 0,
             }
-            if text and event_type == "keyDown":
-                params["text"] = text
-                params["unmodifiedText"] = text
+            if inserted_text and event_type == "keyDown":
+                params["text"] = inserted_text
+                params["unmodifiedText"] = inserted_text
             self.call("Input.dispatchKeyEvent", **params)
 
     def type_text(self, text: str) -> None:
-        """Put text into the focused field.
+        """Put text into the focused field in one `Input.insertText`.
 
-        `Input.insertText`, not per-character key events: the address box is
-        submit-only by the privacy decision in §4.4, so no code path listens for
-        keystrokes and simulating them would only be slower.
+        No code path listens for keystrokes: the address box is submit-only.
         """
         self.call("Input.insertText", text=text)
 
     def throttle(self, *, download_bps: float, upload_bps: float, latency_ms: float, cpu: float):
         """Shape the network and CPU to the reference profile.
 
-        Both halves matter: R40's budget is a *cold load on a mid-tier Android*,
-        and an unthrottled CPU on a developer laptop parses and styles a document
-        several times faster than the device the budget is written for.
+        Both halves matter: an unthrottled developer CPU parses and styles a document
+        several times faster than the mid-tier Android the budget is written for.
         """
         self.call("Network.enable")
         self.call(
@@ -347,11 +323,10 @@ class Session:
 
 
 class Browser:
-    """A headless Chrome, launched on a throwaway profile, as a context manager.
+    """A headless Chrome on a throwaway profile, as a context manager.
 
     The profile directory is temporary and removed on exit, which is what makes
-    `clear_cache` believable and keeps a test run from inheriting the developer's
-    own Chrome state — or writing to it.
+    `clear_cache` believable and keeps a run out of the developer's own Chrome state.
     """
 
     def __init__(self, *, extra_args: tuple[str, ...] = (), timeout: float = 30.0) -> None:
@@ -371,9 +346,7 @@ class Browser:
             [
                 chrome,
                 "--headless=new",
-                # Port 0 asks the OS for a free one and Chrome writes it to
-                # DevToolsActivePort. Hard-coding a port makes parallel runs
-                # collide, which fails as a mysterious timeout.
+                # Port 0 asks the OS for a free one; a fixed port collides across runs.
                 "--remote-debugging-port=0",
                 f"--user-data-dir={self._profile}",
                 "--disable-gpu",
@@ -392,14 +365,15 @@ class Browser:
         return self
 
     def _await_port(self) -> int:
+        """Read the debugging port Chrome writes to `DevToolsActivePort` once listening."""
         assert self._profile is not None
-        marker = self._profile / "DevToolsActivePort"
+        port_file = self._profile / "DevToolsActivePort"
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
             if self._process is not None and self._process.poll() is not None:
                 raise CDPError(f"Chrome exited with {self._process.returncode} before listening")
-            if marker.exists():
-                lines = marker.read_text(encoding="utf-8").splitlines()
+            if port_file.exists():
+                lines = port_file.read_text(encoding="utf-8").splitlines()
                 if lines and lines[0].strip().isdigit():
                     return int(lines[0].strip())
             time.sleep(0.05)

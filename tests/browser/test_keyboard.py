@@ -1,16 +1,7 @@
-"""The keyboard pass and the screen-reader surface, as named assertions.
+"""R39's keyboard pass and screen-reader surface, one named assertion per check.
 
-R39's second clause. Each check from `scripts/a11y_audit.py` is asserted individually so
-a failure names itself — the pattern `test_address_box.py` already uses, for the same
-reason: a single aggregate assertion tells you the page is broken, not which promise
-broke.
-
-Also asserts that each check *ran*. A check that silently stopped being collected is as
-much a problem as one that failed, and an audit that returns an empty list would
-otherwise pass every test in this file.
-
-`docs/accessibility-pass.md` records the human half, which is the part no assertion here
-replaces.
+Each check from `scripts/a11y_audit.py` is asserted individually, and asserted to have
+*run*, so an audit that silently stopped collecting a check cannot pass this file.
 """
 
 from __future__ import annotations
@@ -21,8 +12,7 @@ from pageset import REPRESENTATIVE
 
 pytestmark = pytest.mark.browser
 
-#: Every check the audit is expected to produce for a page, by name. Pinned so that a
-#: renamed or deleted check fails loudly rather than reducing coverage in silence.
+#: Pinned so a renamed or deleted check fails loudly rather than reducing coverage.
 PER_PAGE_CHECKS = (
     "the page has focusable content",
     "no positive tabindex",
@@ -55,24 +45,24 @@ def checks(chrome, built_site):
 
 class TestEveryCheckPasses:
     def test_nothing_failed(self, checks):
-        failures = [check for check in checks if not check.ok]
-        assert not failures, "\n".join(
-            f"{check.page}  {check.name}: {check.detail}" for check in failures
+        failed_checks = [check for check in checks if not check.ok]
+        assert not failed_checks, "\n".join(
+            f"{check.page}  {check.name}: {check.detail}" for check in failed_checks
         )
 
     @pytest.mark.parametrize("name", PER_PAGE_CHECKS)
     def test_the_check_ran_on_every_page_and_passed(self, checks, name):
-        ran = {check.page for check in checks if check.name == name}
-        assert ran == set(REPRESENTATIVE), (
-            f"{name!r} did not run on {sorted(set(REPRESENTATIVE) - ran)}"
+        pages_that_ran_it = {check.page for check in checks if check.name == name}
+        assert pages_that_ran_it == set(REPRESENTATIVE), (
+            f"{name!r} did not run on {sorted(set(REPRESENTATIVE) - pages_that_ran_it)}"
         )
         assert all(check.ok for check in checks if check.name == name)
 
     @pytest.mark.parametrize("name", FRONT_PAGE_CHECKS)
     def test_the_front_page_check_ran_and_passed(self, checks, name):
-        matching = [check for check in checks if check.name == name]
-        assert matching, f"{name!r} never ran"
-        assert all(check.ok for check in matching), matching[0].detail
+        matching_checks = [check for check in checks if check.name == name]
+        assert matching_checks, f"{name!r} never ran"
+        assert all(check.ok for check in matching_checks), matching_checks[0].detail
 
 
 class TestTheAuditCoversWhatItClaims:
@@ -80,23 +70,21 @@ class TestTheAuditCoversWhatItClaims:
         assert {check.page for check in checks} >= set(REPRESENTATIVE)
 
     def test_the_degraded_district_page_was_included(self, checks):
-        """District 3 is the designed degraded state — vacant-seat handling, missing
-        committees, the source-conflict notice. Its empty states are exactly where a
-        heading level or a landmark goes missing."""
+        """District 3 is the designed degraded state: vacant seat, no committees."""
         assert any(check.page == "/district/3/" for check in checks)
 
-    def test_no_check_is_silently_absent(self, checks):
-        """Every name the audit can produce is one this file knows about, and the other
-        way round. A new check that nothing asserts is a new check nobody reads."""
-        produced = {check.name for check in checks}
-        known = (
+    def test_no_check_is_produced_that_this_file_does_not_assert(self, checks):
+        produced_names = {check.name for check in checks}
+        asserted_names = (
             set(PER_PAGE_CHECKS)
             | set(FRONT_PAGE_CHECKS)
             | {
                 "the address box is reachable by Tab"  # only emitted on the failure path
             }
         )
-        assert produced <= known, f"unasserted checks exist: {sorted(produced - known)}"
-        assert set(PER_PAGE_CHECKS) <= produced, (
-            f"checks stopped being produced: {sorted(set(PER_PAGE_CHECKS) - produced)}"
+        assert produced_names <= asserted_names, (
+            f"unasserted checks exist: {sorted(produced_names - asserted_names)}"
+        )
+        assert set(PER_PAGE_CHECKS) <= produced_names, (
+            f"checks stopped being produced: {sorted(set(PER_PAGE_CHECKS) - produced_names)}"
         )

@@ -1,24 +1,17 @@
-"""No page may complain in the console, and local resolution must stay local.
+"""Console silence, local-resolution privacy, the staleness notice, and error blame.
 
-The second half is the one that matters. `docs/phase-1-scope.md` §4.4 promises that a
-ZIP, a neighbourhood or a district number resolves from a committed index and never
-reaches the geocoder. That promise was broken in production configuration for as long
-as the address box has existed — `connect-src` omitted `'self'`, the index could not be
-fetched, and every query fell through to the geocoder instead. The promise was tested,
-but only against a server that sent no CSP, so the test and the shipped policy
-disagreed and nothing compared them.
-
-`test_a_district_number_never_touches_the_geocoder` closes that by watching the network
-rather than the code: it asserts what requests the browser actually made, behind the
-real headers. A regression in the policy, the code, or the data all fail it the same
-way.
+All four are read-time properties: they only exist in a browser behind the real
+`_headers`, which is why a CSP that refused the site's own data went unnoticed until
+something loaded a page that way.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import time
+from pathlib import Path
 
 import pytest
 from cdp import Browser
@@ -29,19 +22,34 @@ from serve import background_server
 pytestmark = pytest.mark.browser
 
 GEOCODER_HOST = "geosearch.planninglabs.nyc"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _submit_address(page, base_url, query, settle_seconds=6.0):
+    """Type `query` into the address box, submit, and return (path, status text)."""
+    page.navigate(base_url + "/")
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if not page.evaluate("document.getElementById('address-section').hasAttribute('hidden')"):
+            break
+        time.sleep(0.1)
+
+    page.evaluate("document.getElementById('address-input').focus()")
+    page.type_text(query)
+    page.press("Enter")
+    time.sleep(settle_seconds)
+    return (
+        page.evaluate("location.pathname"),
+        page.evaluate(
+            "(() => { const el = document.getElementById('address-status');"
+            " return el ? el.textContent : ''; })()"
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
 def complaints(chrome, built_site):
-    """One load of each page type, not all 114.
-
-    Unlike axe, this check does not vary with data: every page loads the same two
-    scripts and the same stylesheet, and a policy violation appears identically on all
-    of them — when `connect-src` was wrong, all nine pages reported it. The full sweep
-    costs three minutes for nine distinct findings, so it stays an operator command
-    (`python3 scripts/console_check.py --all`) and is listed in the release procedure
-    in docs/accessibility-pass.md.
-    """
+    """One load of each page type. A policy violation appears identically on all 114."""
     return check(built_site, list(REPRESENTATIVE))
 
 
@@ -49,54 +57,26 @@ class TestTheConsoleIsSilent:
     def test_no_page_logs_an_error(self, complaints):
         noisy = {path: found for path, found in complaints.items() if found}
         assert not noisy, "\n".join(
-            f"{path}: [{item['level']}/{item['source']}] {item['text']}"
+            f"{path}: [{entry['level']}/{entry['source']}] {entry['text']}"
             for path, found in noisy.items()
-            for item in found
+            for entry in found
         )
 
     def test_it_looked_at_every_page_type(self, complaints):
         assert set(complaints) == set(REPRESENTATIVE)
 
     def test_the_page_types_are_all_real_pages(self, complaints, built_site):
-        """Guards against a typo in the page set quietly reducing coverage to nothing:
-        a path that does not exist is served the 404 body, which logs nothing."""
         assert set(complaints) <= set(every_page(built_site))
 
 
 @pytest.fixture(scope="module")
 def network_trace(chrome, built_site):
-    """Every URL the front page requests, from load through an address submit.
-
-    Driven with a district number, which §4.4 says must resolve locally. `35` is used
-    rather than a street address precisely because a street address is the one input
-    that *is* allowed to reach the geocoder.
-    """
-    with background_server(built_site) as base, Browser() as browser:
+    """Every URL the front page requests while resolving the district number 35."""
+    with background_server(built_site) as base_url, Browser() as browser:
         page = browser.page()
         page.call("Network.enable")
         page.drain_events()
-        page.navigate(base + "/")
-
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if not page.evaluate(
-                "document.getElementById('address-section').hasAttribute('hidden')"
-            ):
-                break
-            time.sleep(0.1)
-
-        page.evaluate("document.getElementById('address-input').focus()")
-        page.type_text("35")
-        page.press("Enter")
-
-        landed = "/"
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            landed = page.evaluate("location.pathname")
-            if landed != "/":
-                break
-            time.sleep(0.1)
-
+        landed, _ = _submit_address(page, base_url, "35")
         requested = [
             event["params"]["request"]["url"]
             for event in page.consume_events()
@@ -106,63 +86,46 @@ def network_trace(chrome, built_site):
 
 
 class TestLocalResolutionStaysLocal:
+    """§4.4: everything except a street address resolves from the committed index."""
+
     def test_a_district_number_resolves(self, network_trace):
         landed, _ = network_trace
         assert landed == "/district/35/", (
-            f"typing 35 landed on {landed!r}. If this is '/', the local index was "
-            "probably not fetchable — check connect-src in _headers."
+            f"typing 35 landed on {landed!r}; if '/', the local index was not fetchable"
         )
 
     def test_a_district_number_never_touches_the_geocoder(self, network_trace):
         _, requested = network_trace
-        leaked = [url for url in requested if GEOCODER_HOST in url]
-        assert not leaked, (
-            f"resolving a district number contacted the geocoder: {leaked}. §4.4 says "
-            "everything except a street address resolves from the committed index."
-        )
+        assert not [url for url in requested if GEOCODER_HOST in url]
 
     def test_the_local_index_really_was_fetched(self, network_trace):
-        """Otherwise the test above passes by the site doing nothing at all."""
         _, requested = network_trace
-        assert any("/data/lookup.json" in url for url in requested), (
-            f"the local index was never requested; the trace was {requested}"
-        )
+        assert any("/data/lookup.json" in url for url in requested)
 
     def test_the_geometry_is_not_fetched_for_a_district_number(self, network_trace):
-        """districts.geo.json is 132 KB gzipped and only a street address needs it.
-
-        Pulling it for a district number would blow the R40 budget on the one path
-        that needs no network at all.
-        """
+        """132 KB gzipped; only a street address needs it."""
         _, requested = network_trace
-        assert not [url for url in requested if "districts.geo.json" in url], (
-            "the 132 KB geometry was fetched to resolve a district number"
-        )
+        assert not [url for url in requested if "districts.geo.json" in url]
 
 
 @pytest.fixture(scope="module")
 def aged_site(built_site, tmp_path_factory):
-    """A copy of the site whose manifest claims every source was fetched long ago.
-
-    Copied rather than edited in place, because `built_site` is shared with the other
-    browser gates and a stale manifest would change what they see.
-    """
-    out = tmp_path_factory.mktemp("aged-site")
-    shutil.copytree(built_site, out, dirs_exist_ok=True)
-    manifest_path = out / "manifest.json"
+    """A copy of the site whose manifest claims every source was fetched in 2019."""
+    aged = tmp_path_factory.mktemp("aged-site")
+    shutil.copytree(built_site, aged, dirs_exist_ok=True)
+    manifest_path = aged / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     for source in manifest["sources"].values():
         source["fetched_at"] = "2019-01-01T00:00:00+00:00"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    return out
+    return aged
 
 
 @pytest.fixture(scope="module")
-def notice(chrome, aged_site):
-    """The text of the staleness notice the browser renders, or an empty string."""
-    with background_server(aged_site) as base, Browser() as browser:
+def staleness_notice(chrome, aged_site):
+    with background_server(aged_site) as base_url, Browser() as browser:
         page = browser.page()
-        page.navigate(base + "/district/35/")
+        page.navigate(base_url + "/district/35/")
         deadline = time.monotonic() + 15
         text = ""
         while time.monotonic() < deadline:
@@ -177,28 +140,70 @@ def notice(chrome, aged_site):
 
 
 class TestTheStalenessNoticeReallyRenders:
-    """§2.12: staleness is computed in the browser, which is what keeps an abandoned
-    site honest.
+    """§2.12: staleness is computed at read time, which is what keeps an abandoned site
+    honest. It was previously proven only over HTTP, where no CSP applies."""
 
-    phase-1-scope.md §6 criterion 6 claimed this was proven. It was proven over HTTP —
-    `verify.py` fetched the manifest and checked it carried inputs rather than a
-    verdict — and it was false in a browser, because `connect-src` omitted `'self'` and
-    the fetch never happened. The notice is the one piece of the product that only
-    exists at read time, so it is the piece most worth asserting at read time.
+    def test_an_aged_manifest_produces_a_visible_notice(self, staleness_notice):
+        assert staleness_notice
+
+    def test_it_says_not_to_rely_on_the_meeting_times(self, staleness_notice):
+        assert "out of date" in staleness_notice
+        assert "Do not rely on the meeting times" in staleness_notice
+
+    def test_it_names_the_source_and_how_old_it_is(self, staleness_notice):
+        assert "days ago" in staleness_notice
+        assert "nyc.legistar.com" in staleness_notice
+
+
+@pytest.fixture(scope="module")
+def headers_without_self(tmp_path_factory):
+    """The real `_headers` with `'self' ` removed from connect-src."""
+    original = (REPO_ROOT / "_headers").read_text(encoding="utf-8")
+    broken = re.sub(r"connect-src 'self' ", "connect-src ", original)
+    assert broken != original, "connect-src no longer carries 'self'; this test is stale"
+    path = tmp_path_factory.mktemp("broken-headers") / "_headers"
+    path.write_text(broken, encoding="utf-8")
+    return path
+
+
+class TestErrorMessagesBlameTheRightThing:
+    """A failure to load our own data must not be reported as the City's outage.
+
+    It was, and the message sent the owner looking at hosting for a bug that was one
+    token of CSP. Misattributed blame is a correctness defect in a product whose stated
+    failure mode is confident wrongness.
     """
 
-    def test_an_aged_manifest_produces_a_visible_notice(self, notice):
-        assert notice, (
-            "no .staleness element rendered for a manifest dated 2019. If the console "
-            "gate is also failing on connect-src, that is the same bug."
+    def test_our_own_broken_data_is_reported_as_our_fault(
+        self, chrome, built_site, headers_without_self
+    ):
+        with (
+            background_server(built_site, headers_without_self) as base_url,
+            Browser() as browser,
+        ):
+            landed, status = _submit_address(browser.page(), base_url, "350 Jay Street")
+        assert landed == "/", "the lookup should not have succeeded with the index blocked"
+        assert "fault here, not with the City" in status, status
+        assert "City's address lookup did not respond" not in status, (
+            "blamed the geocoder for a same-origin fetch that the CSP refused"
         )
 
-    def test_it_says_not_to_rely_on_the_meeting_times(self, notice):
-        """The wording matters more than the presence: a reader who sees a soft "this
-        may be out of date" beside a specific hearing time will still turn up to it."""
-        assert "out of date" in notice
-        assert "Do not rely on the meeting times" in notice
+    @pytest.mark.upstream
+    def test_a_real_street_address_resolves_against_the_real_site(self, chrome):
+        """End to end against the geocoder and the real geometry.
 
-    def test_it_names_the_source_and_how_old_it_is(self, notice):
-        assert "days ago" in notice, f"the notice gives no age: {notice!r}"
-        assert "nyc.legistar.com" in notice, "the notice must point somewhere authoritative"
+        `upstream` because it contacts geosearch.planninglabs.nyc, and against `site/`
+        rather than the fixture build, whose geometry is 51 synthetic squares — a real
+        Brooklyn address is correctly outside all of them.
+
+        This is the test that answers "do we need hosting for the address box": the
+        geocoder sends `access-control-allow-origin: *` and works from 127.0.0.1, so no.
+        """
+        real_site = REPO_ROOT / "site"
+        if not (real_site / "data" / "districts.geo.json").exists():
+            pytest.skip("site/ not built from real data — run `make fetch && make build`")
+        with background_server(real_site) as base_url, Browser() as browser:
+            landed, status = _submit_address(browser.page(), base_url, "350 Jay Street")
+        assert re.fullmatch(r"/district/\d{1,2}/", landed), (
+            f"a real street address landed on {landed!r} with status {status!r}"
+        )

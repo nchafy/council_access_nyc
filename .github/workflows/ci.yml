@@ -62,6 +62,23 @@ jobs:
 
       - run: uv sync
 
+      # axe-core is no longer committed: it is fetched into .cache/axe-core and verified
+      # against the registry's sha512 and the file's own sha256 before anything is
+      # written. Cached across runs so the usual case is a restore, not a download. The
+      # key hashes the fetcher, which is where the pinned version lives, so a bump misses
+      # the cache by construction rather than by remembering to bust it.
+      - name: Restore the verified axe-core cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/axe-core
+          key: axe-core-${{ hashFiles('scripts/fetch_axe.py') }}
+
+      # Runs on a restore too, and is a no-op when the checksum already matches: a
+      # poisoned or truncated cache entry fails here rather than quietly changing what
+      # the gate below is running.
+      - name: Fetch and verify axe-core
+        run: uv run python scripts/fetch_axe.py
+
       # The browser fixture skips when Chrome is missing. That is right locally, where
       # not every contributor has one, and wrong here, where a skipped gate reports
       # success. Assert it exists as its own step so the job fails loudly if a runner

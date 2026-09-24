@@ -1,23 +1,16 @@
 #!/usr/bin/env python3
 """Fail if any page logs a console error or trips its own Content-Security-Policy.
 
-The gate that should have existed already. A CSP violation is not a crash: Chrome
-refuses the request, writes a line to the console, and the page carries on looking
-fine. That is how `connect-src` came to forbid the site's own `/data/lookup.json`
-without anything going red — the feature degraded quietly into its fallback path, and
-the fallback path happened to be the one that sends more data to a third party.
-
-So the check is the crude one, and crude is the point: load every page behind the real
-`_headers`, collect everything the browser complains about, and fail on any of it.
-There is no allowlist. A site with zero third parties and 4 KB of first-party script
-has no reason to log anything, so the moment it does, something is wrong.
+A CSP violation is not a crash: Chrome refuses the request, writes a console line, and
+the page carries on looking fine. So the check is crude on purpose — load every page
+behind the real `_headers`, collect everything the browser complains about, and fail on
+any of it, with no allowlist. A site with zero third parties and 4 KB of first-party
+script has no reason to log anything.
 
     python3 scripts/console_check.py              # every page type
     python3 scripts/console_check.py --all        # every pre-rendered page
 
 `tests/unit/test_csp.py` checks the same property statically, from the policy side.
-Both exist because they fail differently: the static one catches a directive that
-forbids a URL in the source, this one catches a request the source does not spell out.
 """
 
 from __future__ import annotations
@@ -34,29 +27,18 @@ from serve import background_server
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: How long to keep listening after load. The fetches that matter here are kicked off
-#: by script after first paint — the manifest, the lookup index — so a check that
-#: stopped at `load` would miss exactly the violations this exists to catch.
+#: Listen this long past `load`: the fetches that matter start after first paint.
 SETTLE_SECONDS = 1.5
 
-#: The one class of complaint that is not ours: requests the browser invents for a
-#: resource no page references.
-#:
-#: Chrome asks every origin for /favicon.ico whether or not it is mentioned. Shipping
-#: one would silence it, but a favicon is a mark on every tab and project identity is
-#: an open owner decision (docs/phase-1-scope.md §7.3), so inventing one here would be
-#: answering a question that was deliberately left open. It costs a 404 on a
-#: local-only site and nothing else. When §7.3 is decided, delete this and the gate
-#: will hold the site to shipping the file.
+#: Invented by the browser, not referenced by any page; unshipped pending phase-1-scope §7.3.
 BROWSER_PROBES = ("/favicon.ico",)
 
 
-def _interesting(entry: dict[str, Any]) -> bool:
+def _is_complaint_worth_failing_on(entry: dict[str, Any]) -> bool:
     """Console entries worth failing on: errors, and anything the policy refused.
 
-    Security violations arrive at level `error` with source `security`, but a
-    `violation` level also exists and a blocked resource can surface as a network
-    error, so the filter is by severity rather than by source.
+    Filtered by severity rather than source, because a blocked resource can surface as
+    a `security` violation or as a plain network error.
     """
     if entry.get("level") not in {"error", "warning"}:
         return False
@@ -75,20 +57,19 @@ def check(root: Path, paths: list[str]) -> dict[str, list[dict[str, Any]]]:
             page.drain_events()
             page.navigate(base + path)
             time.sleep(SETTLE_SECONDS)
-            # Ask for something trivial: the round trip flushes any events Chrome has
-            # queued but not yet delivered, without needing a reader thread.
+            # A trivial round trip flushes events Chrome queued but has not delivered.
             page.evaluate("1")
             complaints[path] = _drain_complaints(page)
     return complaints
 
 
 def _drain_complaints(page: Session) -> list[dict[str, Any]]:
-    found = []
+    complaints = []
     for event in page.consume_events():
         if event["method"] == "Log.entryAdded":
             entry = event["params"]["entry"]
-            if _interesting(entry):
-                found.append(
+            if _is_complaint_worth_failing_on(entry):
+                complaints.append(
                     {
                         "level": entry.get("level"),
                         "source": entry.get("source"),
@@ -98,7 +79,7 @@ def _drain_complaints(page: Session) -> list[dict[str, Any]]:
                 )
         elif event["method"] == "Runtime.exceptionThrown":
             details = event["params"].get("exceptionDetails") or {}
-            found.append(
+            complaints.append(
                 {
                     "level": "exception",
                     "source": "javascript",
@@ -107,16 +88,18 @@ def _drain_complaints(page: Session) -> list[dict[str, Any]]:
                     "url": details.get("url"),
                 }
             )
-    return found
+    return complaints
 
 
 def format_report(complaints: dict[str, list[dict[str, Any]]]) -> str:
     lines = []
     total = 0
-    for path, found in complaints.items():
-        for item in found:
+    for path, page_complaints in complaints.items():
+        for complaint in page_complaints:
             total += 1
-            lines.append(f"FAIL {path}  [{item['level']}/{item['source']}] {item['text']}")
+            lines.append(
+                f"FAIL {path}  [{complaint['level']}/{complaint['source']}] {complaint['text']}"
+            )
     lines.append(f"{len(complaints)} pages loaded: {total} console complaints")
     return "\n".join(lines)
 

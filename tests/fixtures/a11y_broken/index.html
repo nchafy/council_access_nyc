@@ -1,22 +1,11 @@
 <!DOCTYPE html>
-<!--
-  The negative control for the axe gate.
-
-  The site passed axe on the first run it was ever given, which is a result that
-  cannot be distinguished from a gate that does not work. This page carries one
-  deliberate instance of six WCAG A/AA failures, and
-  tests/browser/test_a11y.py::TestTheGateCanFail asserts the gate finds every one of
-  them. If that test ever passes trivially, the real clean result is worth nothing.
-
-  Do not fix the markup below. Every defect in it is the point. It is never linked
-  from the site and never copied into site/.
--->
+<!-- The negative control for the axe gate: one deliberate instance of six WCAG A/AA
+     failures, each named below. Do not fix them — tests/browser/test_a11y.py's
+     TestTheGateCanFail asserts the gate finds every one. -->
 <html>
 <head>
 <meta charset="utf-8">
-<!-- An external stylesheet, not a <style> block. The gate serves fixtures behind the
-     real `_headers`, where `style-src 'self'` blocks inline CSS — so an inline block
-     applied to nothing and the contrast defect went unreported. See broken.css. -->
+<!-- color-contrast: in broken.css, external because `style-src 'self'` blocks <style>. -->
 <link rel="stylesheet" href="/broken.css">
 </head>
 <body>
@@ -36,7 +25,7 @@
 <!-- link-name: an anchor with an href and no discernible text. -->
 <a href="/district/35/"><span></span></a>
 
-<!-- Nested interactive content, flagged by nested-interactive. -->
+<!-- nested-interactive: a link inside a button. -->
 <button type="button">Tell me <a href="/board/">more</a></button>
 </body>
 </html>

@@ -299,7 +299,13 @@ class TestBoardView:
         # Term length, minimum age, meeting frequency and public-comment rules are
         # not published by the City, so the page says so rather than guessing.
         assert "could not find an official source" in page
-        assert "No City dataset publishes community board agendas" in page
+        assert "no City dataset publishes one" in page
+        # The venue gap, stated rather than papered over with the office address.
+        assert "cannot tell you <em>where</em> the board meets" in page
+        assert "often not the meeting venue" in page
+        # The one dataset carrying any dated notices is named, not denied.
+        assert "dg92-zbpx" in page
+        assert "disagree with what boards publish" in page
 
     def test_board_page_links_its_council_districts(self, raw_dir, tmp_path):
         out = tmp_path / "site"

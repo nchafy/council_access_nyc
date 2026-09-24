@@ -8,7 +8,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open \
-	axe a11y console perf gates
+	axe axe-fetch a11y console perf gates
 
 PORT ?= 8000
 ROOT ?= site
@@ -48,7 +48,7 @@ fmt: ## apply ruff formatting
 test: ## unit and contract tests (no network, no browser)
 	uv run pytest -m "not upstream and not browser"
 
-browser: build ## every browser gate in one pytest run (~110 s)
+browser: build axe-fetch ## every browser gate in one pytest run (~110 s)
 	# --no-cov: the 100% floor in addopts applies to whatever subset runs, and the
 	# browser gates deliberately touch ~70% of `showup` — they drive the built site,
 	# not every parser. `make test` is where the floor means something.
@@ -72,7 +72,10 @@ shot: build ## screenshot the built site with headless Chrome
 # `make verify` deliberately does not call them: together they are about two
 # minutes of real browser time, and the fast gate has to stay fast to stay used.
 
-axe: build ## axe-core over every page type (add ALL=1 for all 114)
+axe-fetch: ## download the pinned axe-core into .cache/ (verified, idempotent, no-op when current)
+	uv run python scripts/fetch_axe.py
+
+axe: build axe-fetch ## axe-core over every page type (add ALL=1 for all 114)
 	uv run python scripts/axe_check.py $(if $(ALL),--all,)
 
 a11y: build ## real Tab keys and the accessibility tree, over every page type

@@ -10,10 +10,8 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# The accessibility and performance gates live in `scripts/`, because they are operator
-# tools first — `make axe`, `make a11y`, `make perf`. The tests drive that same code
-# rather than a second copy of it, so the thing CI gates and the thing a developer runs
-# by hand can never disagree.
+# The a11y and perf gates live in `scripts/` as operator tools; the tests drive that
+# same code rather than a second copy, so CI and `make axe` can never disagree.
 if str(REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -51,14 +49,8 @@ def district_page_html() -> dict[int, str]:
     return pages
 
 
-# Shared by the integration tests, the guard tests and the browser gates: a minimal
-# but floor-passing raw cache. Lives here rather than in one test file because they
-# all need it, and duplicating it would let the copies drift.
-#
-# A plain function with two fixtures over it, rather than one fixture: the browser
-# gates build a site once for a whole session and drive Chrome against it, while the
-# build tests need a fresh cache per test so they can corrupt it and assert the
-# build fails closed. Same cache, two lifetimes.
+# A plain function with two fixtures over it, because the same cache is needed with two
+# lifetimes: per-session for the browser gates, per-test for the build tests.
 def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int, str]) -> Path:
     """Populate `raw` with a cache that clears every source floor. Returns `raw`."""
     (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
@@ -142,12 +134,7 @@ def raw_dir(tmp_path, calendar_html, district_page_html) -> Path:
 
 @pytest.fixture(scope="session")
 def raw_dir_session(tmp_path_factory, calendar_html, district_page_html) -> Path:
-    """The same cache, built once for the session.
-
-    For the browser gates in `tests/browser/`, which build one site and then run
-    several seconds of Chrome against it. Rebuilding per test would multiply that
-    cost for a byte-identical result.
-    """
+    """The same cache, built once for the session, for the browser gates."""
     return write_raw_cache(
         tmp_path_factory.mktemp("raw-session"), calendar_html, district_page_html
     )

@@ -15,6 +15,9 @@ dist/
 # Self-check artifacts from `make shot`
 screenshots/
 
+# Checksum-verified dev tools fetched by `make axe-fetch` — see scripts/fetch_axe.py
+.cache/
+
 # Python
 __pycache__/
 *.py[cod]

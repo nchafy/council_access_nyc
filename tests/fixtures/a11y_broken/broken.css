@@ -1,13 +1,5 @@
-/* One deliberate WCAG 1.4.3 failure, in an external file rather than a <style> block.
- *
- * It started as an inline <style> and axe never reported a contrast problem, because
- * the gate serves fixtures behind the real `_headers`: `style-src 'self'` with no
- * `unsafe-inline` blocked the block outright, so the rule applied to nothing. The
- * negative control was silently testing nothing — which is exactly the failure the
- * negative control exists to catch, arriving by the front door.
- *
- * #999999 on #ffffff is 2.85:1. WCAG AA wants 4.5:1 for body text.
- */
+/* color-contrast (WCAG 1.4.3): #999999 on #ffffff is 2.85:1; AA wants 4.5:1 for body text.
+ * External rather than an inline <style> block, which `style-src 'self'` would block. */
 .faint {
   color: #999999;
   background: #ffffff;

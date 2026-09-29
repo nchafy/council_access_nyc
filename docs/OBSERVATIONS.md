@@ -160,13 +160,38 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   other. 4 hosts refused automated clients. | generic: "is this data available" is the wrong question;
   "available in the same shape across the set" is the one that decides cost. Two thirds coverage in five
   different formats is not two thirds of a feature.
-- 2026-09-29 | The Events Calendar `venue` field, across 12 boards that expose it | **The structured
-  venue field is a trap, not the solution.** Manhattan CB1 populates it with "Community Board Office –
-  Conference Room" while the real venue is in the description; Bronx CB6 populates it for committee
-  events and leaves it null for all 7 upcoming full-board meetings; Manhattan CB10 publishes two
-  contradictory venues for the same meeting; Brooklyn CB2's full-board LOCATION is empty while all nine
-  committee series are filled. | refused: reading the structured field first. It fails in the direction
-  that produces a confidently wrong address, which is worse than an absent one.
+- 2026-09-29 | The Events Calendar `venue` field, across the 12 boards that expose it | **Right on some
+  boards, wrong on others, and the failures point the wrong way.** It works exactly as wanted on Brooklyn
+  CB14 and CB11 — committees at the district office, the full board at a different building on a dated
+  future event with a structured street address. It fails on Manhattan CB1 (populated with the board
+  OFFICE while the real venue sits in the description), Bronx CB6 (populated for committees, null for all
+  7 upcoming full-board meetings), Manhattan CB10 (two contradictory venues for one meeting) and Brooklyn
+  CB2 (full-board LOCATION empty while all nine committee series are filled). | refused: trusting the
+  field uniformly. A source that is correct on some members of a set and confidently wrong on others
+  cannot be consumed by one parser — it needs per-board verification, which is a maintenance cost, not a
+  parsing problem.
+- 2026-09-29 | my own first reading of that field | I reported it to the owner as "a trap, not a
+  solution", which overstated it: that conclusion came from the four boards where it fails, before the
+  two where it works were checked. The accurate claim is unreliability, not uselessness. | generic: when
+  a source fails on the first few members sampled, the finding is "unreliable across the set", not
+  "broken" — and the difference decides whether a feature is impossible or merely expensive.
+- 2026-09-29 | refusal copy, calibrated against the evidence | "No City dataset publishes a board
+  meeting calendar" is TRUE. "Nobody has aggregated this" is TRUE. **"This data does not exist anywhere"
+  would be FALSE** — roughly 5 of 59 boards expose structured venue-carrying feeds right now, and 39 of
+  59 publish a venue somewhere. | generic: a refusal has a scope, and the scope is part of the claim.
+  Widening "we do not have this" into "it does not exist" is the same class of error as inventing a fact.
+- 2026-09-29 | Wayback CDX, 2003 → 2026, searching for a central City list of board meeting times | None
+  ever existed. The Mayor's Community Affairs Unit's only central calendar was street-fair permits, and
+  in 2003 it told readers to "find the dates and times by contacting your local community board." | so
+  what: this is a 20-year gap, not a withdrawal. The refusal the board page renders is not a temporary
+  state waiting on a dataset, and can be written as durable.
+- 2026-09-29 | robots.txt handling during this survey | One lapse, disclosed: an agent fetched
+  `brooklyncb11.org/calendar/` in the same batched command that retrieved that host's robots.txt, so its
+  `Disallow: /calendar/` was not evaluated before the request. One GET, no retries, host abandoned, and
+  no content from that path was used or recorded. | generic: robots.txt must be a blocking gate in its
+  own step, never batched with content requests for the same host. Also: robots permission does not
+  predict access in either direction — `cb8m.com` permits everything and returns 403, while other hosts
+  allow our UA and their WAF blocks it anyway.
 - 2026-09-29 | office-vs-venue near misses | An address comparison cannot catch this. Brooklyn CB5:
   same building, office 2nd floor, board 3rd. Brooklyn CB15: same street address at Kingsborough CC,
   office C124 vs Faculty Dining Room U112. Staten Island CB2: office 900 South Avenue, venue 1100 South

@@ -206,3 +206,33 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   10/56. **No third party has solved this**: 59boards.nyc, nyc.councilmatic.org and community-board.nyc
   are all NXDOMAIN, CityScrapers has 0 NYC spiders, BetaNYC has no calendar repo. | generic: when a
   niche is empty and three attempts died in it, price the maintenance, not the build.
+- 2026-09-29 | "15 of 59 nyc.gov board slugs now 404" — **my own claim, and it is wrong** | The 404s came
+  from *constructing* slugs (`nyc.gov/site/{borough}cb{N}`), not from any published list. Status-checking
+  all 57 `ruf7-3wgc.cb_website` URLs gives 52x200, 4x403 bot-block, 1 connection failure, **0x404**; the
+  central nyc.gov directory gives 56x200, 3x403, **0x404**. The 200s were confirmed as real pages by
+  title, not SPA soft-404s. | generic: never derive a URL when the publisher gives you a list. A
+  constructed-slug failure rate says nothing about the data's availability and I reported it as if it did.
+- 2026-09-29 | `nyc.gov/site/communityboards/about/<borough>-boards.page` | An authoritative central
+  directory of all 59 boards with their current site URLs and cadence, which this project had not found.
+  59/59 present, 56/59 live, 0 dead. Supersedes `ruf7-3wgc.cb_website` for URL discovery. | so what: the
+  "stale URL" problem was partly self-inflicted; there is a maintained spine to key off.
+- 2026-09-29 | City Record `dg92-zbpx`, corrections to the 2026-09-24 entry above | Two errors. (1) The
+  per-board `agency_name` labels (`QUEENS COMMUNITY BOARD #8` etc.) are **payroll notices**, not hearings:
+  all 827 rows across 62 labels carry `event_date = null` and `section_name: "Changes in Personnel"`. Only
+  the bulk `agency_name='Community Boards'` bucket has hearings. (2) "Never the monthly full board" was
+  too strong — 6 of 56 notices are explicitly the monthly meeting, e.g. Brooklyn CB18's "Monthly Meeting"
+  at 1097 Bergen Avenue. Real figures: 51 rows in the last 12 months across 19/59 boards, median 6 days of
+  lead, `event_date` carries a start time. | generic: a `$where` on `agency_name` that returns 0 may be an
+  encoding artefact, not an absence — `curl --data-urlencode` re-encodes a literal `%25`.
+- 2026-09-29 | `api.nyc.gov/calendar/search` | The City already runs a citywide events API with
+  `startDate`, `address`, `boroughs[]` and a **"Hearings and Meetings" category that returns
+  `totalItems: 0`**. All 141 pages swept: 1,683 items, 5 agencies, **zero community boards**. | so what:
+  nothing technical is missing. Boards simply do not publish into the pipe that already exists, which is a
+  far more tractable ask than new infrastructure — and a better thing to advocate for than a scraper.
+- 2026-09-29 | the `*.cityofnewyork.us` WordPress network, as a City-run source | One uniform
+  unauthenticated call per board returns future meetings with a structured venue, full board and committees
+  distinguished by title. Verified: Manhattan CB4 returns `2026-10-07 18:30 | Full Board | Pier 57, 25 11th
+  Avenue` — a future full-board meeting at a venue that is not the board office. 9 of 59 boards, ~780
+  upcoming events. `Crawl-delay: 10`. `cbqueens` and `cbstatenisland` hostnames exist but are empty, so
+  coverage grows for free if the City migrates more boards. | so what: this is the one city-run path with
+  future dates AND venues, and it is 9 boards, not 59.

@@ -256,3 +256,9 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   on host or scheme. Normalising them is not a widening of the allowlist — the publisher and the
   destination are identical. | generic: an allowlist needs the publisher's aliases in it, or it rejects
   the publisher.
+- 2026-09-29 | `tests/browser/test_perf.py` under concurrent browser load | 5 of 8 cold-load tests errored
+  with `cdp.CDPError: connection closed mid-frame` while 67 Chrome processes were live from a parallel
+  survey. The same tests pass 8/8 in isolation, and the full browser suite had passed 73/73 twice before
+  and after. | so what: the throttled cold-load gate is sensitive to machine contention, which CI does not
+  have (one job, one browser). Not hardened with a retry, because a retry would also hide a real
+  disconnect. If it ever flakes in CI, the fix is to serialise, not to retry.

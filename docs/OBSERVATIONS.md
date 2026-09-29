@@ -153,3 +153,31 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   `false` on every event inspected, including ones whose own text says "via Zoom". | refused: scraping
   venues in Phase 1. Not one scraper and not 59 — about 5 families plus a long tail, ~23% unscrapeable,
   and trusting `is_virtual` would send people to meetings that are online-only.
+- 2026-09-29 | all 59 board websites, full census (`docs/board-meeting-sources.json`) | Full-board venue
+  obtainable for **39 of 59**, but only **14** from a structured field — the other 25 are prose on an
+  unpredictable page (About, FAQ, home, or a PDF). Future dates for 47. Both for 34. **27 boards publish
+  no feed of any kind.** Host families: 37 nyc.gov CMS, 12 cityofnewyork.us WordPress, 7 independent, 3
+  other. 4 hosts refused automated clients. | generic: "is this data available" is the wrong question;
+  "available in the same shape across the set" is the one that decides cost. Two thirds coverage in five
+  different formats is not two thirds of a feature.
+- 2026-09-29 | The Events Calendar `venue` field, across 12 boards that expose it | **The structured
+  venue field is a trap, not the solution.** Manhattan CB1 populates it with "Community Board Office –
+  Conference Room" while the real venue is in the description; Bronx CB6 populates it for committee
+  events and leaves it null for all 7 upcoming full-board meetings; Manhattan CB10 publishes two
+  contradictory venues for the same meeting; Brooklyn CB2's full-board LOCATION is empty while all nine
+  committee series are filled. | refused: reading the structured field first. It fails in the direction
+  that produces a confidently wrong address, which is worse than an absent one.
+- 2026-09-29 | office-vs-venue near misses | An address comparison cannot catch this. Brooklyn CB5:
+  same building, office 2nd floor, board 3rd. Brooklyn CB15: same street address at Kingsborough CC,
+  office C124 vs Faculty Dining Room U112. Staten Island CB2: office 900 South Avenue, venue 1100 South
+  Avenue. Venues also rotate monthly on at least 7 boards (Man 104/107, Bx 202, Bk 302/308/310). |
+  generic: a cached or inferred venue is wrong for a moving target; the room is the part the public
+  needs and the part that differs.
+- 2026-09-29 | central City sources, and the third-party field | DCP's **ZAP API** (undocumented; base
+  extracted from the SPA's own `<meta>` config) exposes `dispositions` carrying CB hearing date, time and
+  a prose venue for **59/59 boards** over a 3-year backfill — but it is **retrospective, median +8 days
+  after the hearing**, so it cannot answer "show up this week". The only prospective city source is City
+  Record `dg92-zbpx`: 19/59 boards, 56 rows in 13 months, median 6 days lead, structured address on
+  10/56. **No third party has solved this**: 59boards.nyc, nyc.councilmatic.org and community-board.nyc
+  are all NXDOMAIN, CityScrapers has 0 NYC spiders, BetaNYC has no calendar repo. | generic: when a
+  niche is empty and three attempts died in it, price the maintenance, not the build.

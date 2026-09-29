@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from urllib.parse import urljoin, urlsplit
 
-__all__ = ["ALLOWED_HOSTS", "absolutize", "safe_url"]
+__all__ = ["ALLOWED_HOSTS", "absolutize", "host_allowed", "safe_url"]
 
 #: Hosts whose links may be rendered. Every entry is a government or
 #: government-vendor host this project already reads data from.
@@ -49,6 +49,22 @@ ALLOWED_HOSTS = frozenset(
         "communityprofiles.planning.nyc.gov",
     }
 )
+
+#: The City's own WordPress network, one subdomain per borough or per board. A suffix
+#: rather than an enumeration because boards migrate onto it individually — but still a
+#: closed rule: the City controls registration of `cityofnewyork.us`, so a board cannot
+#: lose a host here by forgetting to renew a domain, which is exactly what happened to
+#: `brooklyncb5.org` (see docs/OBSERVATIONS.md, 2026-09-29).
+ALLOWED_HOST_SUFFIXES = (".cityofnewyork.us",)
+
+
+def host_allowed(host: str | None) -> bool:
+    """Whether a hostname may be linked: an exact allowlist entry, or a City subdomain."""
+    if not host:
+        return False
+    host = host.lower()
+    return host in ALLOWED_HOSTS or host.endswith(ALLOWED_HOST_SUFFIXES)
+
 
 _ALLOWED_SCHEMES = frozenset({"https"})
 
@@ -91,7 +107,7 @@ def safe_url(href: str | None, *, base: str | None = None) -> str | None:
         return None
 
     host = parts.hostname
-    if host is None or host.lower() not in ALLOWED_HOSTS:
+    if not host_allowed(host):
         return None
 
     # Credentials in a URL (https://user:pass@host/) are a phishing shape and

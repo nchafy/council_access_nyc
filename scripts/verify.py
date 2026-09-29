@@ -38,7 +38,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from serve import parse_headers_file  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
-from showup.urls import ALLOWED_HOSTS  # noqa: E402
+from showup.urls import host_allowed  # noqa: E402
 
 REQUIRED_HEADERS = {
     "Content-Security-Policy": "default-src 'none'",
@@ -50,7 +50,6 @@ REQUIRED_HEADERS = {
 # Imported, never re-listed. A second copy of the allowlist is a copy that drifts:
 # this check passed for weeks and then failed the moment the real list grew, which
 # is the wrong way round for a security assertion.
-ALLOWED_LINK_HOSTS = ALLOWED_HOSTS
 
 _INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", re.IGNORECASE)
 _STYLE_ATTR = re.compile(r"\sstyle\s*=\s*[\"']", re.IGNORECASE)
@@ -357,7 +356,7 @@ def _check_links(url: str, page: str, site: Path) -> None:
             )
             host = (parts.hostname or "").lower()
             check(
-                host in ALLOWED_LINK_HOSTS,
+                host_allowed(host),
                 f"{url} links to non-allowlisted host {host!r} ({href})",
             )
             continue

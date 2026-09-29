@@ -54,7 +54,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from ..text import strip_tags
-from ..urls import ALLOWED_HOSTS, safe_url
+from ..urls import ALLOWED_HOSTS, host_allowed, safe_url
 
 __all__ = ["JOINT_INTEREST_AREAS", "Board", "email_policy", "load_boards", "looks_person_named"]
 
@@ -230,17 +230,9 @@ def load_boards(path: Path) -> dict[str, Board]:
 #: the allowlist — refusing it was just a miss.
 _NYC_GOV_ALIASES = {"www1.nyc.gov": "www.nyc.gov"}
 
-#: Boards hosted on the City's own WordPress network. Linked because the City controls the
-#: registration; a board cannot lose it by forgetting to renew.
-#:
-#: Independent board domains are deliberately NOT linked, and this is a change of posture
-#: made on evidence. `ruf7-3wgc` still lists `brooklyncb5.org` for Brooklyn CB5; that
-#: domain lapsed and now redirects through `dreamydrawfest.com` to an unrelated biology
-#: lab (verified 2026-09-29). A civic site that hands a reader a re-registered domain is
-#: doing the one thing it exists not to do, and the City's dataset cannot be relied on to
-#: notice. Boards on their own domain lose the link and keep the hostname as plain text;
-#: `docs/board-meeting-sources.json` records the current URL for each.
-_CITY_OPERATED_SUFFIX = ".cityofnewyork.us"
+#: Which hosts may be linked lives in `urls.py` (`host_allowed`): the City's own
+#: domains only. A board on its own domain is named as text, because a lapsed domain
+#: can be re-registered by anyone and the City's dataset keeps pointing at it.
 
 
 def _board_website_hostname(value: object) -> str | None:
@@ -286,8 +278,8 @@ def _board_website(value: object) -> str | None:
         return safe_url(
             urlunsplit(("https", _NYC_GOV_ALIASES.get(host, host), parts.path, parts.query, ""))
         )
-    if host.endswith(_CITY_OPERATED_SUFFIX) and parts.scheme.lower() == "https":
+    if host_allowed(host) and parts.scheme.lower() == "https":
         return candidate
-    # An independent domain is not linked. See _CITY_OPERATED_SUFFIX above: a board that
+    # An independent domain is named but not linked: a board that
     # lets its own domain lapse cannot un-publish the row that points at it.
     return None

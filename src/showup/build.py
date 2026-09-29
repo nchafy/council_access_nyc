@@ -96,6 +96,7 @@ def _load_boards_by_district(
                 email=board.email,
                 email_suppressed=board.email_suppressed,
                 website=board.website,
+                website_unlinked=board.website_unlinked,
                 board_meeting=board.board_meeting,
                 cabinet_meeting=board.cabinet_meeting,
             )

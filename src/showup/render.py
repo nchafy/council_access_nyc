@@ -724,14 +724,29 @@ def render_board(
         rows.append(("Email", esc(board.email)))
     elif board.email_suppressed:
         rows.append(("Email", f"<em>Not shown — {esc(board.email_suppressed)}.</em>"))
+    website_note = (
+        "<br><small>The board's own site is where its agendas, minutes and meeting "
+        "location are published. No City dataset carries a board meeting calendar.</small>"
+    )
     if board.website:
         rows.append(
             (
                 "Website",
                 _link(board.website, board.website.replace("https://", "").rstrip("/"))
-                + "<br><small>The board's own site is where its agendas, minutes and "
-                "meeting location are published. No City dataset carries a board "
-                "meeting calendar.</small>",
+                + website_note,
+            )
+        )
+    elif getattr(board, "website_unlinked", None):
+        # Named but not linked. A board that lets its own domain lapse cannot withdraw the
+        # City's row pointing at it, and one such domain now resolves to an unrelated
+        # site — so the name is given as text for the reader to check, never as a link.
+        rows.append(
+            (
+                "Website",
+                f'<span class="nolink">{esc(getattr(board, "website_unlinked", "") or "")}</span>'
+                + "<br><small>Given as text, not a link: this board uses its own domain "
+                "rather than a City one, and we cannot verify at build time that it is "
+                "still the board's. Search for it, or call the office above.</small>",
             )
         )
 

@@ -103,6 +103,9 @@ class DistrictBoard:
     website: str | None
     board_meeting: str | None
     cabinet_meeting: str | None
+    #: Hostname of a board site we decline to link, because it is the board's own
+    #: domain and the City cannot vouch that it is still theirs. Shown as text.
+    website_unlinked: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

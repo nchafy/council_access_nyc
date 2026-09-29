@@ -236,3 +236,23 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   upcoming events. `Crawl-delay: 10`. `cbqueens` and `cbstatenisland` hostnames exist but are empty, so
   coverage grows for free if the City migrates more boards. | so what: this is the one city-run path with
   future dates AND venues, and it is 9 boards, not 59.
+- 2026-09-29 | `ruf7-3wgc.cb_website`, and a bug that had shipped | The field arrives from Socrata as a
+  nested `{"url": "..."}`, not a string. `boards.py` read it as a string, producing
+  `"{'url': 'https://...'}"`, which failed every URL check — so **no board page has ever carried a
+  website link**, for any of the 59, while the page copy told readers the board's own site is where the
+  agendas and meeting location are published. Found only by surveying the websites the page never linked.
+  | generic: a field that silently normalises to None looks identical to a field the publisher left empty.
+  Parse failures on an optional field need to be counted and reported, not coalesced to absent.
+- 2026-09-29 | Brooklyn CB5's listed domain | `ruf7-3wgc` still points at `brooklyncb5.org`; that domain
+  lapsed and now redirects `dreamydrawfest.com` -> `acrosstheponddc.com` -> `eurekabikekitchen.org` ->
+  `bouxseinlab.org`, an unrelated biology lab. Its nyc.gov page is live and the dataset does not mention
+  it. | refused: linking board-owned domains at all. 48 of 59 boards are on `nyc.gov` or
+  `*.cityofnewyork.us`, where the City controls registration and a board cannot lose it by forgetting to
+  renew; those are linked. The other 10 get their hostname as plain text with the reason. A civic site
+  handing a reader a re-registered domain is doing the one thing it exists not to do, and the City's own
+  dataset cannot be relied on to notice.
+- 2026-09-29 | `www1.nyc.gov` and `http://www.nyc.gov` in the same field | 33 of 59 rows use the old
+  `www1` hostname, which 301s to `www.nyc.gov`; 6 more are published as `http`. Both were being rejected
+  on host or scheme. Normalising them is not a widening of the allowlist — the publisher and the
+  destination are identical. | generic: an allowlist needs the publisher's aliases in it, or it rejects
+  the publisher.

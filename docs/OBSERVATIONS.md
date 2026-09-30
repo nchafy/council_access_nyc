@@ -342,3 +342,21 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   wrong about the rest. Not reachable from any real page. | so what: "a real parser behaves like a
   browser" is only true of a real *HTML5* parser; `html.parser` and bs4 over it both do less error
   recovery than Chrome, and the difference is in error recovery, not in tag handling.
+- 2026-09-30 | the six board PDFs, tested before building a parser for them | All six URLs still
+  resolve on `www.nyc.gov` (one already-allowlisted host, so no 59-site crawl). Text extraction:
+  **405 Queens CB5, 408 Queens CB8, 412 Queens CB12 and 503 SI CB3 extract cleanly** (1.4-2.9 KB of
+  text each); **501 SI CB1 yields 4 characters from a 12 MB file and 502 SI CB2 yields 1** — both
+  confirmed scans. This **corrects the 2026-09-29 survey on 412**, which recorded it as glyph-coded
+  and unparseable; it carries 7 `ToUnicode` maps and extracts fine. | generic: a font-object header
+  sniff is not an extraction test. Run the extractor.
+- 2026-09-30 | the same four parseable PDFs, and why a PDF venue parser was **refused** | The first
+  street address in these documents is the **office letterhead**, not the meeting venue. Queens CB8's
+  PDF opens "Community Board 8 / 197-15 Hillside Avenue / Hollis NY" above a phone and fax; SI CB3's
+  opens "Community Board #3 / 1243 Woodrow Road 2nd Floor" — while its actual full-board venue is
+  the CYO-MIV Community Center on Hylan Boulevard. So naive extraction returns the office and labels
+  it the venue, which is the exact failure the 2026-09-29 entries document and refuse. | refused:
+  reading venues out of these PDFs. Doing it correctly needs four bespoke in-context parsers (CB5's
+  venue is in the body of a "PUBLIC HEARINGS NOTICE" paragraph, not the letterhead), against URLs
+  that rot monthly — `BoardMeetingNoticeSept9-2026.pdf`, `September-2026-Calendar.pdf`,
+  `2026.10.01.pdf`; only CB8's is annual. Four boards, four parsers, monthly rot, and two letterheads
+  that actively mislead is a bad trade against the 39/59 the site already has honestly.

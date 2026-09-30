@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+{% import "macros.html" as m %}
+{% block body %}
+<section class="intro">
+  <h1>Find out what your city government is doing</h1>
+  <p>
+    Two views, because they answer different questions. Pick whichever matches what
+    you are trying to do.
+  </p>
+</section>
+
+<section class="picker" id="address-section" hidden>
+  <h2>Start with your address</h2>
+  <p class="why">
+    An address, a ZIP code, a neighbourhood, or just a district number. Your address
+    is sent to the City's address lookup only when you press Find, with logging
+    switched off, and never appears in the page URL.
+  </p>
+  <form id="address-form" action="#" method="get" autocomplete="off">
+    <label for="address-input">Address, ZIP, neighbourhood or district number</label>
+    <input
+      id="address-input"
+      name="q"
+      type="text"
+      inputmode="text"
+      autocomplete="off"
+      autocorrect="off"
+      spellcheck="false"
+      placeholder="350 Jay Street, or 11217, or Fort Greene, or 35">
+    <button type="submit">Find</button>
+  </form>
+  <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
+  <div id="address-results"></div>
+</section>
+
+<section class="picker">
+  <h2>City Council district</h2>
+  <p class="why">
+    Who legislates for you, the next five Council meetings with addresses, and how
+    to testify — including how long you have left to file in writing.
+    <strong>51 districts.</strong>
+  </p>
+  <form id="district-form" action="/district/" method="get">
+    <label for="district-select">Council district</label>
+    <select id="district-select" name="district">
+      <option value="">Select a council district…</option>
+{% for d in districts %}
+    <option value="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</option>
+{% endfor %}
+    </select>
+    <button type="submit">Go</button>
+  </form>
+</section>
+
+<section class="picker">
+  <h2>Community board</h2>
+  <p class="why">
+    The most local unit of City government: it reviews zoning on your block, sets
+    local budget priorities, meets on a standing monthly cadence, and
+    <strong>will seat a member of the public on its committees</strong>.
+    <strong>59 boards.</strong>
+  </p>
+  <form id="board-form" action="/board/" method="get">
+    <label for="board-select">Community board</label>
+    <select id="board-select" name="board">
+      <option value="">Select a community board…</option>
+{% for b in boards %}
+    <option value="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</option>
+{% endfor %}
+    </select>
+    <button type="submit">Go</button>
+  </form>
+  <p class="hint">
+    Not sure which is which, or which one you are in?
+    {{ m.link("https://council.nyc.gov/districts/", "Council district lookup") }} ·
+    {{ m.link("https://communityprofiles.planning.nyc.gov/", "Community district profiles") }}.
+  </p>
+</section>
+
+<section class="all-districts">
+  <h2>All 51 council districts</h2>
+  <ul class="district-list">
+{% for d in districts %}
+    <li><a href="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</a></li>
+{% endfor %}
+  </ul>
+</section>
+
+<section class="all-districts">
+  <h2>All 59 community boards</h2>
+  <ul class="district-list">
+{% for b in boards %}
+    <li><a href="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</a></li>
+{% endfor %}
+  </ul>
+</section>
+{% endblock %}
+{% block extra_script %}<script src="/assets/address.js" defer></script>{% endblock %}

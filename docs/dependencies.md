@@ -34,24 +34,36 @@ change it deliberately in `product-brief.md` — not as a side effect of adding 
 
 | Dependency | Version | Licence | Class | Why |
 |---|---|---|---|---|
+| jinja2 | 3.1.6 (`>=3.1.6`, pinned in `uv.lock`) | BSD-3-Clause | build-time | Replaces the hand-written HTML-in-f-strings in `render.py` and its 75 manual `esc()` call sites; `autoescape=True` makes escaping the default instead of something each interpolation has to remember |
+| markupsafe | 3.0.3 | BSD-3-Clause | build-time | Jinja2's escaping primitive; transitive, pinned in `uv.lock` |
 | pytest | >=8 | MIT | dev | test runner |
 | pytest-cov | >=5 | MIT | dev | the 100% coverage gate |
 | ruff | >=0.6 | MIT | dev | lint + format |
 | axe-core | 4.13.0 | MPL-2.0 | dev, fetched | R39's accessibility gate; not committed, see `vendor` note in `scripts/fetch_axe.py` |
 
-Runtime: none yet. That is now a fact about today, not a rule.
+Neither runtime entry reaches a reader: both run at build time only, and `site/` is plain
+pre-rendered HTML with no third-party bytes in it.
 
-## If you add a template engine
+## The template engine, and the guard that came with it
 
-Jinja2 is the expected first addition, and it **improves** the security posture rather than
-weakening it — `autoescape=True` escapes every interpolation by default, where the current
-hand-written `esc()` calls can be forgotten. The risk inverts: it becomes the opt-outs.
+Jinja2 landed 2026-09-30 and **improves** the security posture rather than weakening it —
+`autoescape=True` escapes every interpolation, where a hand-written `esc()` call can be
+forgotten. The risk inverts: it becomes the opt-outs. So the gate changed shape rather than
+disappearing, and all three parts are live:
 
-So the gate changes shape rather than disappearing. Require:
+- `autoescape=True` and `undefined=StrictUndefined` on the one environment in
+  `src/showup/templates.py`, asserted by `tests/unit/test_templates.py` and
+  `tests/unit/test_template_safety.py`.
+- **No `|safe`, no `Markup()`, no `{% autoescape false %}`** — `test_template_safety.py`
+  greps every `.py`, `.html`, `.jinja` and `.j2` file under `src/showup/` and fails the
+  build on any of them, exactly as one already fails on `innerHTML` and `document.write`.
+  Composition uses `{% extends %}`, `{% import %}` and macros, none of which needs an
+  opt-out, so wanting one is a sign the template is being handed pre-rendered HTML.
+- The hostile-content fixture (`tests/integration/test_build.py`) still passes **unchanged**.
+  It is the end-to-end proof that scraped text cannot become markup, and it did not need
+  editing to accommodate the new renderer.
 
-- `autoescape=True`, asserted by a test on the environment.
-- **No `|safe`, no `Markup()`, no `{% autoescape false %}`** — a CI grep fails the build on
-  those three, exactly as one already fails on `innerHTML` and `document.write`.
-- The hostile-content fixture (`tests/integration/test_build.py`) keeps passing unchanged. It
-  is the end-to-end proof that scraped text cannot become markup, and it should not need
-  editing to accommodate a rendering change.
+One compatibility detail, in `templates.py`: MarkupSafe spells the two quote entities
+`&#39;` and `&#34;` where `text.esc` spells them `&#x27;` and `&quot;`. Both are inert, and
+keeping `esc`'s spelling is what made the migration byte-identical over all 114 pages —
+which is the only way a renderer swap can be reviewed as changing nothing.

@@ -11,11 +11,13 @@ The grid is ASP.NET Telerik. Ten cells per row; the ones we use:
   0 body name, 1 date, 3 time (or the literal "Deferred"), 4 location,
   5 topic (often a placeholder), 6 detail link, 7 agenda, 8 minutes.
 
-Rows are located with a regex, which is safe here because nothing extracted is
-trusted: every cell's text goes through `strip_tags` and every href through
-`safe_url` before it can reach a page. If Legistar redesigns the grid this yields
-an empty list, and the build's row floor turns that into a loud failure rather
-than a site that quietly shows no meetings.
+Rows come from the parsed document rather than a regex. Nothing extracted is
+trusted either way — every cell's text goes through `element_text` and every href
+through `safe_url` before it can reach a page — but the parser reads the grid the
+way a browser does, and taking an href as an attribute instead of as matched
+characters is what decodes `&amp;GUID=` back into `&GUID=`. If Legistar redesigns
+the grid the table is not found and this raises, which the build reports loudly
+rather than quietly showing no meetings.
 """
 
 from __future__ import annotations
@@ -23,9 +25,11 @@ from __future__ import annotations
 import re
 from datetime import date, time
 
+from bs4.element import Tag
+
 from ..deadlines import accommodation_deadline, written_safe_until
 from ..model import Meeting
-from ..text import strip_tags
+from ..text import element_text, parse_html
 from ..urls import safe_url
 from ..venues import normalize_location
 
@@ -33,9 +37,8 @@ __all__ = ["CalendarParseError", "parse_calendar", "parse_clock", "parse_us_date
 
 BASE = "https://nyc.legistar.com/"
 
-_ROW = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
-_CELL = re.compile(r"<td\b[^>]*>(.*?)</td>", re.IGNORECASE | re.DOTALL)
-_HREF = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+#: The Telerik grid's own id, e.g. `ctl00_ContentPlaceHolder1_gridCalendar_ctl00`.
+_GRID_ID = "gridCalendar"
 _US_DATE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 _CLOCK = re.compile(r"^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m\.?$", re.IGNORECASE)
 _PLACEHOLDER = re.compile(r"^multiple meeting items", re.IGNORECASE)
@@ -77,37 +80,45 @@ def parse_clock(value: str) -> time | None:
     return time(hour, minute)
 
 
-def _cell_url(cell: str) -> str | None:
-    match = _HREF.search(cell)
-    return safe_url(match.group(1), base=BASE) if match else None
+def _cell_url(cell: Tag) -> str | None:
+    """The cell's first link, allowlisted. Entities in the href are already decoded."""
+    link = cell.find("a", href=True)
+    return safe_url(link["href"], base=BASE) if isinstance(link, Tag) else None
+
+
+def _grid_rows(html_text: str) -> list[Tag]:
+    """Every row of the calendar grid, or a loud failure if the grid is not there."""
+    grid = parse_html(html_text).find(
+        "table", id=lambda value: value is not None and _GRID_ID in value
+    )
+    if not isinstance(grid, Tag):
+        raise CalendarParseError(
+            "no gridCalendar element — page is not the Legistar calendar "
+            "(check for an error body served with HTTP 200)"
+        )
+    return grid.find_all("tr")
 
 
 def parse_calendar(html_text: str) -> list[Meeting]:
     """Extract every meeting row. Raises CalendarParseError if the page is not
     recognisably the calendar, which is a different failure from "no meetings"."""
-    if "gridCalendar" not in html_text:
-        raise CalendarParseError(
-            "no gridCalendar element — page is not the Legistar calendar "
-            "(check for an error body served with HTTP 200)"
-        )
-
     meetings: list[Meeting] = []
     seen: set[tuple[str, date, str | None]] = set()
 
-    for row_match in _ROW.finditer(html_text):
-        cells = _CELL.findall(row_match.group(1))
+    for row in _grid_rows(html_text):
+        cells = row.find_all("td", recursive=False)
         if len(cells) < 7:
             continue
 
-        when = parse_us_date(strip_tags(cells[1]))
+        when = parse_us_date(element_text(cells[1]))
         if when is None:
             continue
 
-        committee = strip_tags(cells[0])
+        committee = element_text(cells[0])
         if not committee:
             continue
 
-        raw_time = strip_tags(cells[3])
+        raw_time = element_text(cells[3])
         start = parse_clock(raw_time)
         if start is not None:
             time_state = "scheduled"
@@ -116,10 +127,10 @@ def parse_calendar(html_text: str) -> list[Meeting]:
         else:
             time_state = "time_not_published"
 
-        raw_location = strip_tags(cells[4])
+        raw_location = element_text(cells[4])
         venue, mode = normalize_location(raw_location)
 
-        topic_text = strip_tags(cells[5]) if len(cells) > 5 else ""
+        topic_text = element_text(cells[5])
         topic = None if (not topic_text or _PLACEHOLDER.match(topic_text)) else topic_text
 
         key = (committee, when, raw_time or None)
@@ -137,7 +148,7 @@ def parse_calendar(html_text: str) -> list[Meeting]:
                 venue=venue,
                 raw_location=raw_location,
                 topic=topic,
-                detail_url=_cell_url(cells[6]) if len(cells) > 6 else None,
+                detail_url=_cell_url(cells[6]),
                 agenda_url=_cell_url(cells[7]) if len(cells) > 7 else None,
                 minutes_url=_cell_url(cells[8]) if len(cells) > 8 else None,
                 written_safe_until=written_safe_until(when, start),

@@ -315,3 +315,21 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   `MAX_FRAME_BYTES = 256 MB` had nothing to configure. | so what: when a library absorbs hand-rolled
   code, check whether it kept the optimisation the comment was defending — here it had, and the
   ceiling it replaced turned out not to exist, which is why the guard moved into a test.
+- 2026-09-30 | `sources/calendar.py` `_HREF`, found by swapping the regexes for beautifulsoup4 |
+  The hand-rolled reader matched an `href`'s **characters**, so Legistar's `&amp;` never decoded:
+  every stored detail, agenda and minutes URL carried `?ID=…&amp;GUID=…`, rendered as
+  `&amp;amp;GUID=` on **255 links across all 51 district pages**. Checked live both ways — both
+  forms return HTTP 200 with the same bytes, because `MeetingDetail.aspx` and `View.ashx` key on
+  `ID` alone and silently ignore the bogus `amp;GUID` parameter. | so what: "tags stripped,
+  entities decoded once" was enforced on text and silently not on attributes, and an upstream
+  tolerant enough to ignore the malformed half is why nothing ever went red.
+- 2026-09-30 | `text.py` extractors, beautifulsoup4 vs the `html.parser` state machines they
+  replaced | Compared over **74,615 inputs** — the whole corpus, ~8,500 fuzz mutations, the 4 real
+  district fixtures, all 51 cached district pages, the real calendar, and every string field of
+  four Socrata payloads. **5 differ, all one cause: a stray end tag.** The state machine emitted a
+  word break for every `</p>`, `</td>` or `</div>` it saw, matched or not; bs4 drops an unmatched
+  end tag. Neither is HTML5-conformant — the spec ignores a stray `</div>` and synthesises an
+  empty paragraph for a stray `</p>` — so the old code was accidentally right about `</p>` and
+  wrong about the rest. Not reachable from any real page. | so what: "a real parser behaves like a
+  browser" is only true of a real *HTML5* parser; `html.parser` and bs4 over it both do less error
+  recovery than Chrome, and the difference is in error recovery, not in tag handling.

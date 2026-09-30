@@ -4,9 +4,13 @@ version = "0.1.0"
 description = "Show Up NYC — what the NYC City Council is doing this week and what you can still do about it"
 requires-python = ">=3.12"
 # Open-source dependencies are allowed — see docs/dependencies.md for the checklist.
-# Jinja2 is build-time only: it renders `site/` and never reaches a reader. A BROWSER
-# dependency is still refused, because "zero third parties" is a CSP-enforced promise.
+# Jinja2 and beautifulsoup4 are build-time only: one renders `site/`, the other reads
+# the scraped pages, and neither reaches a reader. A BROWSER dependency is still
+# refused, because "zero third parties" is a CSP-enforced promise. Both are
+# `py3-none-any`, and bs4 is used with the stdlib `html.parser` backend so no compiled
+# parser enters the install surface — asserted in tests/unit/test_html_parsing.py.
 dependencies = [
+    "beautifulsoup4>=4.15.0",
     "jinja2>=3.1.6",
 ]
 

@@ -14,7 +14,10 @@ dependencies = [
 showup = "showup.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6"]
+# `websocket-client` drives the browser gates from `scripts/cdp.py` and is deliberately
+# NOT a runtime dependency: `showup build` must not need it. Pure Python, no compiled
+# extension, nothing executed at install — the rule that still rules out Playwright.
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "websocket-client>=1.9.2"]
 
 [build-system]
 requires = ["hatchling"]

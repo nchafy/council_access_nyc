@@ -112,7 +112,9 @@ obligations on top of the normal loop:
 1. **Record it** in `docs/dependencies.md` — version, OSI licence, build-time vs browser, and
    one line on what it replaces.
 2. **Check for install-time code execution.** A package that downloads or runs binaries on
-   install is refused. This is why `scripts/cdp.py` is hand-rolled rather than Playwright.
+   install is refused. This is why the browser gates run on `scripts/cdp.py` rather than
+   Playwright. Its RFC 6455 framing is `websocket-client`'s — a library is welcome, a
+   library that fetches and runs a browser build is not.
 3. **A browser dependency is refused outright** — "zero third parties" is a CSP-enforced
    promise to readers, not a preference.
 4. **Move the guard, do not drop it.** If the dependency takes over a safety-critical job, the

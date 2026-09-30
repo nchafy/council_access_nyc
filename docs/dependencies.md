@@ -39,10 +39,51 @@ change it deliberately in `product-brief.md` — not as a side effect of adding 
 | pytest | >=8 | MIT | dev | test runner |
 | pytest-cov | >=5 | MIT | dev | the 100% coverage gate |
 | ruff | >=0.6 | MIT | dev | lint + format |
+| websocket-client | 1.9.2 (`>=1.9.2`, pinned in `uv.lock`) | Apache-2.0 | dev | Replaces the 127-line hand-written RFC 6455 client inside `scripts/cdp.py` — frame headers, client masking, 16- and 64-bit lengths, continuation reassembly, ping/pong; the most error-prone code in the repo and the least specific to this project |
 | axe-core | 4.13.0 | MPL-2.0 | dev, fetched | R39's accessibility gate; not committed, see `vendor` note in `scripts/fetch_axe.py` |
 
 Neither runtime entry reaches a reader: both run at build time only, and `site/` is plain
 pre-rendered HTML with no third-party bytes in it.
+
+## The WebSocket library, and why it is not `websockets`
+
+`websocket-client` landed 2026-09-30, replacing the hand-written RFC 6455 client in
+`scripts/cdp.py`. It is a **dev** dependency: `scripts/` is tooling, nothing under
+`src/showup/` imports it, and `showup build` was checked in a virtualenv where it is
+absent.
+
+Rule 5 was verified, not assumed. The published wheel is a single
+`websocket_client-1.9.2-py3-none-any.whl` containing only `.py` files and a
+`dist-info/`: no compiled extension, no `.data/scripts`, nothing that runs at install.
+A wheel cannot execute code on install the way an sdist's `setup.py` can, and pip
+prefers the wheel. `pip list` after install shows one new package and no binaries.
+
+`websockets` was the obvious candidate and was rejected on the same rule read
+strictly: it publishes 148 platform-specific wheels because its masking routine is a C
+extension. Its `websockets.sync.client` would have suited `Session`'s synchronous
+design, but a compiled artifact per platform is a bigger install-time surface than the
+framing code it replaces. `websocket-client` is synchronous by design, so `Session`
+needed no change at all.
+
+Two properties of it are load-bearing and easy to lose in an upgrade:
+
+- **No read ceiling.** Unlike several libraries, `websocket-client` caps nothing: it
+  reads whatever the frame header declares, in 16 KB chunks. So the old
+  `MAX_FRAME_BYTES = 256 MB` has nothing to configure — there is no limit to raise.
+  The guard moved rather than disappearing: `tests/browser/test_cdp.py` sends 4 MB to
+  the page and reads ~4.8 MB of multi-byte UTF-8 back, which is what would fail if a
+  future version introduced a ~1 MB default. An `Accessibility.getFullAXTree` response
+  runs to megabytes and `axe.min.js` goes in at ~567 KB, so that limit would show up
+  only on the biggest pages: intermittent, page-dependent, and green in review.
+- **`skip_utf8_validation=True`.** The library's own validator is a per-byte Python
+  loop costing ~0.1 s per megabyte, ~800x the C `bytes.decode`. `recv_text` decodes
+  strictly anyway, so invalid UTF-8 still raises; the validator is pure cost on an AX
+  tree.
+
+Masking did not regress. The library's fallback `_mask` uses the same
+`int.from_bytes`/`to_bytes` big-integer XOR the hand-rolled code used to keep the
+~567 KB axe payload out of a Python loop, so the performance note survived the swap
+without being restated in our code.
 
 ## The template engine, and the guard that came with it
 

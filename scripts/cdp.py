@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
-"""Drive a real Chrome over the DevTools Protocol, using nothing but the stdlib.
+"""Drive a real Chrome over the DevTools Protocol.
 
 A rendered accessibility tree, real `Tab` keypresses, and the browser's own clock
 under the browser's own throttling cannot be obtained from outside a browser. CDP is
 JSON over a loopback WebSocket, so the useful subset is small enough to own outright
-instead of depending on Playwright. Used as a library by `axe_check`, `a11y_audit`,
-`console_check` and `perf`. Run directly for a smoke test:
+instead of depending on Playwright, which downloads and runs its own browser build on
+install — the `docs/dependencies.md` rule this file exists because of. The framing
+underneath is `websocket-client`'s: pure Python, installing no binaries. Used as a
+library by `axe_check`, `a11y_audit`, `console_check` and `perf`. Run directly for a
+smoke test:
 
     python3 scripts/cdp.py https://example.com
 """
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import json
-import secrets
 import shutil
-import socket
-import struct
 import subprocess
 import sys
 import tempfile
@@ -29,6 +28,13 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, ClassVar
 from urllib.parse import urlsplit
+
+from websocket import (
+    ABNF,
+    WebSocketConnectionClosedException,
+    WebSocketException,
+    create_connection,
+)
 
 #: Shared by every browser-driving script here, so there is one list to update.
 CHROME_CANDIDATES = (
@@ -51,130 +57,55 @@ def find_chrome() -> str | None:
 
 
 class WebSocket:
-    """The smallest RFC 6455 client that can carry CDP.
+    """A CDP-shaped channel over `websocket-client`, which owns the RFC 6455 framing.
 
-    Deliberately partial: a text channel over an unencrypted loopback socket, with
-    continuation frames reassembled and pings answered. No TLS and no extensions,
-    because Chrome's debugging endpoint is plain `ws://` on 127.0.0.1.
+    Kept as a class so `Session` and `Browser` are unchanged: frame headers, the
+    mandatory client masking, continuation reassembly and pings are the library's now.
     """
 
-    OPCODE_TEXT = 0x1
-    OPCODE_CLOSE = 0x8
-    OPCODE_PING = 0x9
-    OPCODE_PONG = 0xA
-
-    #: Generous — trees run to megabytes; it turns a corrupt length into an error, not an alloc.
-    MAX_FRAME_BYTES = 256 * 1024 * 1024
-
     def __init__(self, url: str, timeout: float = 30.0) -> None:
-        url_parts = urlsplit(url)
-        if url_parts.scheme != "ws":
+        if urlsplit(url).scheme != "ws":
             raise CDPError(f"expected a ws:// url, got {url!r}")
-        host, port = url_parts.hostname or "127.0.0.1", url_parts.port or 80
-        self._socket = socket.create_connection((host, port), timeout=timeout)
-        self._socket.settimeout(timeout)
-        self._buffer = b""
-
-        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
-        target = url_parts.path or "/"
-        if url_parts.query:
-            target = f"{target}?{url_parts.query}"
-        self._socket.sendall(
-            "\r\n".join(
-                [
-                    f"GET {target} HTTP/1.1",
-                    f"Host: {host}:{port}",
-                    "Upgrade: websocket",
-                    "Connection: Upgrade",
-                    f"Sec-WebSocket-Key: {key}",
-                    "Sec-WebSocket-Version: 13",
-                    "",
-                    "",
-                ]
-            ).encode("ascii")
-        )
-        status_line = self._read_until(b"\r\n\r\n").split(b"\r\n", 1)[0]
-        if b" 101 " not in status_line:
-            raise CDPError(f"websocket upgrade refused: {status_line!r}")
-
-    def _read_until(self, marker: bytes) -> bytes:
-        while marker not in self._buffer:
-            chunk = self._socket.recv(65536)
-            if not chunk:
-                raise CDPError("connection closed during the handshake")
-            self._buffer += chunk
-        before_marker, _, after_marker = self._buffer.partition(marker)
-        self._buffer = after_marker
-        return before_marker
-
-    def _read_exactly(self, count: int) -> bytes:
-        while len(self._buffer) < count:
-            chunk = self._socket.recv(max(65536, count - len(self._buffer)))
-            if not chunk:
-                raise CDPError("connection closed mid-frame")
-            self._buffer += chunk
-        requested, self._buffer = self._buffer[:count], self._buffer[count:]
-        return requested
-
-    def _send_frame(self, opcode: int, payload: bytes) -> None:
-        header = bytearray([0x80 | opcode])
-        length = len(payload)
-        # The mask bit is mandatory for a client, whatever the length.
-        if length < 126:
-            header.append(0x80 | length)
-        elif length < 65536:
-            header.append(0x80 | 126)
-            header += struct.pack("!H", length)
-        else:
-            header.append(0x80 | 127)
-            header += struct.pack("!Q", length)
-        mask = secrets.token_bytes(4)
-        header += mask
-        # Big-int XOR keeps the ~600 KB axe.min.js masking loop in C, not in Python.
-        repeated_mask = mask * (length // 4) + mask[: length % 4]
-        masked_payload = (
-            int.from_bytes(payload, "big") ^ int.from_bytes(repeated_mask, "big")
-        ).to_bytes(length, "big")
-        self._socket.sendall(bytes(header) + masked_payload)
+        try:
+            self._socket = create_connection(
+                url,
+                timeout=timeout,
+                # Chrome's debugging endpoint rejects an upgrade carrying an Origin.
+                suppress_origin=True,
+                # The library's UTF-8 validator is a per-byte Python loop, ~0.1 s per
+                # megabyte; `recv_text` decodes strictly anyway, so on an AX tree it is
+                # pure cost. There is no read ceiling to raise: see `test_cdp.py`.
+                skip_utf8_validation=True,
+                # One request is ever in flight, so the read lock buys nothing.
+                enable_multithread=False,
+            )
+        except (WebSocketException, OSError) as error:
+            raise CDPError(f"websocket upgrade refused: {error}") from error
 
     def send_text(self, text: str) -> None:
-        self._send_frame(self.OPCODE_TEXT, text.encode("utf-8"))
+        try:
+            self._socket.send(text)
+        except (WebSocketException, OSError) as error:
+            raise CDPError(f"lost the channel to Chrome while sending: {error}") from error
 
     def recv_text(self) -> str:
-        """The next complete text message, reassembling continuation frames."""
-        chunks: list[bytes] = []
-        while True:
-            flags_byte, length_byte = self._read_exactly(2)
-            is_final_frame = bool(flags_byte & 0x80)
-            opcode = flags_byte & 0x0F
-            if length_byte & 0x80:
-                raise CDPError("a server frame must not be masked")
-            length = length_byte & 0x7F
-            if length == 126:
-                length = struct.unpack("!H", self._read_exactly(2))[0]
-            elif length == 127:
-                length = struct.unpack("!Q", self._read_exactly(8))[0]
-            if length > self.MAX_FRAME_BYTES:
-                raise CDPError(f"refusing a {length}-byte frame")
-            payload = self._read_exactly(length)
-
-            if opcode == self.OPCODE_CLOSE:
-                raise CDPError("Chrome closed the connection")
-            if opcode == self.OPCODE_PING:
-                # Unanswered pings make Chrome eventually hang up.
-                self._send_frame(self.OPCODE_PONG, payload)
-                continue
-            if opcode == self.OPCODE_PONG:
-                continue
-            chunks.append(payload)
-            if is_final_frame:
-                return b"".join(chunks).decode("utf-8")
+        """The next complete text message, with continuation frames already reassembled."""
+        try:
+            opcode, payload = self._socket.recv_data()
+        except WebSocketConnectionClosedException as error:
+            raise CDPError("connection closed mid-frame") from error
+        except (WebSocketException, OSError) as error:
+            raise CDPError(f"lost the channel to Chrome: {error}") from error
+        if opcode == ABNF.OPCODE_CLOSE:
+            raise CDPError("Chrome closed the connection")
+        return payload.decode("utf-8") if isinstance(payload, bytes) else payload
 
     def close(self) -> None:
         """Close the socket, tolerating a Chrome that has already gone."""
-        with contextlib.suppress(OSError):
-            self._send_frame(self.OPCODE_CLOSE, b"")
-        self._socket.close()
+        # Bounded: `Browser.__exit__` closes every socket before Chrome is terminated,
+        # so one that accepts the close frame and never answers must not hold up exit.
+        with contextlib.suppress(WebSocketException, OSError):
+            self._socket.close(timeout=1)
 
 
 class Session:

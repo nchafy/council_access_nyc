@@ -99,9 +99,9 @@ SLA, so **its latency is measured and disclosed, not promised**: the UI names it
 slow dependency at 1.2 s and hands over the list paths at 5 s.
 
 **The page-weight and cold-load budgets are gated in CI as of 2026-09-23** — not by
-Playwright but by a ~160-line stdlib DevTools-protocol client (`scripts/cdp.py`), which
-keeps the project's zero runtime and dev dependencies intact. Two measurements of
-deliberately different kinds:
+Playwright, which downloads and runs its own browser build on install, but by a small
+DevTools-protocol client (`scripts/cdp.py`) whose framing is `websocket-client`'s. Two
+measurements of deliberately different kinds:
 
 | Gate | How | Measured |
 |---|---|---|

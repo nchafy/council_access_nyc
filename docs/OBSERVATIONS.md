@@ -298,3 +298,20 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   the 59 pairs are exactly the 59 real board codes in `ruf7-3wgc.community_board_1`. | so what:
   the code mapping is checkable without geometry — a wrong mapping still yields 59 codes, but not
   the same 59 the boards dataset publishes.
+- 2026-09-30 | Chrome's `/devtools/page/...` endpoint vs `websocket-client` defaults | Chrome **403s a
+  WebSocket upgrade that carries an `Origin` header**: `Rejected an incoming WebSocket connection from
+  the http://127.0.0.1:PORT origin`, suggesting `--remote-allow-origins`. The hand-rolled client sent no
+  `Origin` and so never met this; `websocket-client` synthesises one from the host unless
+  `suppress_origin=True`. Verified both ways against a live headless Chrome in one run. | so what: the
+  fix is `suppress_origin=True`, not a Chrome flag — `--remote-allow-origins=*` would widen what may
+  drive the browser. A library's defaults are tuned for web servers, and a debugging endpoint is not one.
+- 2026-09-30 | `websocket-client` 1.9.2 internals, measured while replacing the hand-rolled RFC 6455
+  client | Two numbers worth keeping. Its pure-Python `validate_utf8` is a **per-byte loop costing
+  0.106 s per megabyte, ~800x the 0.00013 s of `bytes.decode('utf-8')`** — real money on a
+  multi-megabyte `Accessibility.getFullAXTree`, and redundant because `recv` decodes strictly anyway, so
+  `skip_utf8_validation=True`. And its `_mask` fallback is the **same `int.from_bytes`/`to_bytes`
+  big-integer XOR** the hand-rolled code used for the ~567 KB axe payload, so that optimisation
+  survived the swap without us restating it. It imposes **no read ceiling at all**, so
+  `MAX_FRAME_BYTES = 256 MB` had nothing to configure. | so what: when a library absorbs hand-rolled
+  code, check whether it kept the optimisation the comment was defending — here it had, and the
+  ceiling it replaced turned out not to exist, which is why the guard moved into a test.

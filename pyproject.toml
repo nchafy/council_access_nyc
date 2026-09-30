@@ -3,12 +3,10 @@ name = "showup"
 version = "0.1.0"
 description = "Show Up NYC — what the NYC City Council is doing this week and what you can still do about it"
 requires-python = ">=3.12"
-# Phase 1 is deliberately dependency-free at runtime. Everything here is
-# stdlib: html.parser for the scraped pages, json, datetime, pathlib, http.server
-# for local serving. Every dependency is an attack surface and this project's
-# primary threat is untrusted upstream content (docs/phase-1-scope.md §4), so the
-# smallest possible dependency set is a security decision, not minimalism for its
-# own sake. No PDF parser and no map library in Phase 1.
+# Open-source dependencies are allowed — see docs/dependencies.md for the checklist.
+# Still empty at runtime because nothing has needed one yet, which is a fact about
+# today rather than a rule. The line that does still hold: a BROWSER dependency is
+# refused, because "zero third parties" is a CSP-enforced promise to readers.
 dependencies = []
 
 [project.scripts]

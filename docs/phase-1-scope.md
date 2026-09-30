@@ -135,8 +135,10 @@ A CI grep fails the build if a geocoder call site omits `private=true`.
 
 ### 4.5 Supply chain and build integrity
 
-- Dependencies minimal and pinned via lockfile. **Phase 1 needs no PDF parser and no map library** — a
-  security benefit of the reduced scope, not just a time saving.
+- **Open-source dependencies are allowed** (owner, 2026-09-30) and pinned via lockfile; the checklist
+  is `docs/dependencies.md`. Two rules survive: no install-time code execution (why Playwright was
+  refused, not why dependencies were), and **no browser dependency** — "zero third parties" is a
+  CSP-enforced promise to readers, not a dependency preference.
 - GitHub Actions pinned to commit SHAs, not tags; `permissions:` least privilege (`contents: read` by
   default).
 - The build requires **no secrets**. Deploy credentials will live only in the deploy job, never in

@@ -166,7 +166,13 @@ get re-argued.
 - **Python 3.12 + uv + ruff + pytest for ETL; vanilla ES modules for the
   frontend.** Mirrors `~/personal/timemap_nyc`. The only logic shared between
   ETL and browser is ~25 lines of ray-casting, so the one-language argument for
-  Node is empty. One pinned npm devDependency: `mapshaper`.
+  Node is empty.
+- **Open-source dependencies are allowed** (owner, 2026-09-30). This reverses the
+  earlier stdlib-only posture, which was never about licences. `docs/dependencies.md`
+  carries the checklist. Two things still hold: **no install-time code execution**
+  (Playwright downloads and runs its own browser build — that, not dependency
+  aversion, is why `scripts/cdp.py` exists), and **no browser dependency**, because
+  "zero third parties" is a promise to readers that the CSP enforces.
 - **MapLibre GL JS + OpenFreeMap, self-hosted vendor bundle.** No Google Maps,
   no Mapbox, no analytics, no tag manager, no third-party fonts. The model site
   `spatialequity.nyc` ships gtag and Mapbox; we borrow its metric-registry

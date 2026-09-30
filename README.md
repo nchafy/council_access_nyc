@@ -38,7 +38,7 @@ will be skipped.
 | Tests | **~9,000**, of which ~8,500 are generated fuzz cases |
 | Coverage | **100%**, enforced (`--cov-fail-under=100`) |
 | Live checks | **~350** against a running server (`make verify`) |
-| Runtime dependencies | **zero** — stdlib only |
+| Runtime dependencies | **zero** so far — allowed, none needed yet |
 
 ## What it answers today
 
@@ -123,9 +123,10 @@ measurement on a reference profile, and the gate's own output says so in those w
 
 - **ETL:** Python 3.12 (uv, ruff, pytest), build-time only, no origin server
 - **Frontend:** vanilla ES modules. No framework. One ~7 KB script for the address box
-- **Runtime dependencies: none.** Stdlib only, which is a security decision given that
-  the primary threat is untrusted upstream content, not thrift
-- **Third parties: none.** No analytics, no tag manager, no hosted fonts, no map tiles.
+- **Runtime dependencies: none so far.** Open-source dependencies are allowed
+  ([docs/dependencies.md](docs/dependencies.md)); nothing has needed one yet
+- **Third parties in the browser: none, and this one is a rule.** No analytics, no tag
+  manager, no hosted fonts, no map tiles — it is a CSP-enforced promise to readers.
   The address you type goes to the NYC geocoder and nowhere else, and never enters a URL,
   cookie, storage or log
 - **Planned, not present:** MapLibre GL JS + OpenFreeMap for the interactive map, and

@@ -318,11 +318,20 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
 - 2026-09-30 | `sources/calendar.py` `_HREF`, found by swapping the regexes for beautifulsoup4 |
   The hand-rolled reader matched an `href`'s **characters**, so Legistar's `&amp;` never decoded:
   every stored detail, agenda and minutes URL carried `?ID=…&amp;GUID=…`, rendered as
-  `&amp;amp;GUID=` on **255 links across all 51 district pages**. Checked live both ways — both
-  forms return HTTP 200 with the same bytes, because `MeetingDetail.aspx` and `View.ashx` key on
-  `ID` alone and silently ignore the bogus `amp;GUID` parameter. | so what: "tags stripped,
-  entities decoded once" was enforced on text and silently not on attributes, and an upstream
-  tolerant enough to ignore the malformed half is why nothing ever went red.
+  `&amp;amp;GUID=` on **255 links across all 51 district pages**. Checked live both ways: both
+  return HTTP 200 and render the same meeting ("Committee on Transportation and Infrastructure on
+  9/30/2026 at 10:00 AM"), because `MeetingDetail.aspx` and `View.ashx` key on `ID` alone and
+  silently ignore the bogus `amp;GUID` parameter. So no reader was ever misrouted. | so what:
+  "tags stripped, entities decoded once" was enforced on text and silently not on attributes, and
+  an upstream tolerant enough to ignore the malformed half is why nothing ever went red.
+- 2026-09-30 | comparing two Legistar responses, correcting the entry above | That entry first
+  read "both forms return HTTP 200 with the same bytes". **Not true, and not checkable that way**:
+  fetching one URL twice gives different bytes, and still differs after `__VIEWSTATE` is stripped,
+  because the page carries several per-request tokens. The byte counts matched (221,016 each),
+  which is what made the wrong claim look verified. | generic: on an ASP.NET page, equality of
+  responses has to be asserted on rendered content — here the `<title>` and the meeting fields —
+  never on bytes or length. A byte comparison there produces a confident answer to a question it
+  cannot answer.
 - 2026-09-30 | `text.py` extractors, beautifulsoup4 vs the `html.parser` state machines they
   replaced | Compared over **74,615 inputs** — the whole corpus, ~8,500 fuzz mutations, the 4 real
   district fixtures, all 51 cached district pages, the real calendar, and every string field of

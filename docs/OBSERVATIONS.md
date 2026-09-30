@@ -262,3 +262,26 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   and after. | so what: the throttled cold-load gate is sensitive to machine contention, which CI does not
   have (one job, one browser). Not hardened with a retry, because a retry would also hide a real
   disconnect. If it ever flakes in CI, the fix is to serialise, not to retry.
+- 2026-09-30 | `vn4m-mk4t` (OMB Register of Community Board Budget Requests), licence cleared by the owner
+  | **`boro` is alphabetical by borough acronym, not the standard NYC code**: 1=Bronx, 2=Brooklyn,
+  3=Manhattan, 4=Queens, 5=Staten Island. Verified by geography rather than by documentation — boro=1
+  board=01 asks about Mott Haven, boro=2 about Greenpoint and McGolrick Park, boro=3 about 26 Broadway
+  and "Lower manhattan", boro=4 about Hallet's Point, boro=5 about Bay Street. The standard NYC code has
+  1=Manhattan and 2=Bronx, so a naive join silently swaps three boroughs. | generic: verify a code column
+  against something in the payload that names a place, never against the convention you expect.
+- 2026-09-30 | `vn4m-mk4t.publication` | The newest value is **`20270217`, dated five months in the
+  future** (today is 2026-09-30), so `ORDER BY publication DESC LIMIT 1` selects it. It is not a
+  duplicate: same 3,809 rows and same tracking codes as `20260630`, but with terser agency responses
+  ("Agency does not support and cannot accommodate" where 20260630 has "OMB supports the agency's
+  position as follows: ..."). | refused: selecting the newest publication. The rule is the newest
+  publication **not dated in the future**, which fails closed and is a one-line guard. A future-dated row
+  in a published register is either a typo or a forward-planned cycle, and neither is safe to serve.
+- 2026-09-30 | `vn4m-mk4t.priority` | Runs 01-25 zero-padded, but **repeats within a board**: 1,387 rows
+  across 59 boards carry priority 01. Manhattan CB1's three priority-01 rows have tracking codes ending
+  `C`, `CS` and `E` — capital, capital-support and expense. So priority is ranked *within a budget
+  category*, and "the board's number one request" does not exist as a single row. | refused: rendering a
+  single top ask. Coverage is 59/59 boards at 9-134 requests each.
+- 2026-09-30 | `vn4m-mk4t.response` | Free text whose leading sentence looks classifiable ("Agency
+  supports and can accommodate" / "does not support and cannot accommodate") but varies in phrasing and
+  prefix between publications of the same row. | refused: bucketing it into supported/not-supported. It
+  is quoted verbatim, because a mis-bucketed "no" reads as a promise.

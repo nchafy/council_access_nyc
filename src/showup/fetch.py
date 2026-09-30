@@ -36,7 +36,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 __all__ = ["SOURCES", "FetchError", "fetch_all", "fetch_one"]
@@ -153,6 +153,50 @@ def _geojson_features(expected: int) -> Callable[[bytes], str | None]:
     return check
 
 
+#: Without every one of these the payload is not `vn4m-mk4t`, whatever its size.
+BUDGET_REQUEST_COLUMNS = (
+    "boro",
+    "board",
+    "priority",
+    "request",
+    "explanation",
+    "responsible_agency",
+    "response",
+    "responded_by",
+    "publication",
+    "tracking_code",
+)
+BUDGET_REQUESTS_DATASET = "vn4m-mk4t"
+#: Editions run 3,411-3,814 rows; below 3,000 the shape has changed, not the year.
+BUDGET_REQUEST_ROW_FLOOR = 3_000
+
+
+def _board_budget_requests(body: bytes) -> str | None:
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError as error:
+        return f"not valid JSON ({error})"
+    if isinstance(parsed, dict) and "error" in parsed:
+        return f"Socrata error: {str(parsed)[:120]}"
+    if not isinstance(parsed, list):
+        return f"expected a JSON array, got {type(parsed).__name__}"
+    if len(parsed) < BUDGET_REQUEST_ROW_FLOOR:
+        return f"{len(parsed)} rows, floor is {BUDGET_REQUEST_ROW_FLOOR}"
+
+    absent = [column for column in BUDGET_REQUEST_COLUMNS if column not in parsed[0]]
+    if absent:
+        return f"not vn4m-mk4t: no {', '.join(absent)} column"
+    boards = {(row.get("boro"), row.get("board")) for row in parsed}
+    if len(boards) < 59:
+        return f"{len(boards)} boro/board pairs, expected all 59"
+    # One edition per cache entry. More than one means the `$where` stopped filtering,
+    # which is how a future-dated edition would reach the build unnoticed.
+    editions = {row.get("publication") for row in parsed}
+    if len(editions) != 1:
+        return f"{len(editions)} publications in one payload, expected exactly 1"
+    return None
+
+
 def _district_pages(body: bytes) -> str | None:
     try:
         parsed = json.loads(body)
@@ -236,7 +280,9 @@ def _fetch_district_pages(log: Callable[[str], None]) -> bytes:
     return json.dumps(pages).encode()
 
 
-def _socrata_rows(dataset: str, select: str, *, page: int = 50_000) -> Callable[..., bytes]:
+def _socrata_rows(
+    dataset: str, select: str, *, page: int = 50_000, where: str | None = None
+) -> Callable[..., bytes]:
     def fetch(log: Callable[[str], None]) -> bytes:
         rows: list[dict] = []
         offset = 0
@@ -248,8 +294,11 @@ def _socrata_rows(dataset: str, select: str, *, page: int = 50_000) -> Callable[
                     # Socrata gives no ordering guarantee and rows silently
                     # duplicate or vanish between pages.
                     "$order": ":id",
+                    # Explicit, because Socrata's own default is 1,000 rows and the
+                    # register alone is 3,809.
                     "$limit": page,
                     "$offset": offset,
+                    **({"$where": where} if where else {}),
                 }
             )
             body = _get(f"{SOCRATA}/resource/{dataset}.json?{query}")
@@ -264,6 +313,43 @@ def _socrata_rows(dataset: str, select: str, *, page: int = 50_000) -> Callable[
         return json.dumps(rows).encode()
 
     return fetch
+
+
+def _published_not_in_the_future(log: Callable[[str], None], today: date) -> str:
+    """The newest edition of the register not dated ahead of `today`.
+
+    The newest value overall is `20270217`, five months in the future and not a
+    duplicate, so `ORDER BY publication DESC LIMIT 1` would cache it.
+    """
+    query = urllib.parse.urlencode(
+        {"$select": "publication", "$group": "publication", "$order": "publication DESC"}
+    )
+    body = _get(f"{SOCRATA}/resource/{BUDGET_REQUESTS_DATASET}.json?{query}")
+    parsed = json.loads(body)
+    if isinstance(parsed, dict) and "error" in parsed:
+        raise FetchError(f"{BUDGET_REQUESTS_DATASET}: Socrata error {str(parsed)[:160]}")
+
+    stamp = today.strftime("%Y%m%d")
+    editions = sorted({str(row.get("publication") or "") for row in parsed}, reverse=True)
+    for candidate in editions:
+        if len(candidate) == 8 and candidate.isdigit() and candidate <= stamp:
+            return candidate
+        log(f"    skipping publication {candidate!r}: not a date on or before {stamp}")
+    raise FetchError(
+        f"{BUDGET_REQUESTS_DATASET}: no publication on or before {stamp}. "
+        "Refusing to cache a future-dated register."
+    )
+
+
+def _fetch_board_budget_requests(log: Callable[[str], None]) -> bytes:
+    """Only the edition the page will cite, so the cache cannot hold a future one."""
+    publication = _published_not_in_the_future(log, date.today())
+    log(f"    publication {publication}")
+    return _socrata_rows(
+        BUDGET_REQUESTS_DATASET,
+        ",".join(BUDGET_REQUEST_COLUMNS),
+        where=f"publication='{publication}'",
+    )(log)
 
 
 def _geospatial(dataset: str) -> Callable[..., bytes]:
@@ -334,6 +420,15 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=20_000,
         max_age_hours=24 * 60,
         why="community board contact details and meeting cadence",
+    ),
+    Source(
+        name="budget-requests",
+        filename="board_budget_requests.json",
+        fetch=_fetch_board_budget_requests,
+        invariant=_board_budget_requests,
+        min_bytes=1_000_000,
+        max_age_hours=24 * 30,
+        why="what each board asked the City for, in the board's own words",
     ),
     Source(
         name="council-geometry",

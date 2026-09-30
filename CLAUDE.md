@@ -38,7 +38,7 @@ source-conflict notice, missing committees, designed empty states. Check it afte
 any renderer change.
 
 **State of play (2026-09-23).** Phase 1 is **built and runs locally**: 110 pages
-(51 district, 59 board), seven fetchers, 100% enforced coverage, CI green. Not
+(51 district, 59 board), eight fetchers, 100% enforced coverage, CI green. Not
 deployed — no domain, no hosting, no scheduled refresh, all deferred together.
 
 The accessibility and performance pass is now built and gated in CI: axe clean on all

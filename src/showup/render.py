@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from .deadlines import accommodation_state, written_state
-from .model import District, DistrictBoard, Meeting
+from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
 from .text import esc
 
 __all__ = ["render_district", "render_index", "render_not_found"]
@@ -698,12 +698,82 @@ def _board_involvement(borough: str) -> str:
     return _BOARD_INVOLVEMENT_TEMPLATE.format(borough=esc(borough), bp_link=bp_link)
 
 
+BUDGET_REGISTER_URL = "https://data.cityofnewyork.us/d/vn4m-mk4t"
+
+#: Five, matching the shortlist size used for meetings. The register runs to 134
+#: requests for one board, and the whole edition is one link away.
+REQUESTS_SHOWN = 5
+_EXPLANATION_CHARS = 260
+_RESPONSE_CHARS = 260
+
+
+def _budget_request_card(request: BudgetRequest) -> str:
+    priority = esc(request.priority) + (
+        f" — {esc(request.category.lower())}" if request.category else ""
+    )
+    rows: list[tuple[str, str]] = [("Priority", priority)]
+    if request.agency:
+        rows.append(("Asked of", esc(request.agency)))
+    if request.explanation:
+        rows.append(("The board's words", esc(_short(request.explanation, _EXPLANATION_CHARS))))
+    if request.response:
+        rows.append(("The reply, quoted", esc(_short(request.response, _RESPONSE_CHARS))))
+    rows.append(("Register reference", esc(request.tracking_code)))
+    return f"""  <article class="request">
+    <h3>{esc(request.request or "The register does not describe this request")}</h3>
+{_dl(rows)}
+  </article>
+"""
+
+
+def _budget_requests_block(asked: BoardBudgetRequests | None) -> str:
+    register = _link(BUDGET_REGISTER_URL, "the OMB register (vn4m-mk4t)")
+    if asked is None or not asked.requests:
+        return f"""<section class="budget-requests">
+  <h2>What this board asked the City for</h2>
+  <p class="designed-state">
+    We hold no budget requests on file for this board. Every board files them with the
+    Mayor's Office of Management and Budget each year, as the City Charter requires, so
+    an absence here is our gap rather than the board's — look it up in {register}.
+  </p>
+</section>
+"""
+    shown = asked.requests[:REQUESTS_SHOWN]
+    year = (
+        f"Fiscal Year {esc(asked.fiscal_year)}" if asked.fiscal_year else "An unstated fiscal year"
+    )
+    cards = "\n".join(_budget_request_card(request) for request in shown)
+    return f"""<section class="budget-requests">
+  <h2>What this board asked the City for</h2>
+  <p class="why">
+    {year} requests, from the edition OMB published on
+    {esc(asked.publication.strftime("%-d %B %Y"))} — the newest one not dated in the
+    future. Showing {len(shown)} of {len(asked.requests)} for this board, lowest
+    priority number first; all of them, for all 59 boards, are in {register}.
+    Explanations and replies are quoted from it and cut short here.
+  </p>
+{cards}
+  <p class="refusal">
+    <strong>What this is not.</strong> It is an annual filing, not current activity: the
+    register appears a few times a year, so an entry can be months old. A request is not
+    a commitment and not a funded outcome — nothing here says any money was spent. The
+    reply is the agency's own wording, quoted rather than sorted into yes and no, because
+    the phrasing changes between editions of the same row; it records a position, not an
+    outcome. Priority numbers repeat because each one ranks within a budget category —
+    capital, capital support, expense — so there is no single top request and we do not
+    present one. We do not compare this board with any other.
+  </p>
+</section>
+"""
+
+
 def render_board(
     board: DistrictBoard,
     districts: list[tuple[int, float]],
     *,
     built_at: datetime,
     window_end: date | None,
+    budget_requests: BoardBudgetRequests | None = None,
 ) -> str:
     """The community board view.
 
@@ -819,6 +889,7 @@ def render_board(
 </section>
 
 {meetings_block}
+{_budget_requests_block(budget_requests)}
 {districts_block}
 {_board_involvement(board.borough_name)}
 <p class="back"><a href="/">Find another board or district</a></p>

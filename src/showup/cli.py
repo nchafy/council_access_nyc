@@ -53,6 +53,11 @@ def _build(args: argparse.Namespace) -> int:
         f"  board links     : {report['boards_linked']} "
         f"({report['boards_without_email']} without a publishable email)"
     )
+    print(
+        f"  budget requests : {report['budget_requests']} across "
+        f"{report['boards_with_budget_requests']} boards "
+        f"(publication {report['budget_publication']})"
+    )
     print(f"  zip codes       : {report['zip_codes']}")
     if report["vacant_seats"]:
         print(f"  vacant seats    : {report['vacant_seats']}")

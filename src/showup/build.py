@@ -24,6 +24,7 @@ from .geo import load_features, to_geojson
 from .model import District, DistrictBoard, Manifest, Member
 from .render import render_board, render_district, render_index, render_not_found
 from .sources.boards import load_boards
+from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
 from .sources.members import current_by_district, load_members
@@ -194,6 +195,18 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
 
     districts, _, boards_by_code = _load_districts(raw, day)
 
+    # An absent register is a designed empty state; a register carrying nothing but
+    # future-dated editions is a refusal.
+    budget_requests_file = raw / "board_budget_requests.json"
+    try:
+        budget_requests = load_budget_requests(budget_requests_file, today=day)
+    except BudgetRequestError as error:
+        raise BuildError(str(error)) from error
+    budget_request_rows = sum(len(entry.requests) for entry in budget_requests.values())
+    budget_publication = next(
+        (entry.publication.isoformat() for entry in budget_requests.values()), None
+    )
+
     ahead = upcoming(meetings, day, SHORTLIST_SIZE)
     window_end = max((m.date for m in meetings), default=None)
 
@@ -256,6 +269,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
                 boards_to_districts.get(code, []),
                 built_at=now,
                 window_end=window_end,
+                budget_requests=budget_requests.get(code),
             ),
             encoding="utf-8",
         )
@@ -312,32 +326,36 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     if headers.exists():
         shutil.copy2(headers, staging / "_headers")
 
-    manifest = Manifest(
-        sources={
-            "legistar_calendar": {
-                "fetched_at": _mtime(raw / "legistar_calendar.html"),
-                "max_age_hours": 12,
-                "rows": len(meetings),
-            },
-            "district_pages": {
-                "fetched_at": _mtime(raw / "district_pages.json"),
-                "max_age_hours": 24 * 40,
-                "rows": DISTRICT_COUNT,
-            },
-            "members": {
-                "fetched_at": _mtime(raw / "members.json"),
-                "max_age_hours": 24 * 40,
-                "rows": DISTRICT_COUNT,
-            },
-            "community_boards": {
-                "fetched_at": _mtime(raw / "community_boards.json"),
-                "max_age_hours": 24 * 90,
-                "rows": 59,
-            },
+    manifest_sources: dict[str, dict[str, str | int]] = {
+        "legistar_calendar": {
+            "fetched_at": _mtime(raw / "legistar_calendar.html"),
+            "max_age_hours": 12,
+            "rows": len(meetings),
         },
-        built_at=now,
-        calendar_window_end=window_end,
-    )
+        "district_pages": {
+            "fetched_at": _mtime(raw / "district_pages.json"),
+            "max_age_hours": 24 * 40,
+            "rows": DISTRICT_COUNT,
+        },
+        "members": {
+            "fetched_at": _mtime(raw / "members.json"),
+            "max_age_hours": 24 * 40,
+            "rows": DISTRICT_COUNT,
+        },
+        "community_boards": {
+            "fetched_at": _mtime(raw / "community_boards.json"),
+            "max_age_hours": 24 * 90,
+            "rows": 59,
+        },
+    }
+    if budget_requests_file.exists():
+        manifest_sources["board_budget_requests"] = {
+            "fetched_at": _mtime(budget_requests_file),
+            "max_age_hours": 24 * 30,
+            "rows": budget_request_rows,
+        }
+
+    manifest = Manifest(sources=manifest_sources, built_at=now, calendar_window_end=window_end)
     (staging / "manifest.json").write_text(
         json.dumps(
             {
@@ -362,6 +380,9 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "districts_with_gaps": sum(1 for d in districts if d.missing),
         "boards_linked": sum(len(d.boards) for d in districts),
         "board_pages": len(boards_by_code),
+        "boards_with_budget_requests": len(budget_requests),
+        "budget_requests": budget_request_rows,
+        "budget_publication": budget_publication,
         "zip_codes": len(zips),
         "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [

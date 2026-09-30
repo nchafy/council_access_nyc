@@ -285,3 +285,16 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   supports and can accommodate" / "does not support and cannot accommodate") but varies in phrasing and
   prefix between publications of the same row. | refused: bucketing it into supported/not-supported. It
   is quoted verbatim, because a mis-bucketed "no" reads as a promise.
+- 2026-09-30 | `vn4m-mk4t.tracking_code` | Ten or eleven characters: `boro`+`board` (the
+  alphabetical code, so `101…` is Bronx CB1), a four-digit fiscal year, a two-digit sequence
+  number, then `C`/`CS`/`E`. Two traps. The prefix is **not** the repo's board code, so a code
+  must never be derived from it. And the sequence digits are **not** the `priority` column:
+  Brooklyn CB2's `202202704C` carries priority 01, and five of its 61 rows in publication
+  `20260630` are priority 01. | generic: a composite key that looks like it encodes the other
+  columns is a second source that can disagree with them; verify each field against its own column.
+- 2026-09-30 | `vn4m-mk4t` coverage, mapped through the alphabetical `boro` | Publication
+  `20260630` is 3,809 rows over exactly 59 distinct `boro`/`board` pairs, 9-134 per board, one
+  fiscal year (2027), `responded_by` uniformly `OMB`. Mapped 1→2xx, 2→3xx, 3→1xx, 4→4xx, 5→5xx
+  the 59 pairs are exactly the 59 real board codes in `ruf7-3wgc.community_board_1`. | so what:
+  the code mapping is checkable without geometry — a wrong mapping still yields 59 codes, but not
+  the same 59 the boards dataset publishes.

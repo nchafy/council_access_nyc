@@ -30,7 +30,7 @@ If a source is refused — `districts: 47 of 51 district pages have content` —
 design working: a size floor and a body invariant must both pass before a download replaces
 a cache entry, because these hosts return HTTP 200 carrying error pages. Failed district
 pages get one automatic retry pass. If it still refuses, re-run
-`uv run showup fetch --only districts --force`; the other six sources are already cached and
+`uv run showup fetch --only districts --force`; the other seven sources are already cached and
 will be skipped.
 
 | | |
@@ -141,7 +141,7 @@ measurement on a reference profile, and the gate's own output says so in those w
   keyboard-navigable lists. The interactive **map is deliberately cut** from Phase 1;
   geometry ships for *resolution only*, never for display
 - **M4** — district pages, members, and community boards joined by geometry
-- The fetch stage: seven sources, each with a freshness window, a size floor and a body
+- The fetch stage: eight sources, each with a freshness window, a size floor and a body
   invariant
 - The community board view — a second page type, not a variant of the first
 - 100% coverage, a committed fuzz corpus, and the testing rules in `CLAUDE.md`
@@ -189,8 +189,9 @@ fuzz).
 
 ## Data sources
 
-NYC Open Data — `uvw5-9znb` (members), `ruf7-3wgc` (community boards), `872g-cjhh`
-(council district geometry), `5crt-au7u` (community districts), `pri4-ifjk` (ZIP areas).
+NYC Open Data — `uvw5-9znb` (members), `ruf7-3wgc` (community boards), `vn4m-mk4t` (OMB's
+register of community board budget requests), `872g-cjhh` (council district geometry),
+`5crt-au7u` (community districts), `pri4-ifjk` (ZIP areas).
 `nyc.legistar.com` for the live calendar. `council.nyc.gov` for district offices and the
 testimony procedure. `geosearch.planninglabs.nyc` for geocoding.
 

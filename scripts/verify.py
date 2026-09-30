@@ -220,6 +220,17 @@ def _run_checks(base: str, site: Path) -> None:
             f"{url} does not link the council districts covering it",
         )
         check("of this board" in flat, f"{url} share is not labelled as of-the-board")
+        # The budget requests, with their edition, their denominator and their register.
+        check("What this board asked the City for" in flat, f"{url} missing the budget requests")
+        check("/d/vn4m-mk4t" in page, f"{url} does not link the register it quotes")
+        check(
+            "there is no single top request" in flat,
+            f"{url} does not say why priority numbers repeat",
+        )
+        check(
+            "not a commitment and not a funded outcome" in flat,
+            f"{url} presents a budget request as an outcome",
+        )
         _check_markup_safety(url, page)
         _check_links(url, page, site)
         print(f"GET /board/{code}/  {status}  {len(page)} bytes")

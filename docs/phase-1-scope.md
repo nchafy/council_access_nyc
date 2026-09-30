@@ -24,7 +24,7 @@ Two views, decided 2026-09-22 — different questions, not variants of each othe
 | Route | Content |
 |---|---|
 | `/district/{1-51}` | Council view: member, their committees, next five Council meetings with addresses, how to testify including the written-testimony window |
-| `/board/{code}` | Community board view: monthly cadence, zoning review role, office to call, covering council districts, and the route almost nobody knows — **board committees seat non-board members of the public** |
+| `/board/{code}` | Community board view: monthly cadence, zoning review role, office to call, covering council districts, five of the board's own Charter-mandated budget requests with OMB's replies quoted, and the route almost nobody knows — **board committees seat non-board members of the public** |
 
 The board view is not a district page with different data: no City dataset publishes a board meeting
 calendar or venue, so the page says so and links the board's own site, and its participation route is

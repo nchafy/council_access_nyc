@@ -465,7 +465,7 @@ No `degraded`, no `age_hours`. The client derives staleness.
 > | **M5** | ⚠️ **Nearly done (2026-09-23).** axe clean on all 114 pages at WCAG 2.2 AA; 122 keyboard and accessibility-tree checks over 9 page types, driven with real `Tab` keypresses; a gate on any console error or CSP violation; the 60 KB budget (13.9 KB heaviest page) and the 3 s throttled-3G gate (906 ms p95 over 20 cold runs) — all four in CI, all four failing loudly rather than skipping when Chrome is absent. **Open: a real screen-reader pass**, which no gate substitutes for; `docs/accessibility-pass.md` carries the procedure and the record. M5's remaining list — accessibility statement, readability gate, `/methodology/` and friends, dead-man's switch, owner identity — is launch hardening and stays deferred with publishing. |
 > | **M6–M8** | ❌ Not started. The vote and transcript data is verified reachable (`docs/OBSERVATIONS.md`); none of it is built. |
 >
-> Built beyond the original M-sequence: the **fetch stage** (`showup fetch`, seven sources with
+> Built beyond the original M-sequence: the **fetch stage** (`showup fetch`, eight sources with
 > per-source floors and body invariants), a **second view** (59 community board pages), and the
 > testing regime in `CLAUDE.md` — 100% enforced coverage, a committed fuzz corpus, 357 live checks.
 >

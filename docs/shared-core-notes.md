@@ -50,7 +50,7 @@ These counts are the fastest-rotting facts here. Re-derive them rather than trus
 |---|---|---|
 | Remote | `git@github.com:nchafy/council_access_nyc.git` (public, created 2026-09-21) | `git@github.com:nchafy/timemap_nyc.git` |
 | Default branch | `mainline` | `master`; work on `001d-ingest-pipeline` |
-| Code | ~3,000 lines of Python + ~2,400 of tests, 100% coverage enforced, 110 generated pages, seven fetchers, CI green; **Phase 1 built and running locally** as of 2026-09-22 | `src/timemap/places/` is 805 lines across 12 modules with ~1,000 lines of tests |
+| Code | ~3,000 lines of Python + ~2,400 of tests, 100% coverage enforced, 110 generated pages, eight fetchers, CI green; **Phase 1 built and running locally** as of 2026-09-22 | `src/timemap/places/` is 805 lines across 12 modules with ~1,000 lines of tests |
 | On the default branch | Yes | **No** — `git ls-tree -r --name-only master \| grep '^src/'` returns only `src/timemap/__init__.py` |
 
 Entry points in council_access: `product-brief.md`, then `council-access-project-outline.md` (the

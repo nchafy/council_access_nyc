@@ -90,6 +90,10 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
     # here made these tests pass locally and error in CI.
     shutil.copy2(FIXTURES / "community_boards.json", raw / "community_boards.json")
 
+    # Real rows from the OMB budget-request register, trimmed to six boards and two
+    # editions — including the future-dated one the loader must refuse.
+    shutil.copy2(FIXTURES / "board_budget_requests.json", raw / "board_budget_requests.json")
+
     # Synthetic district geometry: 51 disjoint squares. The build needs 51 features
     # to emit site/data/districts.geo.json, and nothing here depends on the shapes
     # being real — the accuracy of the real simplification is covered separately by

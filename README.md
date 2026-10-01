@@ -30,7 +30,7 @@ If a source is refused — `districts: 47 of 51 district pages have content` —
 design working: a size floor and a body invariant must both pass before a download replaces
 a cache entry, because these hosts return HTTP 200 carrying error pages. Failed district
 pages get one automatic retry pass. If it still refuses, re-run
-`uv run showup fetch --only districts --force`; the other six sources are already cached and
+`uv run showup fetch --only districts --force`; the other seven sources are already cached and
 will be skipped.
 
 | | |
@@ -38,7 +38,7 @@ will be skipped.
 | Tests | **~9,000**, of which ~8,500 are generated fuzz cases |
 | Coverage | **100%**, enforced (`--cov-fail-under=100`) |
 | Live checks | **~350** against a running server (`make verify`) |
-| Runtime dependencies | **zero** — stdlib only |
+| Runtime dependencies | **zero** so far — allowed, none needed yet |
 
 ## What it answers today
 
@@ -98,18 +98,35 @@ never touches the network at all. Only a street address does, and the geocoder
 SLA, so **its latency is measured and disclosed, not promised**: the UI names it as the
 slow dependency at 1.2 s and hands over the list paths at 5 s.
 
-These are budgets, not yet gated in CI — the Playwright gate is part of M5. There will
-never be a real-user percentile, because there are no analytics; every figure this project
-publishes is a synthetic measurement on a reference device, and `/methodology` says so in
-those words. See §6A of the outline.
+**The page-weight and cold-load budgets are gated in CI as of 2026-09-23** — not by
+Playwright, which downloads and runs its own browser build on install, but by a small
+DevTools-protocol client (`scripts/cdp.py`) whose framing is `websocket-client`'s. Two
+measurements of deliberately different kinds:
+
+| Gate | How | Measured |
+|---|---|---|
+| Page weight ≤ 60 KB gzipped | arithmetic over the built bytes, no browser | 13.9 KB heaviest |
+| All JavaScript ≤ 12 KB gzipped | the same arithmetic | 6.7 KB |
+| Geometry ≤ 300 KB, after first paint | plus "no page names it as a subresource" | 132 KB |
+| Cold load to interactive ≤ 3 s | Chrome, network-shaped, 4× CPU, 20 cold runs, p95 | 906 ms |
+
+Thresholds live in the committed [`perf-budget.json`](perf-budget.json), each carrying a
+note recording where its number came from, so changing a promise is a reviewable diff.
+
+The p95 interaction budgets in the table above are **not** gated — those need the map and
+the prefetch machinery that Phase 1 cut. There will never be a real-user percentile either,
+because there are no analytics; every figure this project publishes is a synthetic
+measurement on a reference profile, and the gate's own output says so in those words. See
+§6A of the outline.
 
 ## Stack
 
 - **ETL:** Python 3.12 (uv, ruff, pytest), build-time only, no origin server
 - **Frontend:** vanilla ES modules. No framework. One ~7 KB script for the address box
-- **Runtime dependencies: none.** Stdlib only, which is a security decision given that
-  the primary threat is untrusted upstream content, not thrift
-- **Third parties: none.** No analytics, no tag manager, no hosted fonts, no map tiles.
+- **Runtime dependencies: none so far.** Open-source dependencies are allowed
+  ([docs/dependencies.md](docs/dependencies.md)); nothing has needed one yet
+- **Third parties in the browser: none, and this one is a rule.** No analytics, no tag
+  manager, no hosted fonts, no map tiles — it is a CSP-enforced promise to readers.
   The address you type goes to the NYC geocoder and nowhere else, and never enters a URL,
   cookie, storage or log
 - **Planned, not present:** MapLibre GL JS + OpenFreeMap for the interactive map, and
@@ -125,16 +142,26 @@ those words. See §6A of the outline.
   keyboard-navigable lists. The interactive **map is deliberately cut** from Phase 1;
   geometry ships for *resolution only*, never for display
 - **M4** — district pages, members, and community boards joined by geometry
-- The fetch stage: seven sources, each with a freshness window, a size floor and a body
+- The fetch stage: eight sources, each with a freshness window, a size floor and a body
   invariant
 - The community board view — a second page type, not a variant of the first
 - 100% coverage, a committed fuzz corpus, and the testing rules in `CLAUDE.md`
+- **M5, nearly all of it** — axe clean on all 114 pages at WCAG 2.2 AA; 122 keyboard and
+  accessibility-tree checks over 9 page types driven with real `Tab` keypresses; a gate
+  that fails on any console error or CSP violation; the 60 KB and 3 s budgets enforced.
+  All four run in CI, and all four fail loudly rather than skipping if Chrome is absent.
+  The gates immediately found a real one: the CSP's `connect-src` omitted `'self'`, so the
+  address box's local index could not be fetched and every query fell through to the
+  geocoder — the opposite of what the privacy design promises. Fixed, and now covered from
+  both the policy side and the browser side
 
 **Not done**
 
-- **M5 — the accessibility and performance pass.** axe over every page, a documented
-  keyboard and screen-reader run, and the 60 KB / 3 s throttled-3G gate in CI. **This is
-  the one open item in Phase 1.**
+- **A real screen-reader pass.** **This is the one open item in Phase 1.** The gates read
+  Chrome's accessibility tree, which is the data a screen reader is handed; that is not the
+  same as listening to one, and automating the difference away is the shortcut this
+  product cannot take. [docs/accessibility-pass.md](docs/accessibility-pass.md) §3.2 is
+  the procedure and §4 is the record, which currently reads NOT RUN
 - **Hosting, a domain, and a scheduled refresh**, deferred together. `make fetch` refreshes
   on demand and the browser-side staleness banner covers the gap, so the site is
   correct-on-demand rather than self-maintaining.
@@ -163,8 +190,9 @@ fuzz).
 
 ## Data sources
 
-NYC Open Data — `uvw5-9znb` (members), `ruf7-3wgc` (community boards), `872g-cjhh`
-(council district geometry), `5crt-au7u` (community districts), `pri4-ifjk` (ZIP areas).
+NYC Open Data — `uvw5-9znb` (members), `ruf7-3wgc` (community boards), `vn4m-mk4t` (OMB's
+register of community board budget requests), `872g-cjhh` (council district geometry),
+`5crt-au7u` (community districts), `pri4-ifjk` (ZIP areas).
 `nyc.legistar.com` for the live calendar. `council.nyc.gov` for district offices and the
 testimony procedure. `geosearch.planninglabs.nyc` for geocoding.
 

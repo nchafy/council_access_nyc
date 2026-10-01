@@ -299,7 +299,27 @@ class TestBoardView:
         # Term length, minimum age, meeting frequency and public-comment rules are
         # not published by the City, so the page says so rather than guessing.
         assert "could not find an official source" in page
-        assert "No City dataset publishes community board agendas" in page
+        assert "no City dataset publishes one" in page
+        # The venue gap, stated rather than papered over with the office address.
+        assert "cannot tell you <em>where</em> the board meets" in page
+        assert "often not the meeting venue" in page
+        # The one dataset carrying any dated notices is named, not denied.
+        assert "dg92-zbpx" in page
+        assert "disagree with what boards publish" in page
+
+    def test_board_page_distinguishes_the_office_from_the_full_board_venue(self, raw_dir, tmp_path):
+        """The office is the committee room for several boards and not the full-board venue.
+
+        Boards publish that split explicitly — Bronx CB11 lists "Board Office" against every
+        committee and "Varies" against the full board; Brooklyn CB4 and SI CB3 separate the two
+        by name. Presenting the office as where the board meets is the error this guards.
+        """
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
+        assert "Committees often meet at the board office listed above" in page
+        assert "the full board often does not" in page
+        assert "the room for a specific meeting is on the board" in page
 
     def test_board_page_links_its_council_districts(self, raw_dir, tmp_path):
         out = tmp_path / "site"
@@ -344,6 +364,115 @@ class TestBoardView:
             html = page.read_text()
             for name in names:
                 assert name not in html, f"{name} leaked into {page}"
+
+
+class TestBudgetRequestsOnTheBoardPage:
+    """The eighth source on the page it belongs to. The honesty boundary is the spec:
+    an annual filing, not current activity; a request, not a commitment; the agency's
+    words, not an outcome."""
+
+    @staticmethod
+    def _page(raw_dir, tmp_path, code: str = "302") -> str:
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        return " ".join((out / "board" / code / "index.html").read_text().split())
+
+    def test_the_section_names_the_fiscal_year_and_the_publication_date(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        assert "What this board asked the City for" in page
+        assert "Fiscal Year 2027" in page
+        assert "30 June 2026" in page
+
+    def test_it_links_the_register_it_came_from(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        assert 'href="https://data.cityofnewyork.us/d/vn4m-mk4t"' in page
+        assert "vn4m-mk4t" in page
+
+    def test_every_number_carries_its_denominator(self, raw_dir, tmp_path):
+        # Brooklyn CB 2 has seven requests in the committed fixture's edition.
+        assert "5 of 7" in self._page(raw_dir, tmp_path)
+
+    def test_the_cap_is_five_requests(self, raw_dir, tmp_path):
+        assert self._page(raw_dir, tmp_path).count('<article class="request">') == 5
+
+    def test_the_agencys_reply_is_quoted_not_bucketed(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        # Five different phrasings of a reply, none of which survives a
+        # supported/not-supported bucket intact.
+        assert "brought to the attention of your Elected Officials" in page
+        assert "recommended funding for this request in part" in page
+        assert "try to accommodate this issue within existing resources" in page
+        assert "does not support and cannot accommodate" in page
+
+    def test_no_single_top_request_is_presented(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        assert "there is no single top request" in page
+        assert "top priority" not in page.lower()
+        assert "number one request" not in page.lower()
+
+    def test_it_says_what_it_is_not(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        assert "annual filing, not current activity" in page
+        assert "not a commitment and not a funded outcome" in page
+        assert "records a position, not an outcome" in page
+
+    def test_it_neither_ranks_nor_scores_boards(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        section = page.split("What this board asked the City for", 1)[1].split("</section>", 1)[0]
+        assert "do not compare this board with any other" in section
+        for banned in ("score", "percentile", "league", "out of 100"):
+            assert banned not in section.lower()
+
+    def test_a_board_the_register_does_not_cover_says_so(self, raw_dir, tmp_path):
+        # The fixture carries six boards, so the other 53 are the empty state.
+        page = self._page(raw_dir, tmp_path, "308")
+        assert "no budget requests on file" in page
+        assert "City Charter requires" in page
+
+    def test_a_missing_register_does_not_break_the_build(self, raw_dir, tmp_path):
+        (raw_dir / "board_budget_requests.json").unlink()
+        report = build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+        assert report["board_pages"] == 59
+        assert report["budget_requests"] == 0
+        assert report["budget_publication"] is None
+        page = " ".join((tmp_path / "site" / "board" / "302" / "index.html").read_text().split())
+        assert "no budget requests on file" in page
+
+    def test_an_empty_register_does_not_break_the_build(self, raw_dir, tmp_path):
+        (raw_dir / "board_budget_requests.json").write_text("[]", encoding="utf-8")
+        report = build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+        assert report["boards_with_budget_requests"] == 0
+
+    def test_a_future_only_register_refuses_the_build(self, raw_dir, tmp_path):
+        rows = json.loads((raw_dir / "board_budget_requests.json").read_text())
+        future = [row for row in rows if row["publication"] == "20270217"]
+        assert future, "the fixture should carry the future-dated edition"
+        (raw_dir / "board_budget_requests.json").write_text(json.dumps(future), encoding="utf-8")
+        with pytest.raises(BuildError, match="on or before"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_the_report_and_manifest_carry_the_source(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        report = build_site(raw_dir, out, today=date(2026, 9, 22))
+        assert report["boards_with_budget_requests"] == 6
+        assert report["budget_publication"] == "2026-06-30"
+        manifest = json.loads((out / "manifest.json").read_text())
+        assert "board_budget_requests" in manifest["sources"]
+
+    def test_hostile_register_text_renders_inert(self, raw_dir, tmp_path):
+        rows = json.loads((raw_dir / "board_budget_requests.json").read_text())
+        hostile = "<script>alert('register')</script>Fix the &quot;park&quot;"
+        for row in rows:
+            if row["boro"] == "2" and row["board"] == "02":
+                row["request"] = hostile
+                row["explanation"] = hostile
+                row["response"] = hostile
+        (raw_dir / "board_budget_requests.json").write_text(json.dumps(rows), encoding="utf-8")
+        build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+        html = (tmp_path / "site" / "board" / "302" / "index.html").read_text()
+        assert "<script>alert" not in html
+        assert "alert(" not in html
+        assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", html)
 
 
 class TestShippedData:

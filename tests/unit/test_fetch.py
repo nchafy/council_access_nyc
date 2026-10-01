@@ -424,6 +424,180 @@ class TestHttpLayer:
         assert slept and 9.0 < slept[0] <= 10.0, slept
 
 
+def _budget_rows(*, pairs: int = 59, per_board: int = 52, publication: str = "20260630"):
+    """A payload shaped like `vn4m-mk4t`: one publication, every board, past the floor."""
+    boros = ["1", "2", "3", "4", "5"]
+    rows = []
+    for index in range(pairs):
+        boro = boros[index % 5]
+        board = f"{index // 5 + 1:02d}"
+        for priority in range(per_board):
+            rows.append(
+                {
+                    "publication": publication,
+                    "boro": boro,
+                    "board": board,
+                    "priority": f"{priority % 25 + 1:02d}",
+                    "tracking_code": f"{boro}{board}2027{priority:02d}C",
+                    "request": "Reconstruct or upgrade a park",
+                    "explanation": "x" * 200,
+                    "response": "OMB supports the agency's position as follows:",
+                    "responded_by": "OMB",
+                    "responsible_agency": "Department of Parks and Recreation",
+                }
+            )
+    return rows
+
+
+class TestBudgetRegisterInvariant:
+    """`vn4m-mk4t` is cached one publication at a time, so the invariant has to prove
+    the payload really is that dataset, really covers all 59 boards, and really carries
+    exactly one publication — a `$where` that silently stopped filtering looks fine."""
+
+    @staticmethod
+    def _invariant(body: bytes):
+        return _source("budget-requests").invariant(body)
+
+    def _check(self, rows):
+        return self._invariant(json.dumps(rows).encode())
+
+    def test_a_real_shaped_payload_passes(self):
+        assert self._check(_budget_rows()) is None
+
+    def test_too_few_rows_is_caught(self):
+        assert "floor is" in self._check(_budget_rows(per_board=2))
+
+    def test_a_payload_missing_a_column_is_not_this_dataset(self):
+        rows = _budget_rows()
+        for row in rows:
+            del row["responsible_agency"]
+        assert "responsible_agency" in self._check(rows)
+
+    def test_fewer_than_59_boards_is_caught(self):
+        assert "58 boro/board pairs" in self._check(_budget_rows(pairs=58, per_board=60))
+
+    def test_two_publications_in_one_payload_is_caught(self):
+        rows = _budget_rows() + _budget_rows(publication="20270217")
+        assert "2 publications" in self._check(rows)
+
+    def test_malformed_json_is_named_as_such(self):
+        assert "not valid JSON" in self._invariant(b"{oh dear")
+
+    def test_a_socrata_error_object_is_caught(self):
+        body = json.dumps({"error": True, "message": "invalid SoQL"}).encode()
+        assert "Socrata error" in self._invariant(body)
+
+    def test_an_object_where_an_array_is_expected_is_caught(self):
+        assert "expected a JSON array" in self._invariant(b'{"a": 1}')
+
+    def test_the_size_floor_refuses_a_thin_payload(self, tmp_path):
+        with pytest.raises(FetchError, match="floor is"):
+            fetch_one(
+                _returning(_source("budget-requests"), json.dumps(_budget_rows()[:5]).encode()),
+                tmp_path,
+                log=lambda m: None,
+            )
+        assert not (tmp_path / "board_budget_requests.json").exists()
+
+    def test_a_good_payload_replaces_the_cache_entry(self, tmp_path):
+        body = json.dumps(_budget_rows()).encode()
+        assert len(body) > _source("budget-requests").min_bytes
+        fetch_one(_returning(_source("budget-requests"), body), tmp_path, log=lambda m: None)
+        assert (tmp_path / "board_budget_requests.json").read_bytes() == body
+
+
+class TestBudgetRegisterPublicationChoice:
+    """The newest publication is dated in the future, so the fetcher must not ask for it."""
+
+    @staticmethod
+    def _urlopen(bodies, calls):
+        import io
+
+        queue = list(bodies)
+
+        class _Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+                return False
+
+        def fake(request, timeout=None):
+            calls.append(request.full_url)
+            return _Response(queue.pop(0))
+
+        return fake
+
+    @staticmethod
+    def _editions(*stamps):
+        return json.dumps([{"publication": stamp} for stamp in stamps]).encode()
+
+    def test_it_skips_a_future_edition_and_says_so(self, monkeypatch):
+        from datetime import date
+
+        from showup import fetch as fetch_module
+
+        calls: list[str] = []
+        monkeypatch.setattr(fetch_module, "_polite_wait", lambda host: None)
+        monkeypatch.setattr(
+            fetch_module.urllib.request,
+            "urlopen",
+            self._urlopen([self._editions("20270217", "20260630", "20260512")], calls),
+        )
+        messages: list[str] = []
+        chosen = fetch_module._published_not_in_the_future(messages.append, date(2026, 9, 30))
+        assert chosen == "20260630"
+        assert any("20270217" in message for message in messages)
+
+    def test_a_register_with_nothing_in_the_past_fails_closed(self, monkeypatch):
+        from datetime import date
+
+        from showup import fetch as fetch_module
+
+        monkeypatch.setattr(fetch_module, "_polite_wait", lambda host: None)
+        monkeypatch.setattr(
+            fetch_module.urllib.request,
+            "urlopen",
+            self._urlopen([self._editions("20270217")], []),
+        )
+        with pytest.raises(FetchError, match="no publication on or before"):
+            fetch_module._published_not_in_the_future(lambda m: None, date(2026, 9, 30))
+
+    def test_a_socrata_error_on_the_edition_query_fails_closed(self, monkeypatch):
+        from datetime import date
+
+        from showup import fetch as fetch_module
+
+        monkeypatch.setattr(fetch_module, "_polite_wait", lambda host: None)
+        monkeypatch.setattr(
+            fetch_module.urllib.request,
+            "urlopen",
+            self._urlopen([json.dumps({"error": True}).encode()], []),
+        )
+        with pytest.raises(FetchError, match="Socrata error"):
+            fetch_module._published_not_in_the_future(lambda m: None, date(2026, 9, 30))
+
+    def test_the_row_query_asks_for_one_publication_and_a_limit_above_3809(self, monkeypatch):
+        from showup import fetch as fetch_module
+
+        calls: list[str] = []
+        monkeypatch.setattr(fetch_module, "_polite_wait", lambda host: None)
+        monkeypatch.setattr(
+            fetch_module.urllib.request,
+            "urlopen",
+            self._urlopen(
+                [self._editions("20270217", "20260630"), json.dumps(_budget_rows()).encode()],
+                calls,
+            ),
+        )
+        rows = json.loads(fetch_module._fetch_board_budget_requests(lambda m: None))
+        assert {row["publication"] for row in rows} == {"20260630"}
+        assert "publication%3D%2720260630%27" in calls[1]
+        limit = int(calls[1].split("%24limit=")[1].split("&")[0])
+        assert limit > 3809, "Socrata pages at 1,000 by default; the limit must be explicit"
+
+
 class TestDistrictScrapeRetry:
     """The whole set gets one retry pass before the fetch is refused.
 

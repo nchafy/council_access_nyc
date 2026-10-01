@@ -101,11 +101,25 @@
     }
   }
 
+  var SITE_DATA_UNREACHABLE = "site-data";
+  var GEOCODER_UNREACHABLE = "geocoder";
+
+  function failure(blame, detail) {
+    var error = new Error(detail);
+    error.blame = blame;
+    return error;
+  }
+
   function loadJSON(url) {
-    return fetch(url, { credentials: "omit" }).then(function (response) {
-      if (!response.ok) throw new Error(url + " " + response.status);
-      return response.json();
-    });
+    return fetch(url, { credentials: "omit" }).then(
+      function (response) {
+        if (!response.ok) throw failure(SITE_DATA_UNREACHABLE, url + " " + response.status);
+        return response.json();
+      },
+      function () {
+        throw failure(SITE_DATA_UNREACHABLE, url + " could not be fetched");
+      }
+    );
   }
 
   function ensureLookup() {
@@ -265,8 +279,11 @@
       "&private=true";
     return fetch(url, { credentials: "omit", referrerPolicy: "no-referrer" }).then(
       function (response) {
-        if (!response.ok) throw new Error("geocoder " + response.status);
+        if (!response.ok) throw failure(GEOCODER_UNREACHABLE, "geocoder " + response.status);
         return response.json();
+      },
+      function () {
+        throw failure(GEOCODER_UNREACHABLE, "geocoder unreachable");
       }
     );
   }
@@ -419,11 +436,14 @@
           })
         );
       })
-      .catch(function () {
+      .catch(function (error) {
         clearTimers();
         say(
-          "The City's address lookup did not respond. Nothing was saved — try again, " +
-            "or use the dropdowns below.",
+          error && error.blame === SITE_DATA_UNREACHABLE
+            ? "This page could not load its own lookup data, so the address box is not " +
+                "working. That is a fault here, not with the City. Use the dropdowns below."
+            : "The City's address lookup did not respond. Nothing was saved — try again, " +
+                "or use the dropdowns below.",
           "warn"
         );
         offerFallback();

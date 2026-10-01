@@ -10,6 +10,10 @@ before committing; run pieces while iterating.
 
 ## The one command
 
+**For the complete gate — including the four browser gates, the byte and
+latency budgets, and the protocol for a risky refactor — use the `validate` skill.**
+`make verify` below is the everyday loop and does not run them.
+
 ```bash
 make verify
 ```

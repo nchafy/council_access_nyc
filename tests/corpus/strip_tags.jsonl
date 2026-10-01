@@ -27,3 +27,6 @@
 {"in": "abc<", "out": "abc<", "note": "a trailing bare < survives as inert text; esc escapes it"}
 {"in": "Defer<red", "out": "Defer", "note": "FOUND BY FUZZER: strip_tags is NOT idempotent — '<red' reads as an unterminated tag on a second pass. Apply it exactly once, to raw upstream text only"}
 {"in": "javascript:<script", "out": "javascript:", "note": "FOUND BY FUZZER: second-pass drop again; documents why double-stripping is forbidden"}
+{"in": "Aging</p>Finance", "out": "AgingFinance", "note": "a stray end tag with no open element is dropped, not treated as a word break. Changed when beautifulsoup4 took over: the state machine emitted a space for every </p>, </td> or </div> it saw, matched or not. Neither reading is HTML5-conformant — the spec ignores a stray </div> and synthesises an empty paragraph for a stray </p> — and this differs on 2 of 74,612 compared inputs, none of them a real page"}
+{"in": "&lt", "out": "<", "note": "an unterminated named reference still decodes exactly once, the way html.parser reads it. Pins the tag-free fast path: it must not adopt a second convention for entities"}
+{"in": "&#1;Aging", "out": "Aging", "note": "a numeric reference to an invalid code point is dropped rather than emitted as a raw control character, per html.unescape. Also pins the tag-free fast path"}

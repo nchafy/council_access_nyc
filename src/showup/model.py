@@ -11,7 +11,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-__all__ = ["Committee", "District", "Manifest", "Meeting", "Member", "Office", "Venue"]
+__all__ = [
+    "BoardBudgetRequests",
+    "BudgetRequest",
+    "Committee",
+    "District",
+    "Manifest",
+    "Meeting",
+    "Member",
+    "Office",
+    "Venue",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +113,35 @@ class DistrictBoard:
     website: str | None
     board_meeting: str | None
     cabinet_meeting: str | None
+    #: Hostname of a board site we decline to link, because it is the board's own
+    #: domain and the City cannot vouch that it is still theirs. Shown as text.
+    website_unlinked: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetRequest:
+    """One line a community board filed with OMB, in the board's and the agency's words."""
+
+    priority: str
+    #: Capital, capital support or expense. None when the tracking code does not say.
+    category: str | None
+    #: The register's own reference, which is how a reader finds this row in it.
+    tracking_code: str
+    request: str | None
+    agency: str | None
+    explanation: str | None
+    #: OMB's reply, quoted. Never bucketed: the phrasing varies between editions.
+    response: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BoardBudgetRequests:
+    """One board's requests from one edition of the register, with that edition pinned."""
+
+    publication: date
+    #: From the tracking codes, when the whole edition agrees on one year.
+    fiscal_year: str | None
+    requests: tuple[BudgetRequest, ...]
 
 
 @dataclass(frozen=True, slots=True)

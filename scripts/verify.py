@@ -38,7 +38,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from serve import parse_headers_file  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
-from showup.urls import ALLOWED_HOSTS  # noqa: E402
+from showup.urls import host_allowed  # noqa: E402
 
 REQUIRED_HEADERS = {
     "Content-Security-Policy": "default-src 'none'",
@@ -50,7 +50,6 @@ REQUIRED_HEADERS = {
 # Imported, never re-listed. A second copy of the allowlist is a copy that drifts:
 # this check passed for weeks and then failed the moment the real list grew, which
 # is the wrong way round for a security assertion.
-ALLOWED_LINK_HOSTS = ALLOWED_HOSTS
 
 _INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", re.IGNORECASE)
 _STYLE_ATTR = re.compile(r"\sstyle\s*=\s*[\"']", re.IGNORECASE)
@@ -221,6 +220,17 @@ def _run_checks(base: str, site: Path) -> None:
             f"{url} does not link the council districts covering it",
         )
         check("of this board" in flat, f"{url} share is not labelled as of-the-board")
+        # The budget requests, with their edition, their denominator and their register.
+        check("What this board asked the City for" in flat, f"{url} missing the budget requests")
+        check("/d/vn4m-mk4t" in page, f"{url} does not link the register it quotes")
+        check(
+            "there is no single top request" in flat,
+            f"{url} does not say why priority numbers repeat",
+        )
+        check(
+            "not a commitment and not a funded outcome" in flat,
+            f"{url} presents a budget request as an outcome",
+        )
         _check_markup_safety(url, page)
         _check_links(url, page, site)
         print(f"GET /board/{code}/  {status}  {len(page)} bytes")
@@ -357,7 +367,7 @@ def _check_links(url: str, page: str, site: Path) -> None:
             )
             host = (parts.hostname or "").lower()
             check(
-                host in ALLOWED_LINK_HOSTS,
+                host_allowed(host),
                 f"{url} links to non-allowlisted host {host!r} ({href})",
             )
             continue

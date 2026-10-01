@@ -1,0 +1,28 @@
+{# Shared markup. Escaping is automatic here; the only rule is never to opt out. #}
+{% macro link(url, label, extra="") %}{% if url %}<a href="{{ url }}" {% if url.startswith("http") %}rel="noopener noreferrer"{% endif %} {{ extra }}>{{ label }}</a>{% else %}<span class="nolink">{{ label }}</span>{% endif %}{% endmacro %}
+{% macro em(text) %}<em>{{ text }}</em>{% endmacro %}
+{% macro lines(parts) %}{% for part in parts if part %}{% if not loop.first %}<br>{% endif %}{{ part }}{% endfor %}{% endmacro %}
+{% macro email_suppressed(reason) %}<em>Not shown — {{ reason }}.</em>{% endmacro %}
+{% macro cadence(text) %}{{ text }}<br><small>The board's own published wording. Confirm on their site — boards move meetings.</small>{% endmacro %}
+{% macro dl(rows) %}{% if rows %}<dl>
+{% for key, value in rows if value %}  <dt>{{ key }}</dt>
+  <dd>{{ value }}</dd>
+{% else %}
+
+{% endfor %}</dl>{% endif %}{% endmacro %}
+{% macro board_card(board) %}
+{% set rows = [] %}
+{% if board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
+{% if board.address %}{% do rows.append(("Office", board.address)) %}{% endif %}
+{% if board.phone %}{% do rows.append(("Phone", board.phone)) %}{% endif %}
+{% if board.email %}{% do rows.append(("Email", board.email)) %}
+{% elif board.email_suppressed %}{% do rows.append(("Email", email_suppressed(board.email_suppressed))) %}{% endif %}
+{% if board.website %}{% do rows.append(("Website", link(board.website, board.website.replace("https://", "")))) %}{% endif %}
+{% if board.board_meeting %}{% do rows.append(("Full board meets", cadence(board.board_meeting))) %}{% endif %}
+{% if board.cabinet_meeting %}{% do rows.append(("Cabinet meets", board.cabinet_meeting)) %}{% endif %}
+  <article class="board">
+    <h3><a href="/board/{{ board.code }}/">{{ board.label }}</a></h3>
+    {%+ if board.share %}<span class="share">about {{ board.share|percent }} of this council district</span>{% endif +%}
+{{ dl(rows) }}
+  </article>
+{% endmacro %}

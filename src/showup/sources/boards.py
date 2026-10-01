@@ -51,9 +51,10 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from ..text import strip_tags
-from ..urls import safe_url
+from ..urls import ALLOWED_HOSTS, host_allowed, safe_url
 
 __all__ = ["JOINT_INTEREST_AREAS", "Board", "email_policy", "load_boards", "looks_person_named"]
 
@@ -107,6 +108,7 @@ class Board:
         "number",
         "phone",
         "website",
+        "website_unlinked",
     )
 
     def __init__(self, **kwargs: object) -> None:
@@ -212,9 +214,8 @@ def load_boards(path: Path) -> dict[str, Board]:
             phone=strip_tags(row.get("cb_office_phone")) or None,
             email=email,
             email_suppressed=reason,
-            website=(
-                safe_url(strip_tags(row.get("cb_website"))) or _loose_url(row.get("cb_website"))
-            ),
+            website=_board_website(row.get("cb_website")),
+            website_unlinked=_board_website_hostname(row.get("cb_website")),
             # Reproduced verbatim. "Second Tuesday, 7:45pm" is the board's own
             # wording and parsing it into a date would invent a precision the
             # source does not have — boards move meetings without updating this.
@@ -224,22 +225,61 @@ def load_boards(path: Path) -> dict[str, Board]:
     return boards
 
 
-def _loose_url(value: object) -> str | None:
-    """Board websites live on their own domains, so the project-wide allowlist
-    cannot cover them. Accept https on any host, and nothing else — no scheme
-    smuggling, no http, no credentials."""
+#: `www1.nyc.gov` is the City's old hostname; every path on it 301s to `www.nyc.gov`,
+#: verified 2026-09-29. It is the same publisher, so normalising it is not a widening of
+#: the allowlist — refusing it was just a miss.
+_NYC_GOV_ALIASES = {"www1.nyc.gov": "www.nyc.gov"}
+
+#: Which hosts may be linked lives in `urls.py` (`host_allowed`): the City's own
+#: domains only. A board on its own domain is named as text, because a lapsed domain
+#: can be re-registered by anyone and the City's dataset keeps pointing at it.
+
+
+def _board_website_hostname(value: object) -> str | None:
+    """The bare hostname of a board site we decline to link, for display as text."""
+    if _board_website(value) is not None:
+        return None
+    if isinstance(value, dict):
+        value = value.get("url")
+    candidate = strip_tags(str(value or "")).strip()
+    try:
+        host = urlsplit(candidate).hostname
+    except ValueError:
+        return None
+    return host.lower() if host else None
+
+
+def _board_website(value: object) -> str | None:
+    """The board's own site, preferring an official nyc.gov URL.
+
+    `cb_website` arrives from Socrata as `{"url": "..."}`, not a string. Reading it as a
+    string produced `"{'url': 'https://...'}"`, which failed every check — so no board
+    page carried a website link at all, while the copy told readers to go there.
+    """
+    if isinstance(value, dict):
+        value = value.get("url")
     candidate = strip_tags(str(value or "")).strip()
     if not candidate:
         return None
-    candidate = "".join(ch for ch in candidate if ch.isprintable())
-    if not candidate.lower().startswith("https://"):
-        return None
-    from urllib.parse import urlsplit
 
+    candidate = "".join(character for character in candidate if character.isprintable())
     try:
         parts = urlsplit(candidate)
     except ValueError:
         return None
-    if not parts.hostname or parts.username or parts.password:
+    # Credentials in a published civic URL are a sign of tampering, not a quirk to clean
+    # up: rebuilding without them would accept a crafted value as if it were the City's.
+    if parts.username or parts.password:
         return None
-    return candidate
+
+    host = (parts.hostname or "").lower()
+    if host in _NYC_GOV_ALIASES or host in ALLOWED_HOSTS:
+        # The City publishes some of its own URLs as http; nyc.gov serves https.
+        return safe_url(
+            urlunsplit(("https", _NYC_GOV_ALIASES.get(host, host), parts.path, parts.query, ""))
+        )
+    if host_allowed(host) and parts.scheme.lower() == "https":
+        return candidate
+    # An independent domain is named but not linked: a board that
+    # lets its own domain lapse cannot un-publish the row that points at it.
+    return None

@@ -1,0 +1,178 @@
+{% extends "layout.html" %}
+{% import "macros.html" as m %}
+{% macro when(day, start_time, time_state_label) %}{{ day }} · {% if time_state_label %}<em>{{ time_state_label }}</em>{% else %}{{ start_time }}{% endif %}{% endmacro %}
+{% macro where(name, address) %}{{ name }}{% if address %}<br>{{ address }}{% endif %}{% endmacro %}
+{% macro written(state, stamp) %}<span class="deadline {{ state }}">Safe to file until {{ stamp }}</span><br><small>The real deadline is 72 hours after the hearing is adjourned, which the Council does not publish. Filing before the time shown is certainly inside the window.</small>{% endmacro %}
+{% macro accommodation(stamp, passed) %}{% if passed %}<em>Deadline passed ({{ stamp }}) — ask anyway</em>{% else %}Request by {{ stamp }}{% endif %}<br><small>EEOOfficer@council.nyc.gov · 212-788-6936 · translationservice@council.nyc.gov</small>{% endmacro %}
+{% block body %}
+<section class="where">
+  <h1>Council District {{ district.number }}</h1>
+{% if district.neighborhoods %}<p class="neighborhoods">{{ district.neighborhoods }}</p>{% endif +%}
+  <p class="distinction">
+    Your <strong>council district</strong> elects the member below. Your
+    <strong>community board</strong> is a different, smaller body that handles many
+    local land-use and quality-of-life questions — often the right place to start.
+    Both are below.
+  </p>
+{% if district.missing %}<p class="gap">Some details are not published on this district's page: {{ district.missing|join(", ") }}.</p>{% endif +%}
+</section>
+
+{% if district.member is none or district.member.seat_status == "vacant" %}
+<section class="member vacant">
+  <h2>Your Council Member</h2>
+  <p class="designed-state">
+    <strong>This seat is currently vacant.</strong> Until it is filled, the
+    committee and hearing information below still applies, and you can testify at
+    any hearing regardless of which district you live in.
+  </p>
+</section>
+{% else %}
+{% set member = district.member %}
+{% set member_rows = [] %}
+{% if member.email %}{% do member_rows.append(("Email", member.email)) %}{% endif %}
+{% for office in member.offices %}
+{% set parts = [office.address or ""] %}
+{% if office.phone %}{% do parts.append("Phone: " ~ office.phone) %}{% endif %}
+{% if office.hours %}{% do parts.append("Hours: " ~ office.hours) %}{% endif %}
+{% do member_rows.append((office.label, m.lines(parts))) %}
+{% endfor %}
+{% if member.page_url %}{% do member_rows.append(("Official page", m.link(member.page_url, "council.nyc.gov"))) %}{% endif %}
+<section class="member">
+  <h2>Your Council Member</h2>
+  <p class="member-name">{{ member.name }}</p>
+{% if member.seat_conflict %}<p class="gap">The City's own member dataset has no current term on record for this seat yet, which happens after a special election. The name above comes from council.nyc.gov, which updates sooner.</p>{% endif +%}
+{{ m.dl(member_rows) }}
+</section>
+{% endif %}
+
+{% if district.member is none or not district.member.committees %}
+<section class="committees">
+  <h2>Committees</h2>
+  <p class="designed-state">No committee assignments are published on this
+  district's page. Check the
+  <a href="https://council.nyc.gov/committees/" rel="noopener noreferrer">Council
+  committees list</a>.</p>
+</section>
+{% else %}
+<section class="committees">
+  <h2>Committees your member sits on</h2>
+  <p class="why">
+    These are the rooms where your representative has a seat — the hearings where
+    someone accountable to you is on the dais.
+  </p>
+  <ul class="committee-list">
+{% for committee in district.member.committees %}
+    <li>{{ committee.name }}{% if committee.role and committee.role != "Member" %} <span class="role">({{ committee.role }})</span>{% endif %}</li>
+{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if not cards %}
+<section class="meetings">
+  <h2>The next Council meetings</h2>
+  <p class="designed-state">
+    No upcoming meetings appear on the Legistar calendar right now. That can mean
+    a recess or a quiet period, not necessarily a problem. Check
+    <a href="https://nyc.legistar.com/Calendar.aspx" rel="noopener noreferrer">the
+    Council calendar</a> directly.
+  </p>
+</section>
+{% else %}
+<section class="meetings">
+  <h2>The next {{ cards|length }} Council meetings</h2>
+  <p class="why">
+    Listed in date order — not ranked. Committee hearings are citywide and open to
+    anyone, whichever district you live in.
+  </p>
+{% for card in cards %}
+{% set rows = [] %}
+{% do rows.append(("When", when(card.day, card.start_time, card.time_state_label))) %}
+{% do rows.append(("Format", card.mode)) %}
+{% do rows.append(("Where", where(card.venue_name, card.venue_address))) %}
+{% if card.topic %}{% do rows.append(("Topic", card.topic)) %}
+{% else %}{% do rows.append(("Topic", m.em("Agenda not yet published."))) %}{% endif %}
+{% if card.entry %}{% do rows.append(("Getting in", card.entry)) %}{% endif %}
+{% if card.written %}{% do rows.append((card.written.label, written(card.written.state, card.written.stamp))) %}{% endif %}
+{% if card.accommodation %}{% do rows.append(("ASL, CART or interpretation", accommodation(card.accommodation.stamp, card.accommodation.passed))) %}{% endif %}
+  <article class="meeting">
+    <h3>{{ card.committee }}</h3>
+{{ m.dl(rows) }}
+    <p class="links">{% for url, label in card.links %}{% if not loop.first %} · {% endif %}{{ m.link(url, label) }}{% endfor %}</p>
+  </article>
+
+{% endfor %}
+</section>
+{% endif %}
+
+{% if not district.boards %}
+<section class="boards">
+  <h2>Your community board</h2>
+  <p class="designed-state">
+    We could not match a community board to this district. Find yours through
+    <a href="https://www.nyc.gov/site/cau/community-boards/community-boards.page"
+       rel="noopener noreferrer">the Mayor's Community Affairs Unit</a>.
+  </p>
+</section>
+{% else %}
+<section class="boards">
+  <h2>Your community {% if district.boards|length > 1 %}boards{% else %}board{% endif %}</h2>
+  <p class="why">
+    {%+ if district.boards|length > 1 %}This council district overlaps {{ district.boards|length }} community boards. They are listed by how much of the district each covers.{% else %}This council district falls almost entirely inside one community board.{% endif %} A community board meets on a <strong>predictable monthly
+    cadence</strong>, unlike Council committees, and for a land-use, construction,
+    liquor-licence or quality-of-life question it is usually the right room to
+    start in.
+  </p>
+{% for board in district.boards %}
+{{ m.board_card(board) }}
+{% endfor %}
+  <p class="hint">
+    Board members are volunteers appointed by the Borough President. We list the
+    board <em>office</em>, which is staffed and whose job is to hear from you — not
+    individual members.
+  </p>
+</section>
+{% endif %}
+
+<section class="participate">
+  <h2>How to be heard</h2>
+  <p class="lead-truth">
+    <strong>Only Council Members can introduce legislation.</strong> There is no
+    public petition route onto the agenda, so the levers below are testimony and
+    your member.
+  </p>
+  <h3>Speak at a hearing</h3>
+  <ul>
+    <li><strong>In person: no pre-registration.</strong> Turn up and sign up at the hearing.</li>
+    <li>Remotely, by Zoom web or phone: register in advance on the
+      <a href="https://council.nyc.gov/testify/" rel="noopener noreferrer">Register to
+      Testify</a> form.</li>
+    <li>For Zoning and Franchises, or Landmarks, Public Sitings and Dispositions, use the
+      <a href="https://council.nyc.gov/land-use/" rel="noopener noreferrer">Land Use page</a>
+      instead.</li>
+  </ul>
+  <h3>File written testimony</h3>
+  <ul>
+    <li>Accepted <strong>up to 72 hours after the hearing is adjourned</strong> — so you can
+      still act after a hearing you missed.</li>
+    <li>DOC, DOCX or PDF, maximum 10&nbsp;MB, through the same form.</li>
+    <li>Pre-recorded testimony is not played. Audio or video links need a transcript too.</li>
+    <li>Whatever you submit becomes part of the <strong>permanent public record</strong>.</li>
+  </ul>
+  <h3>Two things nobody publishes</h3>
+  <p class="refusal">
+    The Council does not publish a <strong>registration cut-off time</strong> before a hearing,
+    or a <strong>per-speaker time limit</strong>. We will not guess at either. Chairs usually
+    announce a limit at the start. To confirm for a specific hearing, ask the hearings office:
+    <strong>hearings@council.nyc.gov</strong> or <strong>212-482-4219</strong>.
+  </p>
+  <h3>What happens after you testify</h3>
+  <p>
+    The committee may amend the bill, then votes. If it passes by majority it goes to the full
+    Council, then to the Mayor, who has 30 days to sign it, veto it, or do nothing — in which
+    case it becomes law anyway. The Council can override a veto with a two-thirds vote.
+  </p>
+</section>
+
+<p class="back"><a href="/">Choose a different district</a></p>
+{% endblock %}

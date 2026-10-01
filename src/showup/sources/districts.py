@@ -47,8 +47,6 @@ from ..urls import safe_url
 
 __all__ = ["parse_district_page", "to_lines"]
 
-_BLOCK_TAGS = re.compile(r"</?(?:br|p|div|li|tr|td|th|h[1-6]|table|section)\b[^>]*>", re.IGNORECASE)
-
 _ROLE = re.compile(r"^\((Chair|Co-Chair|Vice Chair|Chairperson)\)$", re.IGNORECASE)
 _TRAILING_ROLE = re.compile(r"\((Chair|Co-Chair|Vice Chair|Chairperson)\)\s*$", re.IGNORECASE)
 _COMMITTEE = re.compile(r"^(Committee on |Subcommittee on |Select Committee)", re.IGNORECASE)
@@ -70,13 +68,12 @@ _SITEWIDE_EMAIL = re.compile(
 
 
 def to_lines(html_text: str) -> list[str]:
-    """Flatten a page to its visible text lines.
+    """Flatten a page to its visible text lines, script and style dropped.
 
-    Delegates to `text.text_lines`, which splits on block boundaries *inside* the
-    parser. An earlier version split the raw HTML first and then stripped each
-    fragment, which meant a `<script>` open tag and its body landed on separate
-    lines — the skip logic never fired and jQuery and CSS were parsed as visible
-    text.
+    Delegates to `text.text_lines`, which walks the parsed tree and marks block
+    boundaries there rather than splitting raw HTML first — splitting first put a
+    `<script>` open tag and its body on different lines, so jQuery and CSS came
+    through as visible text.
     """
     return text_lines(html_text)
 

@@ -360,3 +360,13 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   that rot monthly — `BoardMeetingNoticeSept9-2026.pdf`, `September-2026-Calendar.pdf`,
   `2026.10.01.pdf`; only CB8's is annual. Four boards, four parsers, monthly rot, and two letterheads
   that actively mislead is a bad trade against the 39/59 the site already has honestly.
+- 2026-10-01 | the board office, reconsidered — it IS a venue, for the right meeting | Four boards
+  publish the split explicitly: Bronx CB11's "Meeting Preferences" table reads "Board Office" against
+  every committee and "Varies/Webex" against the full board; Brooklyn CB4 states "Committee meetings
+  are held at the board's District Office (1420 Bushwick Avenue)"; SI CB3 separates its "Office
+  Conference Room, 1243 Woodrow Road" from the full-board venue; Bronx CB10 is the counter-example and
+  says to ring before assuming. | so what: I had been treating `cb_office_address` purely as a trap.
+  It is a trap for the FULL-BOARD question and the answer to the COMMITTEE one — and committee
+  membership is the participation route this product singles out as "the route most people do not know
+  about". The board page listed the office and pitched committee membership in separate sections and
+  connected them nowhere; it now states the split, with the caveat, and a test pins it.

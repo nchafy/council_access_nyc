@@ -307,6 +307,20 @@ class TestBoardView:
         assert "dg92-zbpx" in page
         assert "disagree with what boards publish" in page
 
+    def test_board_page_distinguishes_the_office_from_the_full_board_venue(self, raw_dir, tmp_path):
+        """The office is the committee room for several boards and not the full-board venue.
+
+        Boards publish that split explicitly — Bronx CB11 lists "Board Office" against every
+        committee and "Varies" against the full board; Brooklyn CB4 and SI CB3 separate the two
+        by name. Presenting the office as where the board meets is the error this guards.
+        """
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
+        assert "Committees often meet at the board office listed above" in page
+        assert "the full board often does not" in page
+        assert "the room for a specific meeting is on the board" in page
+
     def test_board_page_links_its_council_districts(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))

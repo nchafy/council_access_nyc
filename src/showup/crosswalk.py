@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 
 from .geo import GRID_SPACING_DEG, MIN_SHARE, load_features, overlap_shares
+from .model import BOARD_COUNT, DISTRICT_COUNT
 from .sources.boards import JOINT_INTEREST_AREAS
 
 __all__ = [
@@ -39,12 +40,12 @@ def generate(
 ) -> dict:
     """Compute the crosswalk. Slow by design; called by `showup crosswalk` only."""
     council = load_features(council_geojson, "coundist")
-    if len(council) != 51:
-        raise CrosswalkError(f"expected 51 council districts, found {len(council)}")
+    if len(council) != DISTRICT_COUNT:
+        raise CrosswalkError(f"expected {DISTRICT_COUNT} council districts, found {len(council)}")
 
     boards = load_features(community_geojson, "boro_cd", exclude=set(JOINT_INTEREST_AREAS))
-    if len(boards) != 59:
-        raise CrosswalkError(f"expected 59 community districts, found {len(boards)}")
+    if len(boards) != BOARD_COUNT:
+        raise CrosswalkError(f"expected {BOARD_COUNT} community districts, found {len(boards)}")
 
     shares = overlap_shares(council, boards, spacing=spacing)
     # Not a transpose: a share is always of the containing polygon's sampled area, so
@@ -125,7 +126,7 @@ def load(path: Path) -> dict[int, list[tuple[str, float]]]:
     for key, pairs in districts.items():
         result[int(key)] = [(str(code), float(share)) for code, share in pairs]
 
-    missing = [number for number in range(1, 52) if not result.get(number)]
+    missing = [n for n in range(1, DISTRICT_COUNT + 1) if not result.get(n)]
     if missing:
         raise CrosswalkError(f"crosswalk covers no board for council districts {missing}")
     return result
@@ -150,8 +151,10 @@ def load_boards_to_districts(path: Path) -> dict[str, list[tuple[int, float]]]:
         str(code): [(int(district), float(share)) for district, share in pairs]
         for code, pairs in boards.items()
     }
-    if len(result) != 59:
-        raise CrosswalkError(f"crosswalk covers {len(result)} community boards, expected 59")
+    if len(result) != BOARD_COUNT:
+        raise CrosswalkError(
+            f"crosswalk covers {len(result)} community boards, expected {BOARD_COUNT}"
+        )
     empty = sorted(code for code, pairs in result.items() if not pairs)
     if empty:
         raise CrosswalkError(f"community boards with no council district: {empty}")

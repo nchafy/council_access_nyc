@@ -18,6 +18,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+from .model import BOARD_COUNT, DISTRICT_COUNT
+from .sources.boards import JOINT_INTEREST_AREAS
+
 __all__ = ["SOURCES", "FetchError", "fetch_all", "fetch_one"]
 
 USER_AGENT = (
@@ -157,8 +160,8 @@ def _board_budget_requests(body: bytes) -> str | None:
     if absent:
         return f"not vn4m-mk4t: no {', '.join(absent)} column"
     boards = {(row.get("boro"), row.get("board")) for row in parsed}
-    if len(boards) < 59:
-        return f"{len(boards)} boro/board pairs, expected all 59"
+    if len(boards) < BOARD_COUNT:
+        return f"{len(boards)} boro/board pairs, expected all {BOARD_COUNT}"
     editions = {row.get("publication") for row in parsed}
     if len(editions) != 1:
         return f"{len(editions)} publications in one payload, expected exactly 1"
@@ -173,8 +176,9 @@ def _district_pages(body: bytes) -> str | None:
     if not isinstance(parsed, dict):
         return "expected an object keyed by district number"
     present = [key for key, value in parsed.items() if value]
-    if len(present) != 51:
-        return f"{len(present)} of 51 district pages have content"
+    if len(present) != DISTRICT_COUNT:
+        return f"{len(present)} of {DISTRICT_COUNT} district pages have content"
+    # A hand-picked sample — first, middle, last — not a count, so these stay literal.
     for number in ("1", "26", "51"):
         page = parsed.get(number) or ""
         if f"District {number}" not in page:
@@ -219,10 +223,10 @@ def _fetch_district_pages(log: Callable[[str], None]) -> bytes:
                 pages[str(number)] = None
                 failed.append(number)
             if number % 10 == 0:
-                log(f"    {number}/51 district pages")
+                log(f"    {number}/{DISTRICT_COUNT} district pages")
         return failed
 
-    failed = attempt(list(range(1, 52)), "")
+    failed = attempt(list(range(1, DISTRICT_COUNT + 1)), "")
     if failed:
         log(f"    retrying {len(failed)} page(s) that failed: {failed}")
         still_failed = attempt(failed, " again")
@@ -368,7 +372,7 @@ SOURCES: tuple[Source, ...] = (
             "cb_address_line_2,cb_office_phone,cb_office_email,cb_website,cb_chair,"
             "cb_district_manager,cb_board_meeting,cb_cabinet_meeting",
         ),
-        invariant=_json_rows(59),
+        invariant=_json_rows(BOARD_COUNT),
         min_bytes=20_000,
         max_age_hours=24 * 60,
         why="community board contact details and meeting cadence",
@@ -392,7 +396,7 @@ SOURCES: tuple[Source, ...] = (
         name="council-geometry",
         filename="districts.geojson",
         fetch=_geospatial("872g-cjhh"),
-        invariant=_geojson_features(51),
+        invariant=_geojson_features(DISTRICT_COUNT),
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="address lookup and the board crosswalk",
@@ -405,7 +409,7 @@ SOURCES: tuple[Source, ...] = (
         filename="community_districts.geojson",
         fetch=_geospatial("5crt-au7u"),
         # 59 real boards plus 12 joint interest areas (parks, airports).
-        invariant=_geojson_features(71),
+        invariant=_geojson_features(BOARD_COUNT + len(JOINT_INTEREST_AREAS)),
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="the council-district to community-board crosswalk",

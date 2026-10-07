@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 __all__ = [
+    "BOARD_COUNT",
+    "DISTRICT_COUNT",
     "BoardBudgetRequests",
     "BudgetRequest",
     "Committee",
@@ -20,6 +22,11 @@ __all__ = [
     "Office",
     "Venue",
 ]
+
+#: How many `District`s and `DistrictBoard`s New York City has. Facts about the city, not
+#: thresholds: the fetch invariants, the crosswalk guards and the build all count to these.
+DISTRICT_COUNT = 51
+BOARD_COUNT = 59
 
 
 @dataclass(frozen=True, slots=True)

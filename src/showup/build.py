@@ -15,7 +15,7 @@ from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts,
 from .crosswalk import load as load_crosswalk
 from .fetch import SOURCES
 from .geo import load_features, to_geojson
-from .model import District, DistrictBoard, Manifest, Member
+from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
 from .render import (
     render_board,
     render_district,
@@ -34,10 +34,13 @@ __all__ = ["SHORTLIST_SIZE", "BuildError", "build_site"]
 #: Owner's decision: five. Phase 1 orders the shortlist chronologically, so it ranks nothing.
 SHORTLIST_SIZE = 5
 
-DISTRICT_COUNT = 51
-
 #: Below these the parse is broken rather than thin, and `_check_floor` refuses the build.
-FLOORS = {"calendar": 40, "district_pages": DISTRICT_COUNT, "members": 300, "boards": 59}
+FLOORS = {
+    "calendar": 40,
+    "district_pages": DISTRICT_COUNT,
+    "members": 300,
+    "boards": BOARD_COUNT,
+}
 
 
 class BuildError(RuntimeError):
@@ -272,8 +275,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             encoding="utf-8",
         )
         boards_written += 1
-    if boards_written != 59:
-        raise BuildError(f"wrote {boards_written} board pages, expected 59")
+    if boards_written != BOARD_COUNT:
+        raise BuildError(f"wrote {boards_written} board pages, expected {BOARD_COUNT}")
     (board_root / "index.html").write_text(
         render_index(
             districts,
@@ -339,7 +342,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "community_boards": {
             "fetched_at": _mtime(raw / "community_boards.json"),
             "max_age_hours": 24 * 90,
-            "rows": 59,
+            "rows": BOARD_COUNT,
         },
     }
     if budget_requests_file.exists():

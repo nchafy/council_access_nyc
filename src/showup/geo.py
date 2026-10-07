@@ -1,30 +1,10 @@
-"""Point-in-polygon, and working out which community boards a council district covers.
+"""Point-in-polygon, and which community districts each council district covers.
 
-Two jobs, both needed because the city publishes no crosswalk between council
-districts and community districts:
-
-1. `locate` — which council district contains a coordinate. Needed for the address
-   path: `geosearch.planninglabs.nyc` returns a lat/lng but **not** a council
-   district, so the assignment has to happen here.
-2. `overlap_shares` — how much of each community district falls inside each
-   council district.
-
-WHY WE DO NOT USE `ruf7-3wgc.council_district`
-The community-boards dataset has a `council_district` column, and using it would
-be one line. It is wrong: 59 rows carry only 44 distinct values, and districts
-5, 8, 15, 20, 27, 32 and 40 appear nowhere. The column is the council district of
-the board's *office address*, not the districts the board covers — a board whose
-office sits in one district commonly serves two or three. Joining on it would
-leave seven council districts with no board at all and silently mis-state the rest.
-
-WHY GRID SAMPLING RATHER THAN POLYGON INTERSECTION
-True areal intersection needs a robust clipping implementation, which is a real
-library (shapely) and this project ships zero runtime dependencies for security
-reasons. Sampling a lattice and counting which pair each point falls in reuses the
-ray-casting we already need for job 1, has no failure mode worse than a slightly
-wrong *share*, and the ordering it produces — which board covers most of a
-district — is stable well below the resolution we use. The shares are reported as
-approximate because they are.
+The city publishes no crosswalk between the two, and `geosearch.planninglabs.nyc` returns a
+coordinate but no council district, so both happen here; `ruf7-3wgc.council_district` is not
+a shortcut (CLAUDE.md, "Community boards are joined by geometry"). Shares come from lattice
+sampling rather than polygon clipping, whose worst failure is a slightly wrong share and
+never a wrong ordering, so they are reported as approximate.
 """
 
 from __future__ import annotations
@@ -45,9 +25,8 @@ MIN_SHARE = 0.04
 class Polygon:
     """One feature's rings plus a bounding box, prepared for repeated hit-testing.
 
-    The bounding box is the whole optimisation: a citywide lattice against 51
-    council districts is millions of candidate tests, and rejecting on four
-    comparisons first turns that into a handful of real ones per point.
+    The box is the whole optimisation: it turns millions of candidate tests over a citywide
+    lattice into a handful of real ones per point.
     """
 
     __slots__ = ("key", "max_x", "max_y", "min_x", "min_y", "rings")
@@ -64,12 +43,8 @@ class Polygon:
         return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
 
     def contains(self, x: float, y: float) -> bool:
-        """Ray casting with even-odd fill, so interior rings (holes) work.
-
-        A point inside a hole crosses that ring's edges an even number of extra
-        times and correctly reads as outside. Rings are not classified as outer or
-        inner: even-odd makes that unnecessary.
-        """
+        """Ray casting with even-odd fill, so interior rings (holes) read as outside
+        without being classified as outer or inner."""
         if not self.may_contain(x, y):
             return False
         inside = False
@@ -79,9 +54,7 @@ class Polygon:
             for i in range(count):
                 xi, yi = ring[i]
                 xj, yj = ring[j]
-                # Half-open comparison on y avoids double-counting a vertex that
-                # lies exactly on the ray, which is the classic source of
-                # points flipping to the wrong side along a shared edge.
+                # Half-open on y, so a vertex exactly on the ray is not counted twice.
                 if (yi > y) != (yj > y):
                     x_cross = xi + (y - yi) * (xj - xi) / (yj - yi)
                     if x < x_cross:
@@ -137,10 +110,9 @@ def overlap_shares(
 ) -> dict[str, list[tuple[str, float]]]:
     """For each `outer` polygon, the `inner` polygons covering it and their share.
 
-    Returns {outer_key: [(inner_key, share), ...]} ordered by descending share,
-    with slivers below `min_share` dropped. Shares are of the outer polygon's
-    sampled area and sum to at most 1 (water and unsampled gaps mean they can sum
-    to less, which is honest rather than normalised away).
+    `{outer_key: [(inner_key, share), ...]}`, descending, slivers below `min_share`
+    dropped. Shares are of the outer polygon's sampled area, so they sum to at most 1 and
+    are not normalised up.
     """
     min_x = min(p.min_x for p in outer)
     max_x = max(p.max_x for p in outer)
@@ -155,8 +127,7 @@ def overlap_shares(
 
     for iy in range(steps_y):
         y = min_y + iy * spacing
-        # Re-filter by row: most polygons cannot contain any point on this
-        # latitude, and skipping them here is what keeps the sweep fast.
+        # Re-filter by row: most polygons cannot contain any point at this latitude.
         outer_row = [p for p in outer if p.min_y <= y <= p.max_y]
         if not outer_row:
             continue
@@ -215,11 +186,8 @@ def _perpendicular_distance(
 
 
 def simplify_ring(ring: list[tuple[float, float]], tolerance: float) -> list[tuple[float, float]]:
-    """Douglas-Peucker, iterative.
-
-    Iterative rather than recursive because a single coastline ring runs to tens of
-    thousands of vertices and the recursive form blows the stack on real input.
-    """
+    """Douglas-Peucker, iterative because a coastline ring runs to tens of thousands of
+    vertices and the recursive form blows the stack on real input."""
     if len(ring) <= 3:
         return list(ring)
 
@@ -247,13 +215,9 @@ def simplify_rings(
     tolerance: float = SIMPLIFY_TOLERANCE_DEG,
     precision: int = COORD_PRECISION,
 ) -> list[list[tuple[float, float]]]:
-    """Simplify and round every ring, dropping any that collapses.
-
-    A ring needs four positions to be a valid closed ring. Islands smaller than
-    the tolerance disappear — an accepted trade, since they are also too small to
-    contain a distinguishable address at this precision, and the agreement test
-    would fail if the loss mattered.
-    """
+    """Simplify and round every ring, dropping any that collapses below the four positions
+    a closed ring needs. Islands under the tolerance disappear, which
+    tests/unit/test_geo.py::TestSimplifiedGeometryAgrees would fail on if it mattered."""
     out: list[list[tuple[float, float]]] = []
     for ring in rings:
         simplified = simplify_ring(ring, tolerance)
@@ -276,10 +240,8 @@ def to_geojson(
 ) -> dict:
     """Serialise polygons back to GeoJSON, optionally simplified for the browser.
 
-    Every feature becomes a MultiPolygon of its rings. We do not attempt to
-    reconstruct the original outer/inner nesting: the browser's hit test uses the
-    same even-odd rule as `Polygon.contains`, so a flat ring list is equivalent for
-    our purpose and simpler to be correct about.
+    Every feature becomes a MultiPolygon of its rings, with no outer/inner nesting
+    reconstructed: the browser hit-tests with the same even-odd rule as `Polygon.contains`.
     """
     features = []
     for polygon in sorted(polygons, key=lambda p: p.key):

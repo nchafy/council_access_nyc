@@ -2,8 +2,6 @@
 {% import "macros.html" as m %}
 {% macro website(url, label) %}{{ m.link(url, label) }}<br><small>The board's own site publishes its agendas, minutes and meeting location. No City dataset carries a board meeting calendar.</small>{% endmacro %}
 {% macro website_as_text(host) %}<span class="nolink">{{ host }}</span><br><small>Given as text, not a link: this board uses its own domain rather than a City one, unverifiable at build time.</small>{% endmacro %}
-{# The office note is a field label, not a disclosure: the address sits right here, and
-   silence reads as "this is the venue", which was wrong on 8 of 8 boards checked. #}
 {% macro office(address) %}{{ address }}<br><small>The City's dataset records the board office, not the meeting venue.</small>{% endmacro %}
 {% block body %}
 {% set rows = [] %}

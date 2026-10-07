@@ -1,26 +1,13 @@
-// The only JavaScript on the site, and nothing essential depends on it.
-//
-// Two jobs:
-//   1. Make the district <select> navigate, so the dropdown works like a dropdown.
-//      Without JS the same choices are plain links further down the page, and a
-//      form submit lands on /district/ which lists them all.
-//   2. Evaluate staleness in the browser rather than at build time. The build
-//      cannot know how old it will be when someone reads it — an abandoned site
-//      that still claims to be fresh is the failure this defends against
-//      (outline §2.12), so `manifest.json` carries fetched_at + max_age and the
-//      comparison happens here, now.
-//
-// Loaded as an external file because the CSP in _headers has no 'unsafe-inline'.
-// No third-party code, no analytics, no network calls except the manifest.
+// The only JavaScript on the site, and nothing essential depends on it: it makes the
+// two <select>s navigate, and it compares `manifest.json`'s fetched_at against the
+// reader's clock, because a build cannot know how old it will be when someone reads it
+// (outline §2.12). An external file, because the CSP has no 'unsafe-inline'.
 
 (function () {
   "use strict";
 
-  // 1. Dropdown navigation, for both views.
-  //
-  // Each pair is validated against its own path shape. Even though the option
-  // values are ours, checking here means a future change to how they are
-  // generated cannot turn this into an open redirect.
+  // Each pair carries its own path shape, so a change to how the options are generated
+  // cannot turn this into an open redirect.
   [
     ["district-form", "district-select", /^\/district\/\d{1,2}\/$/],
     ["board-form", "board-select", /^\/board\/[1-5]\d{2}\/$/],
@@ -43,8 +30,6 @@
     });
   });
 
-  // 2. Staleness, computed against the reader's clock. The notice states the fetch
-  // time and nothing else: "out of date" was our verdict on the number, not the number.
   var MONTHS = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
@@ -85,8 +70,6 @@
 
       if (!stale.length) return;
 
-      // textContent, never innerHTML — the rule holds even for strings we
-      // generated ourselves, so there is no judgement call at any call site.
       var notice = document.createElement("p");
       notice.className = "staleness";
       var oldest = stale.reduce(function (a, b) {
@@ -97,7 +80,6 @@
       footer.insertBefore(notice, footer.firstChild);
     })
     .catch(function () {
-      // A missing manifest is not worth a visible error: the page's own facts
-      // still carry their fetch date in the footer.
+      // A missing manifest is not worth a visible error: the footer states a fetch time.
     });
 })();

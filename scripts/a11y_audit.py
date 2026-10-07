@@ -26,6 +26,8 @@ from cdp import Browser, CDPError, Session, find_chrome
 from pageset import REPRESENTATIVE
 from serve import background_server
 
+from showup.model import BOARD_COUNT, DISTRICT_COUNT
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: WCAG 2.4.7 wants a visible ring; the stylesheet's is 3px, so thinner means a rule broke.
@@ -339,14 +341,14 @@ def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
         Check("/", "script really was disabled", bool(scripts_off), "scripts still ran"),
         Check(
             "/",
-            "all 51 districts are reachable as plain links",
-            districts >= 51,
+            f"all {DISTRICT_COUNT} districts are reachable as plain links",
+            districts >= DISTRICT_COUNT,
             f"only {districts} district links without JavaScript",
         ),
         Check(
             "/",
-            "all 59 boards are reachable as plain links",
-            boards >= 59,
+            f"all {BOARD_COUNT} boards are reachable as plain links",
+            boards >= BOARD_COUNT,
             f"only {boards} board links without JavaScript",
         ),
         Check(

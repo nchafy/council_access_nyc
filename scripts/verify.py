@@ -30,6 +30,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from serve import parse_headers_file  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
+from showup.model import BOARD_COUNT, DISTRICT_COUNT  # noqa: E402
 from showup.urls import host_allowed  # noqa: E402
 
 REQUIRED_HEADERS = {
@@ -154,7 +155,10 @@ def _run_checks(base: str, site: Path) -> None:
     check("unsafe-eval" not in csp, "CSP contains unsafe-eval")
 
     check("<h1>Districts and boards</h1>" in index, "index missing its heading")
-    check(index.count('href="/district/') >= 51, "index does not link all 51 districts")
+    check(
+        index.count('href="/district/') >= DISTRICT_COUNT,
+        f"index does not link all {DISTRICT_COUNT} districts",
+    )
     check("<select" in index, "index has no dropdown")
 
     sampled = [1, 3, 25, 35, 51]
@@ -223,11 +227,17 @@ def _run_checks(base: str, site: Path) -> None:
         print(f"GET /board/{code}/  {status}  {len(page)} bytes")
 
     board_dirs = [p for p in (site / "board").iterdir() if p.is_dir()]
-    check(len(board_dirs) == 59, f"expected 59 board pages, found {len(board_dirs)}")
+    check(
+        len(board_dirs) == BOARD_COUNT,
+        f"expected {BOARD_COUNT} board pages, found {len(board_dirs)}",
+    )
 
     check('id="district-select"' in index, "index has no council district picker")
     check('id="board-select"' in index, "index has no community board picker")
-    check(index.count('href="/board/') >= 59, "index does not link all 59 boards")
+    check(
+        index.count('href="/board/') >= BOARD_COUNT,
+        f"index does not link all {BOARD_COUNT} boards",
+    )
 
     status, _, missing = fetch(base + "/district/99/")
     check(status == 404, f"/district/99/ returned {status}, expected 404")
@@ -254,8 +264,9 @@ def _run_checks(base: str, site: Path) -> None:
     check(status == 200, f"districts.geo.json returned {status}")
     geo_json = json.loads(geo)
     check(
-        len(geo_json.get("features", [])) == 51,
-        f"district geometry has {len(geo_json.get('features', []))} features, expected 51",
+        len(geo_json.get("features", [])) == DISTRICT_COUNT,
+        f"district geometry has {len(geo_json.get('features', []))} features, "
+        f"expected {DISTRICT_COUNT}",
     )
     gz = len(gzip.compress(geo.encode(), 9))
     # §6A.3 budget: geometry must stay under 300 KB gzipped.
@@ -265,8 +276,8 @@ def _run_checks(base: str, site: Path) -> None:
     status, _, lookup = fetch(base + "/data/lookup.json")
     check(status == 200, f"lookup.json returned {status}")
     lookup_json = json.loads(lookup)
-    check(len(lookup_json.get("districts", [])) == 51, "lookup is missing districts")
-    check(len(lookup_json.get("boards", [])) == 59, "lookup is missing boards")
+    check(len(lookup_json.get("districts", [])) == DISTRICT_COUNT, "lookup is missing districts")
+    check(len(lookup_json.get("boards", [])) == BOARD_COUNT, "lookup is missing boards")
     check(len(lookup_json.get("zips", {})) > 150, "lookup has suspiciously few ZIP codes")
     print(
         f"GET /data/lookup.json  {status}  "
@@ -348,7 +359,10 @@ def _run_checks(base: str, site: Path) -> None:
         leaked += [
             f"{name} in district/{page.parent.name}" for name in names if name in match.group(1)
         ]
-    check(checked_pages >= 51, f"only {checked_pages} district pages had a boards section")
+    check(
+        checked_pages >= DISTRICT_COUNT,
+        f"only {checked_pages} district pages had a boards section",
+    )
 
     # Board pages are entirely about one board, so the whole page is in scope.
     board_pages = 0
@@ -356,7 +370,7 @@ def _run_checks(base: str, site: Path) -> None:
         board_pages += 1
         html = page.read_text()
         leaked += [f"{name} in board/{page.parent.name}" for name in names if name in html]
-    check(board_pages >= 59, f"only {board_pages} board pages checked")
+    check(board_pages >= BOARD_COUNT, f"only {board_pages} board pages checked")
     check(not leaked, f"board chair/district-manager names leaked: {leaked[:3]}")
     print(
         f"privacy: {len(names)} board officer names checked against the boards "

@@ -138,3 +138,10 @@ def raw_dir_session(tmp_path_factory, calendar_html, district_page_html) -> Path
     return write_raw_cache(
         tmp_path_factory.mktemp("raw-session"), calendar_html, district_page_html
     )
+
+
+@pytest.fixture(scope="session")
+def write_cache(calendar_html, district_page_html):
+    """`write_raw_cache` with the fixture payloads bound, for a test that needs the cache
+    somewhere `raw_dir` does not put it."""
+    return lambda raw: write_raw_cache(raw, calendar_html, district_page_html)

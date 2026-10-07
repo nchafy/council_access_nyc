@@ -1,23 +1,11 @@
 """Parsing the meeting grid out of nyc.legistar.com/Calendar.aspx.
 
-Why we scrape this at all: the NYC Open Data meetings dataset (m48u-yjt8) ends
-2024-12-19, so it can never answer "when is the next meeting", and
-webapi.legistar.com returns `403 Token is required` to anonymous callers. The
-public HTML calendar carries the current session including future dates, needs no
-key, and one plain GET of page 1 is enough — it is date-descending and already
-spans several months ahead. We never POST the ~374 KB `__VIEWSTATE` for page 2.
+The only forward-looking source: `m48u-yjt8` ends 2024-12-19 and `webapi.legistar.com`
+returns 403 to anonymous callers (CLAUDE.md, "Legistar is two layers").
 
-The grid is ASP.NET Telerik. Ten cells per row; the ones we use:
-  0 body name, 1 date, 3 time (or the literal "Deferred"), 4 location,
-  5 topic (often a placeholder), 6 detail link, 7 agenda, 8 minutes.
-
-Rows come from the parsed document rather than a regex. Nothing extracted is
-trusted either way — every cell's text goes through `element_text` and every href
-through `safe_url` before it can reach a page — but the parser reads the grid the
-way a browser does, and taking an href as an attribute instead of as matched
-characters is what decodes `&amp;GUID=` back into `&GUID=`. If Legistar redesigns
-the grid the table is not found and this raises, which the build reports loudly
-rather than quietly showing no meetings.
+Ten cells per row; the ones used are 0 body, 1 date, 3 time or "Deferred", 4 location,
+5 topic, 6 detail, 7 agenda, 8 minutes. Rows come from the parsed document, which is what
+decodes `&amp;GUID=` back into `&GUID=`; a redesigned grid is not found and raises.
 """
 
 from __future__ import annotations

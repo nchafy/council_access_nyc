@@ -274,6 +274,11 @@ get re-argued.
   committed fixture.
 - **TDD, with commit markers.** `test: … (RED)` then `feat(scope): … (GREEN)`,
   matching `~/personal/timemap_nyc`. Conventional commits throughout.
+- **`docs/commits.md` and `docs/pull-requests.md` are binding.** One commit, one claim;
+  the body carries the reasoning, because this repo strips comments from code and the
+  "why" has to live somewhere. Commit a guard *before* the thing it guards, and give a
+  correction its own commit. For review: re-derive the headline number yourself — three
+  confidently-reported claims on PR #1 were false, each with plausible evidence attached.
 - Never commit fetched upstream payloads (`etl/raw/`, PDFs, the 3.8 MB district
   GeoJSON) — scripts download and derive them. Committed fixtures under
   `tests/fixtures/` are the deliberate exception and are stored byte-exact.

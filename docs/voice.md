@@ -112,6 +112,22 @@ whatever they are doing. This also removes a thing the page could be wrong about
 measurement behind it is in `docs/refresh.md`, because a timestamp is only honest if something
 refreshes.
 
+## The policy covers data as well as templates
+
+`src/showup/venues.py` renders inside every meeting card, five times per district page, and was
+the last second-person and imperative copy on the site: "Bring photo ID… who can direct you",
+"Enter through NYPD security… Tell the officers which hearing you are attending", "To speak,
+register in advance". Rewritten to state each requirement — "Photo ID is required, and entry is
+through security and metal detectors" — with every procedural fact kept. Copy in a Python
+constant is still copy.
+
+Both checks are now gated rather than re-measured by hand: `tests/unit/test_templates.py` and
+`tests/unit/test_venues.py` fail on `\b(you|your|yours|yourself|you're)\b` in any shipped
+template or venue string, and pin the sentences already cut so they cannot come back. Two
+categories are deliberately out: form-control text (`Select a council district…`, `Go`, `Find`,
+`Skip to content`) is an affordance rather than prose, and `assets/address.js`'s six runtime
+status strings about the reader's own typed address have never been in scope.
+
 ## Provenance belongs on `/references/`, not in the paragraph
 
 Dataset ids, denominators, windows, methods and our own measurement caveats go on the

@@ -23,14 +23,17 @@ __all__ = ["VENUES", "normalize_location"]
 _CITY_HALL = "New York City Hall, City Hall Park, New York, NY 10007"
 _250 = "250 Broadway, New York, NY 10007"
 
+#: Procedural facts, stated rather than instructed (docs/voice.md). Every requirement
+#: survives the rewrite; only the mood changes.
 _CITY_HALL_ENTRY = (
-    "Enter through NYPD security and metal detectors. Tell the officers which hearing you are "
-    'attending. No food, beverage containers, or signs larger than 8.5" x 11" in hearing rooms.'
+    "Entry is through NYPD security and metal detectors, and the officers ask which hearing "
+    'each visitor is attending. No food, beverage containers, or signs larger than 8.5" x 11" '
+    "in hearing rooms."
 )
 _250_ENTRY = (
-    "Bring photo ID and pass through security and metal detectors. Every floor has a "
-    "Sergeant-at-Arms who can direct you. No food, beverage containers, or signs larger than "
-    '8.5" x 11" in hearing rooms.'
+    "Photo ID is required, and entry is through security and metal detectors. Every floor has "
+    "a Sergeant-at-Arms, who gives directions. No food, beverage containers, or signs larger "
+    'than 8.5" x 11" in hearing rooms.'
 )
 
 VENUES: dict[str, Venue] = {
@@ -76,22 +79,22 @@ VENUES: dict[str, Venue] = {
         "emigrant",
         "Emigrant Savings Bank Building",
         "49-51 Chambers Street, New York, NY 10007",
-        "Bring photo ID and pass through building security.",
+        "Photo ID is required, and entry is through building security.",
         "Overflow hearing space across from City Hall.",
     ),
     "remote": Venue(
         "remote",
         "Remote hearing (Zoom)",
         None,
-        "To speak, register in advance on the Council's Register to Testify form. To watch "
-        "only, no registration is needed — use the Council livestream.",
+        "Speaking requires advance registration on the Council's Register to Testify form. "
+        "Watching requires no registration and runs on the Council livestream.",
         "Remote participants are subject to the Council's Remote Attendance Policy.",
     ),
     "offsite": Venue(
         "offsite",
         "Off-site hearing",
         None,
-        "Check the agenda PDF for the exact address and entry instructions.",
+        "The exact address and entry instructions are in the agenda PDF.",
         "Occasionally the Council sits closer to affected residents — a borough hall, school, "
         "library or state office building.",
     ),

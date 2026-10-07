@@ -6,9 +6,11 @@ hypothetical: `meeting_location` is clerk-typed free text with 25 years of drift
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
-from showup.venues import normalize_location
+from showup.venues import VENUES, normalize_location
 
 
 class TestCityHall:
@@ -107,3 +109,66 @@ class TestOffsite:
         venue, mode = normalize_location(raw)
         assert venue.id == "offsite"
         assert mode == "in_person"
+
+
+class TestVenueCopyStatesRatherThanInstructs:
+    """docs/voice.md, applied to the one place it had not reached.
+
+    These strings render inside every meeting card, five times per district page, and
+    were the last second-person and imperative copy in the shipped pages. Every
+    procedural fact is kept; only the mood changed, so this guards the mood.
+    """
+
+    SECOND_PERSON = re.compile(r"\b(you|your|yours|yourself|you're)\b", re.IGNORECASE)
+
+    #: First words that address the reader. Hand-enumerated from the strings that were
+    #: rewritten, so a reintroduced one fails here rather than in a copy review.
+    IMPERATIVE_OPENERS = (
+        "bring ",
+        "check ",
+        "enter ",
+        "tell ",
+        "use ",
+        "register ",
+        "pass ",
+        "contact ",
+        "visit ",
+        "arrive ",
+        "to speak,",
+        "to watch",
+    )
+
+    @pytest.mark.parametrize("venue_id", sorted(VENUES))
+    def test_no_second_person(self, venue_id):
+        venue = VENUES[venue_id]
+        for field in (venue.entry, venue.note):
+            assert field is None or not self.SECOND_PERSON.search(field), field
+
+    @pytest.mark.parametrize("venue_id", sorted(VENUES))
+    def test_no_sentence_opens_with_an_instruction(self, venue_id):
+        venue = VENUES[venue_id]
+        for field in (venue.entry, venue.note):
+            for sentence in (field or "").split(". "):
+                opener = sentence.strip().lower()
+                assert not opener.startswith(self.IMPERATIVE_OPENERS), sentence
+
+    def test_the_facts_survived_the_rewrite(self):
+        """The rewrite is a voice change, not a content cut, so the facts are pinned."""
+        city_hall = VENUES["city-hall-chambers"].entry
+        assert "NYPD security and metal detectors" in city_hall
+        assert "which hearing" in city_hall
+        assert '8.5" x 11"' in city_hall
+
+        broadway = VENUES["250-broadway-8"].entry
+        assert "Photo ID is required" in broadway
+        assert "Sergeant-at-Arms" in broadway
+
+        assert "Photo ID is required" in VENUES["emigrant"].entry
+
+        remote = VENUES["remote"].entry
+        assert "Register to Testify" in remote
+        assert "advance registration" in remote
+        assert "no registration" in remote
+        assert "livestream" in remote
+
+        assert "agenda PDF" in VENUES["offsite"].entry

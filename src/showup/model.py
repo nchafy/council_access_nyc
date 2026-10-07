@@ -1,9 +1,7 @@
-"""The shapes that reach a template.
+"""The shapes that reach a template: plain dataclasses, no behaviour.
 
-Deliberately plain dataclasses with no behaviour. Every string in here has
-already been through `text.strip_tags` at ingest, so a renderer only has to
-escape; and every URL has already been through `urls.safe_url`, so a None means
-"no link" rather than "link we have not checked yet".
+Every string has already been through `text.strip_tags` and every URL through
+`urls.safe_url`, so a `None` URL means "no link", not "not checked yet".
 """
 
 from __future__ import annotations
@@ -37,7 +35,7 @@ class Venue:
 class Meeting:
     committee: str
     date: date
-    #: None when the source says "Deferred" or publishes no time. Never a guess.
+    #: None when the source says "Deferred" or publishes no time; never a guess.
     start_time: str | None
     #: "scheduled" | "deferred" | "time_not_published"
     time_state: str
@@ -49,9 +47,7 @@ class Meeting:
     detail_url: str | None
     agenda_url: str | None
     minutes_url: str | None
-    #: Provable lower bound on the written-testimony window: start + 72h. The
-    #: real deadline is 72h after *adjournment*, which is never published, and
-    #: adjournment is always at or after the start — so this is always inside it.
+    #: start + 72h. A provable lower bound: adjournment is never published and never earlier.
     written_safe_until: datetime | None
     #: Three business days before the hearing, for ASL/CART and interpretation.
     accommodation_by: date | None
@@ -75,7 +71,7 @@ class Committee:
 @dataclass(frozen=True, slots=True)
 class Member:
     name: str
-    #: "filled" | "vacant" — a vacancy is a designed state, not an error.
+    #: "filled" | "vacant"
     seat_status: str
     email: str | None
     page_url: str | None
@@ -83,11 +79,8 @@ class Member:
     committees: tuple[Committee, ...] = ()
     term_start: date | None = None
     term_end: date | None = None
-    #: True when council.nyc.gov names a member but the open dataset has no
-    #: current term for the seat. The scraped page is the fresher source — a
-    #: special election reaches it weeks before Socrata — so we show the member
-    #: and disclose that the official dataset has not caught up. District 3 is
-    #: the live example: Bottcher's term ends 2026-02-03 with no successor row.
+    #: council.nyc.gov names a member the open dataset has no current term for. The scrape
+    #: is the fresher source, so the member renders and the page discloses the disagreement.
     seat_conflict: bool = False
 
 
@@ -95,14 +88,12 @@ class Member:
 class DistrictBoard:
     """A community board covering part of this council district.
 
-    `share` is the approximate fraction of the council district's sampled land
-    area inside this board, from the committed crosswalk. It orders the list and
-    is shown as approximate; it is not a precise areal measurement.
+    `share` is the crosswalk's approximate fraction of sampled land area, not a precise
+    areal measurement. It orders the list and is rendered as approximate.
     """
 
     code: str
     label: str
-    #: Borough name, used to pick the right borough-president application link.
     borough_name: str
     share: float
     neighborhoods: str | None
@@ -113,8 +104,7 @@ class DistrictBoard:
     website: str | None
     board_meeting: str | None
     cabinet_meeting: str | None
-    #: Hostname of a board site we decline to link, because it is the board's own
-    #: domain and the City cannot vouch that it is still theirs. Shown as text.
+    #: Hostname rendered as text, not linked: the City cannot vouch for a board's own domain.
     website_unlinked: str | None = None
 
 
@@ -125,12 +115,10 @@ class BudgetRequest:
     priority: str
     #: Capital, capital support or expense. None when the tracking code does not say.
     category: str | None
-    #: The register's own reference, which is how a reader finds this row in it.
     tracking_code: str
     request: str | None
     agency: str | None
     explanation: str | None
-    #: OMB's reply, quoted. Never bucketed: the phrasing varies between editions.
     response: str | None
 
 
@@ -150,20 +138,17 @@ class District:
     neighborhoods: str | None
     member: Member | None
     boards: tuple[DistrictBoard, ...] = ()
-    #: Per-field record of where each fact came from and when it was seen, so a
-    #: page can show provenance without the renderer guessing.
+    #: Per field, where the fact came from and when it was seen.
     provenance: dict[str, str] = field(default_factory=dict)
-    #: Fields the scrape could not find. Surfaced, never silently blank.
     missing: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class Manifest:
-    """Per-source freshness. The client compares these to now; the build never
-    bakes in a 'fresh' or 'stale' boolean (outline §2.12)."""
+    """Per-source freshness. The client compares these to now; the build bakes in no
+    'fresh' or 'stale' boolean (outline §2.12)."""
 
     sources: dict[str, dict[str, str | int]]
     built_at: datetime
-    #: The last date we can see a meeting for — stated literally, never implied
-    #: to be complete.
+    #: The last date a meeting is visible for. Stated literally, never implied complete.
     calendar_window_end: date | None

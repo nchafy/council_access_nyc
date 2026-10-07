@@ -1,14 +1,7 @@
-"""Assemble the static site.
+"""Assemble `site/` from the cached payloads `showup fetch` wrote. Never touches the network.
 
-Reads cached upstream payloads, produces `site/`. Nothing here talks to the
-network: fetching is a separate stage (`showup fetch` writes `etl/raw/`), so
-the build is reproducible and testable offline, and a network failure can never
-half-write a site.
-
-Failure posture is **fail closed** (outline §2.13). A source that parses to fewer
-rows than its floor raises, the build stops, and whatever was previously in
-`site/` is left untouched — a stale site that says how old it is beats a fresh
-site that is missing half its meetings.
+Fails closed (outline §2.13): a source below its floor raises, and the previous `site/`
+is left in place.
 """
 
 from __future__ import annotations
@@ -38,15 +31,12 @@ from .sources.members import current_by_district, load_members
 
 __all__ = ["SHORTLIST_SIZE", "BuildError", "build_site"]
 
-#: Owner's decision: five items. In Phase 1 the shortlist is purely
-#: chronological — the next five meetings — so it needs no ranking at all.
+#: Owner's decision: five. Phase 1 orders the shortlist chronologically, so it ranks nothing.
 SHORTLIST_SIZE = 5
 
 DISTRICT_COUNT = 51
 
-#: Below these, the parse is treated as broken rather than as "not much data".
-#: A floor is the difference between noticing a silent upstream change and
-#: publishing an empty site with a confident tone.
+#: Below these the parse is broken rather than thin, and `_check_floor` refuses the build.
 FLOORS = {"calendar": 40, "district_pages": DISTRICT_COUNT, "members": 300, "boards": 59}
 
 
@@ -69,10 +59,8 @@ def _load_boards_by_district(
 ) -> tuple[dict[int, tuple[DistrictBoard, ...]], dict[str, DistrictBoard]]:
     """Join the committed geometry crosswalk to the boards' contact details.
 
-    The crosswalk decides *which* boards cover a district (geometry); this dataset
-    supplies *how to reach* them. Neither alone is enough: `ruf7-3wgc` also carries
-    a `council_district` column, and using it would leave seven districts with no
-    board at all.
+    Geometry decides which boards cover a district; `ruf7-3wgc.council_district` would
+    leave seven with none (CLAUDE.md, "Community boards are joined by geometry").
     """
     boards = load_boards(raw / "community_boards.json")
     _check_floor("boards", len(boards))
@@ -140,15 +128,6 @@ def _load_districts(
         page = parsed_pages[number]
         seat = current.get(number)
 
-        # The two sources can genuinely disagree, and District 3 shows how:
-        # `uvw5-9znb` records Erik Bottcher's term ending 2026-02-03 with no
-        # successor row, while council.nyc.gov already names Carl Wilson. The
-        # scraped page is the fresher of the two — a special election lands there
-        # weeks before it lands in the open dataset.
-        #
-        # So a seat counts as filled when *either* source says someone holds it.
-        # Getting this backwards would tell a district with a sitting member that
-        # it has no representation, which is worse than a slightly stale name.
         name = page["member_name"] or (seat["name"] if seat else None)
         seat_conflict = bool(name) and seat is None
         member = (
@@ -185,11 +164,8 @@ def _load_districts(
 
 
 def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
-    """Every fetched source as `/references/` shows it: registry joined to fetch dates.
-
-    The registry in `fetch.py` carries the identifier, the URL and the window; the
-    manifest carries the fetch date and the row count. Neither is typed into a template.
-    """
+    """Every fetched source as `/references/` shows it: the `fetch.py` registry joined to
+    the manifest's fetch dates and row counts. Nothing here is typed into a template."""
     rows: list[dict] = []
     for source in SOURCES:
         recorded = manifest_sources.get(Path(source.filename).stem, {})
@@ -202,8 +178,6 @@ def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
                 "url": source.url,
                 "why": source.why,
                 "fetched_at": datetime.fromisoformat(str(fetched_at)) if fetched_at else None,
-                # The manifest's window where there is one: that is the number the
-                # browser compares against, so it is the number a reader can check.
                 "max_age_hours": recorded.get("max_age_hours", source.max_age_hours),
                 "rows": recorded.get("rows"),
             }
@@ -212,12 +186,8 @@ def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
 
 
 def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> dict:
-    """Build into a temporary directory, then swap it in.
-
-    Building in place would leave a broken site visible if rendering failed
-    halfway; building aside and swapping makes the publish atomic enough that a
-    reader never sees a partial site.
-    """
+    """Build into a temporary directory, then swap it in, so a half-rendered site is
+    never visible."""
     raw = Path(raw_dir)
     out = Path(out_dir)
     day = today or date.today()
@@ -229,8 +199,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
 
     districts, _, boards_by_code = _load_districts(raw, day)
 
-    # An absent register is a designed empty state; a register carrying nothing but
-    # future-dated editions is a refusal.
     budget_requests_file = raw / "board_budget_requests.json"
     try:
         budget_requests = load_budget_requests(budget_requests_file, today=day)
@@ -262,8 +230,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         render_not_found(built_at=now, window_end=window_end), encoding="utf-8"
     )
 
-    # /district/ exists so that a no-JavaScript form submit lands somewhere
-    # useful instead of a 404.
+    # /district/ is where a no-JavaScript form submit lands, instead of a 404.
     district_root = staging / "district"
     district_root.mkdir()
     (district_root / "index.html").write_text(
@@ -286,9 +253,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             encoding="utf-8",
         )
 
-    # The 59 community board pages. A board is a different view, not a variant of
-    # a district: it has a standing monthly cadence, a zoning review role, and it
-    # seats members of the public on committees.
     repo_root = Path(__file__).resolve().parents[2]
     boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
     board_root = staging / "board"
@@ -320,11 +284,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         encoding="utf-8",
     )
 
-    # Geometry for the address box. The city geocoder returns a coordinate but
-    # NOT a council district, so the browser has to do the point-in-polygon itself.
-    # Shipped simplified: 132 KB gzipped against 3.8 MB raw, measured to assign the
-    # same district as full precision on 99.99% of a citywide lattice
-    # (tests/unit/test_geo.py::TestSimplifiedGeometryAgrees).
+    # The city geocoder returns a coordinate but no council district, so the browser
+    # does the point-in-polygon against this.
     data_dir = staging / "data"
     data_dir.mkdir()
     council_polygons = load_features(raw / "districts.geojson", "coundist")
@@ -337,9 +298,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         encoding="utf-8",
     )
 
-    # Everything resolvable without the network: a district number, a neighbourhood
-    # name, a board name, or a ZIP. Typing one of these must never reach the
-    # geocoder — it is faster and it keeps the input on the machine.
+    # A district number, neighbourhood, board name or ZIP resolves from this, so typing
+    # one never reaches the geocoder.
     zips = load_zips(repo_root / CROSSWALK_PATH)
     lookup = {
         "districts": [{"n": d.number, "hoods": d.neighborhoods or ""} for d in districts],
@@ -389,8 +349,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "rows": budget_request_rows,
         }
 
-    # Every disclosure the pages used to carry inline now lives here, so the pages
-    # keep a source line and this page keeps the identifiers, windows and caveats.
     references_root = staging / "references"
     references_root.mkdir()
     (references_root / "index.html").write_text(

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from showup.fetch import MEMBER_ROW_FLOOR
+from showup.fetch import MEMBER_ROW_FLOOR, cache_path
 from showup.model import DISTRICT_COUNT
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -54,7 +54,7 @@ def district_page_html() -> dict[int, str]:
 # per-test for the build tests.
 def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int, str]) -> Path:
     """Populate `raw` with a cache that clears every source floor. Returns `raw`."""
-    (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
+    cache_path(raw, "calendar").write_text(calendar_html, encoding="utf-8")
 
     # Every district is needed to clear the floor, so the four real fixtures repeat.
     available = sorted(district_page_html)
@@ -62,7 +62,7 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
         str(n): district_page_html[available[(n - 1) % len(available)]]
         for n in range(1, DISTRICT_COUNT + 1)
     }
-    (raw / "district_pages.json").write_text(json.dumps(pages), encoding="utf-8")
+    cache_path(raw, "districts").write_text(json.dumps(pages), encoding="utf-8")
 
     members = [
         {
@@ -85,14 +85,14 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
         }
         for i in range(MEMBER_ROW_FLOOR)
     ]
-    (raw / "members.json").write_text(json.dumps(members), encoding="utf-8")
+    cache_path(raw, "members").write_text(json.dumps(members), encoding="utf-8")
 
     # From tests/fixtures and never etl/raw, which is gitignored: these rows carry the
     # real chair and district-manager names the privacy test checks.
-    shutil.copy2(FIXTURES / "community_boards.json", raw / "community_boards.json")
+    shutil.copy2(FIXTURES / "community_boards.json", cache_path(raw, "boards"))
 
     # Six boards and two editions, including the future-dated one the loader must refuse.
-    shutil.copy2(FIXTURES / "board_budget_requests.json", raw / "board_budget_requests.json")
+    shutil.copy2(FIXTURES / "board_budget_requests.json", cache_path(raw, "budget-requests"))
 
     # Synthetic squares, one per district: the build only counts features here, and
     # real-geometry accuracy is tests/unit/test_geo.py::TestSimplifiedGeometryAgrees.
@@ -118,7 +118,7 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
                 },
             }
         )
-    (raw / "districts.geojson").write_text(
+    cache_path(raw, "council-geometry").write_text(
         json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8"
     )
     return raw

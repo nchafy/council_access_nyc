@@ -21,7 +21,7 @@ from pathlib import Path
 from .model import BOARD_COUNT, DISTRICT_COUNT
 from .sources.boards import JOINT_INTEREST_AREAS
 
-__all__ = ["SOURCES", "FetchError", "fetch_all", "fetch_one"]
+__all__ = ["SOURCES", "FetchError", "cache_path", "fetch_all", "fetch_one", "manifest_key"]
 
 USER_AGENT = (
     "showup-nyc/0.1 (civic data ETL for a public-interest site; "
@@ -434,6 +434,23 @@ SOURCES: tuple[Source, ...] = (
         url="https://data.cityofnewyork.us/d/pri4-ifjk",
     ),
 )
+
+
+_BY_NAME: dict[str, Source] = {source.name: source for source in SOURCES}
+
+
+def cache_path(raw_dir: Path, name: str) -> Path:
+    """Where a registered source's payload sits under `raw_dir`.
+
+    `SOURCES` is the only place a cache filename is spelled, so a reader cannot drift from
+    the writer.
+    """
+    return Path(raw_dir) / _BY_NAME[name].filename
+
+
+def manifest_key(name: str) -> str:
+    """A source's key in `manifest.json`: its cache filename without the suffix."""
+    return Path(_BY_NAME[name].filename).stem
 
 
 def _age_hours(path: Path) -> float | None:

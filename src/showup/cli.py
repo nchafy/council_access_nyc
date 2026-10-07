@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 from .build import BuildError, build_site
-from .crosswalk import CrosswalkError, generate
-from .fetch import SOURCES, FetchError, fetch_all
+from .crosswalk import CROSSWALK_PATH, CrosswalkError, generate
+from .fetch import SOURCES, FetchError, cache_path, fetch_all
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -88,9 +88,9 @@ def _crosswalk(args: argparse.Namespace) -> int:
 
     try:
         data = generate(
-            raw / "districts.geojson",
-            raw / "community_districts.geojson",
-            raw / "modzcta.geojson",
+            cache_path(raw, "council-geometry"),
+            cache_path(raw, "community-geometry"),
+            cache_path(raw, "zip-geometry"),
         )
     except CrosswalkError as error:
         print(f"crosswalk refused: {error}", file=sys.stderr)
@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         help="regenerate the council-district -> community-board crosswalk (slow, rare)",
     )
     cross.add_argument("--raw", default="etl/raw")
-    cross.add_argument("--out", default="crosswalks/council_to_boards.json")
+    cross.add_argument("--out", default=str(CROSSWALK_PATH))
 
     args = parser.parse_args(argv)
     return HANDLERS[args.command](args)

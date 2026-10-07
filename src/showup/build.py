@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
 from .crosswalk import load as load_crosswalk
-from .fetch import MEMBER_ROW_FLOOR, SOURCES
+from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
 from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
 from .render import (
@@ -65,7 +65,8 @@ def _load_boards_by_district(
     Geometry decides which boards cover a district; `ruf7-3wgc.council_district` would
     leave seven with none (CLAUDE.md, "Community boards are joined by geometry").
     """
-    boards = load_boards(raw / "community_boards.json")
+    boards_file = cache_path(raw, "boards")
+    boards = load_boards(boards_file)
     _check_floor("boards", len(boards))
 
     try:
@@ -82,7 +83,7 @@ def _load_boards_by_district(
             if board is None:
                 raise BuildError(
                     f"crosswalk references community district {code}, which is not in "
-                    "community_boards.json — the two sources have drifted apart"
+                    f"{boards_file.name} — the two sources have drifted apart"
                 )
             entry = DistrictBoard(
                 code=code,
@@ -108,8 +109,8 @@ def _load_boards_by_district(
 def _load_districts(
     raw: Path, today: date
 ) -> tuple[list[District], dict[int, dict], dict[str, DistrictBoard]]:
-    pages = json.loads((raw / "district_pages.json").read_text(encoding="utf-8"))
-    members = load_members(raw / "members.json")
+    pages = json.loads(cache_path(raw, "districts").read_text(encoding="utf-8"))
+    members = load_members(cache_path(raw, "members"))
     _check_floor("members", len(members))
     current = current_by_district(members, today)
 
@@ -171,7 +172,7 @@ def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
     the manifest's fetch dates and row counts. Nothing here is typed into a template."""
     rows: list[dict] = []
     for source in SOURCES:
-        recorded = manifest_sources.get(Path(source.filename).stem, {})
+        recorded = manifest_sources.get(manifest_key(source.name), {})
         cached = raw / source.filename
         fetched_at = recorded.get("fetched_at") or (_mtime(cached) if cached.exists() else None)
         rows.append(
@@ -196,13 +197,14 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     day = today or date.today()
     now = datetime.now()
 
-    calendar_html = (raw / "legistar_calendar.html").read_text(encoding="utf-8", errors="replace")
+    calendar_file = cache_path(raw, "calendar")
+    calendar_html = calendar_file.read_text(encoding="utf-8", errors="replace")
     meetings = parse_calendar(calendar_html)
     _check_floor("calendar", len(meetings))
 
     districts, _, boards_by_code = _load_districts(raw, day)
 
-    budget_requests_file = raw / "board_budget_requests.json"
+    budget_requests_file = cache_path(raw, "budget-requests")
     try:
         budget_requests = load_budget_requests(budget_requests_file, today=day)
     except BudgetRequestError as error:
@@ -291,7 +293,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     # does the point-in-polygon against this.
     data_dir = staging / "data"
     data_dir.mkdir()
-    council_polygons = load_features(raw / "districts.geojson", "coundist")
+    council_polygons = load_features(cache_path(raw, "council-geometry"), "coundist")
     if len(council_polygons) != DISTRICT_COUNT:
         raise BuildError(
             f"district geometry has {len(council_polygons)} features, expected {DISTRICT_COUNT}"
@@ -324,29 +326,29 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         shutil.copy2(headers, staging / "_headers")
 
     manifest_sources: dict[str, dict[str, str | int]] = {
-        "legistar_calendar": {
-            "fetched_at": _mtime(raw / "legistar_calendar.html"),
+        manifest_key("calendar"): {
+            "fetched_at": _mtime(calendar_file),
             "max_age_hours": 12,
             "rows": len(meetings),
         },
-        "district_pages": {
-            "fetched_at": _mtime(raw / "district_pages.json"),
+        manifest_key("districts"): {
+            "fetched_at": _mtime(cache_path(raw, "districts")),
             "max_age_hours": 24 * 40,
             "rows": DISTRICT_COUNT,
         },
-        "members": {
-            "fetched_at": _mtime(raw / "members.json"),
+        manifest_key("members"): {
+            "fetched_at": _mtime(cache_path(raw, "members")),
             "max_age_hours": 24 * 40,
             "rows": DISTRICT_COUNT,
         },
-        "community_boards": {
-            "fetched_at": _mtime(raw / "community_boards.json"),
+        manifest_key("boards"): {
+            "fetched_at": _mtime(cache_path(raw, "boards")),
             "max_age_hours": 24 * 90,
             "rows": BOARD_COUNT,
         },
     }
     if budget_requests_file.exists():
-        manifest_sources["board_budget_requests"] = {
+        manifest_sources[manifest_key("budget-requests")] = {
             "fetched_at": _mtime(budget_requests_file),
             "max_age_hours": 24 * 30,
             "rows": budget_request_rows,

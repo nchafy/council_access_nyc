@@ -1,9 +1,7 @@
 """Building a whole site from fixtures, and the hostile-content case.
 
-`test_hostile_committee_name_renders_inert` is the test that matters most here: it
-is the end-to-end proof of the claim in docs/phase-1-scope.md §4.1 that scraped
-content cannot become executable markup. It drives a real hostile string all the
-way from an upstream payload to rendered HTML.
+`test_hostile_committee_name_renders_inert` drives a hostile string from an upstream
+payload to rendered HTML, which is the end-to-end proof of docs/phase-1-scope.md §4.1.
 """
 
 from __future__ import annotations
@@ -52,12 +50,10 @@ class TestBuild:
         for source in manifest["sources"].values():
             assert "fetched_at" in source
             assert "max_age_hours" in source
-        # Staleness is the browser's job; baking a boolean here is what lets an
-        # abandoned site claim to be fresh.
+        # Staleness is the browser's job; a baked boolean is what lets a dead site lie.
         assert "degraded" not in json.dumps(manifest)
 
     def test_a_short_calendar_fails_closed(self, raw_dir, tmp_path):
-        # Below the floor must raise, not publish a nearly-empty site.
         (raw_dir / "legistar_calendar.html").write_text(
             '<table id="ctl00_ContentPlaceHolder1_gridCalendar_ctl00"></table>',
             encoding="utf-8",
@@ -108,10 +104,8 @@ class TestRenderedSafety:
             now=datetime(2026, 9, 22, 9, 0),
         )
 
-        # The literal tag must not appear; the escaped form must.
         assert "<script>alert" not in html
         assert "&lt;script&gt;" in html
-        # And no executable construct anywhere.
         assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", html)
         assert "onerror" not in html.lower()
         assert "javascript:" not in html.lower()
@@ -125,9 +119,8 @@ class TestRenderedSafety:
             window_end=None,
             today=date(2026, 9, 22),
         )
-        # The escaped form legitimately contains the characters "onmouseover="
-        # as text. What must be absent is the *unescaped* quote that would end
-        # the attribute and start a new one.
+        # The characters "onmouseover=" are legitimate text; what must be absent is the
+        # unescaped quote that would end the attribute and start a new one.
         assert '" onmouseover="' not in html
         assert "&quot; onmouseover=&quot;" in html
 
@@ -152,7 +145,6 @@ class TestVacantSeat:
             today=date(2026, 9, 22),
         )
         assert "vacant" in html.lower()
-        # The rest of the page must still be useful to that district's residents.
         assert "Testimony and attendance" in html
         assert "hearings@council.nyc.gov" in html
 
@@ -194,8 +186,6 @@ class TestIndex:
         assert 'id="district-select"' in html
         assert 'id="board-select"' in html
         assert 'href="/board/302/"' in html
-        # The difference between the two must be stated, not assumed — residents
-        # routinely want the board and go looking for the council district.
         assert "most local unit" in html
 
 
@@ -207,8 +197,6 @@ class TestCrosswalk:
         assert sorted(crosswalk) == list(range(1, 52))
 
     def test_every_district_has_at_least_one_board(self):
-        # The naive ruf7-3wgc.council_district join left 7 districts empty. This
-        # is the assertion that would have caught it.
         crosswalk = load_crosswalk(REPO_ROOT / "crosswalks" / "council_to_boards.json")
         for number, boards in crosswalk.items():
             assert boards, f"council district {number} has no community board"
@@ -222,11 +210,8 @@ class TestCrosswalk:
             assert sum(shares) <= 1.02, f"district {number} shares sum above 1"
 
     def test_known_overlaps_are_right(self):
-        """Spot-check against geography a human can verify.
-
-        District 35 covers Fort Greene, Clinton Hill and Crown Heights, which sit
-        in Brooklyn community boards 2, 8 and 9 (codes 302/308/309).
-        """
+        """District 35 covers Fort Greene, Clinton Hill and Crown Heights, which are
+        Brooklyn community boards 2, 8 and 9 — codes 302/308/309."""
         crosswalk = load_crosswalk(REPO_ROOT / "crosswalks" / "council_to_boards.json")
         assert {code for code, _ in crosswalk[35]} == {"302", "308", "309"}
         # District 51 is Staten Island's south shore: board 503 dominates.
@@ -250,7 +235,7 @@ class TestBoardsOnThePage:
         page = (out / "district" / "35" / "index.html").read_text()
         assert "Brooklyn Community Board 2" in page
         assert "community board" in page.lower()
-        # The cadence must appear verbatim, not reformatted into a date.
+        # Verbatim, not reformatted into a date.
         assert "Wednesday" in page or "Tuesday" in page or "Thursday" in page
 
     def test_chair_and_district_manager_are_never_rendered(self, raw_dir, tmp_path):
@@ -285,21 +270,15 @@ class TestBoardView:
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         page = " ".join((out / "board" / "302" / "index.html").read_text().split())
-        # The fact most residents do not know, and the reason this view exists.
         assert "non-Board (public) members" in page
         assert "not allowed to vote" in page
-        # Verified appointment facts.
         assert "up to 50 unsalaried members" in page
         assert "Borough President" in page
         assert "reside, work, or have some other significant interest" in page
 
     def test_board_page_says_the_office_is_not_the_venue(self, raw_dir, tmp_path):
-        """A field note, not a disclosure paragraph: the address is directly above it.
-
-        Silence there reads as *that is where the board meets* — wrong on 8 of 8 boards
-        checked — so this one line stays on the page when the rest of that paragraph
-        moved to /references/.
-        """
+        """A field note, not a disclosure paragraph: the address is directly above it, and
+        silence there reads as "that is where the board meets" — wrong on 8 of 8 checked."""
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         page = " ".join((out / "board" / "302" / "index.html").read_text().split())
@@ -309,9 +288,8 @@ class TestBoardView:
     def test_the_board_page_does_not_catalogue_what_is_missing(self, raw_dir, tmp_path):
         """Owner, 2026-10-07: absences nobody asked about are padding, not honesty.
 
-        Refusing to *invent* a fact is untouched — the office-is-not-the-venue note above
-        and the district page's time limits both stay. What is gone is the list of facts
-        the City happens not to publish.
+        Refusing to *invent* a fact is untouched; listing what the City does not publish
+        is what went.
         """
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
@@ -321,11 +299,10 @@ class TestBoardView:
         assert "measures public opinion" not in page
 
     def test_board_page_distinguishes_the_office_from_the_full_board_venue(self, raw_dir, tmp_path):
-        """The office is the committee room for several boards and not the full-board venue.
+        """The office is the committee room for several boards, not the full-board venue.
 
-        Boards publish that split explicitly — Bronx CB11 lists "Board Office" against every
-        committee and "Varies" against the full board; Brooklyn CB4 and SI CB3 separate the two
-        by name. Presenting the office as where the board meets is the error this guards.
+        Bronx CB11 lists "Board Office" against every committee and "Varies" against the
+        full board; Brooklyn CB4 and SI CB3 separate the two by name.
         """
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
@@ -343,12 +320,8 @@ class TestBoardView:
         assert 'href="/district/35/"' in page
 
     def test_board_shares_are_of_the_board_not_the_district(self, raw_dir, tmp_path):
-        """The two crosswalk directions answer different questions.
-
-        On district 35's page, Brooklyn CB 2 covers ~44% *of the district*. On CB
-        2's own page, district 33 holds ~53% *of the board*. Transposing one into
-        the other would silently mis-state both.
-        """
+        """The two crosswalk directions answer different questions: Brooklyn CB 2 covers
+        ~44% *of district 35*, while district 33 holds ~53% *of CB 2*."""
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         board_page = (out / "board" / "302" / "index.html").read_text()
@@ -380,9 +353,8 @@ class TestBoardView:
 
 
 class TestBudgetRequestsOnTheBoardPage:
-    """The eighth source on the page it belongs to. The honesty boundary is the spec:
-    an annual filing, not current activity; a request, not a commitment; the agency's
-    words, not an outcome."""
+    """The eighth source, on the page it belongs to. The honesty boundary is the spec: an
+    annual filing not current activity, a request not a commitment, quoted not bucketed."""
 
     @staticmethod
     def _page(raw_dir, tmp_path, code: str = "302") -> str:
@@ -410,8 +382,7 @@ class TestBudgetRequestsOnTheBoardPage:
 
     def test_the_agencys_reply_is_quoted_not_bucketed(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        # Five different phrasings of a reply, none of which survives a
-        # supported/not-supported bucket intact.
+        # Five phrasings, none of which survives a supported/not-supported bucket.
         assert "brought to the attention of your Elected Officials" in page
         assert "recommended funding for this request in part" in page
         assert "try to accommodate this issue within existing resources" in page
@@ -510,17 +481,12 @@ class TestShippedData:
         lookup = json.loads((out / "data" / "lookup.json").read_text())
         assert len(lookup["districts"]) == 51
         assert len(lookup["boards"]) == 59
-        # ZIPs come from the committed crosswalk, so this also guards against the
-        # crosswalk losing its zips section.
         assert len(lookup["zips"]) > 150
-        # Every ZIP maps to at least one real district number.
         for code, districts in lookup["zips"].items():
             assert code.isdigit() and len(code) == 5
             assert districts and all(1 <= n <= 51 for n in districts)
 
     def test_a_wrong_district_count_fails_closed(self, raw_dir, tmp_path):
-        # Geometry with the wrong number of features means the upstream changed;
-        # the build must refuse rather than ship a partial address lookup.
         (raw_dir / "districts.geojson").write_text(
             json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"
         )
@@ -531,10 +497,9 @@ class TestShippedData:
 class TestProgressiveDisclosureOnRequestCards:
     """Owner, 2026-10-07: collapsed a card is its headers, expanded it is the detail.
 
-    Native `<details>`, because the CSP is `script-src 'self'` with no inline script and
-    R39 requires the page to work with JavaScript off. The `<h3>` sits inside the
-    `<summary>`: Chrome's accessibility tree exposes both the heading and the
-    disclosure's expanded state that way, which `tests/browser/test_keyboard.py` holds.
+    Native `<details>`, because the CSP forbids inline script and R39 requires the page to
+    work without JavaScript. The `<h3>` inside the `<summary>` keeps both the heading and
+    the expanded state in the accessibility tree (tests/browser/test_keyboard.py).
     """
 
     @staticmethod
@@ -573,11 +538,8 @@ class TestProgressiveDisclosureOnRequestCards:
 
 
 class TestReferencesPage:
-    """One page carrying every identifier, fetch date, window and relocated caveat.
-
-    Built from the `fetch.SOURCES` registry joined to `manifest.json`, so a source
-    cannot be fetched and used without appearing here.
-    """
+    """One page carrying every identifier, fetch date, window and relocated caveat, built
+    from the `fetch.SOURCES` registry, so a source cannot be used without appearing."""
 
     @staticmethod
     def _page(raw_dir, tmp_path) -> str:
@@ -606,15 +568,12 @@ class TestReferencesPage:
 
         page = self._page(raw_dir, tmp_path)
         assert page.count("<dt>Freshness window</dt>") == len(SOURCES)
-        # The manifest's window where there is one: that is the number the browser
-        # compares a fetch date against, so it is the number worth publishing.
         assert "12 hours" in page
         assert "40 days" in page
 
     def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        # The five sources the build reads; the two geometry files the committed
-        # crosswalk was generated from are not in this fixture's cache.
+        # Six of the eight: the two geometry files are not in this fixture's cache.
         assert page.count("<dt>Fetched</dt>") == 6
 
     def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):

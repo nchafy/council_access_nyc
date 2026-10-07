@@ -43,7 +43,25 @@
     });
   });
 
-  // 2. Staleness, computed against the reader's clock.
+  // 2. Staleness, computed against the reader's clock. The notice states the fetch
+  // time and nothing else: "out of date" was our verdict on the number, not the number.
+  var MONTHS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+
+  // `%-d %B %Y, %H:%M`, the same spelling the footer's build-time stamp uses.
+  function stamp(milliseconds) {
+    var when = new Date(milliseconds);
+    function pad(value) {
+      return (value < 10 ? "0" : "") + value;
+    }
+    return (
+      when.getDate() + " " + MONTHS[when.getMonth()] + " " + when.getFullYear() +
+      ", " + pad(when.getHours()) + ":" + pad(when.getMinutes())
+    );
+  }
+
   var footer = document.querySelector("footer.site");
   if (!footer) return;
 
@@ -61,7 +79,7 @@
         if (isNaN(fetchedAt)) return;
         var ageHours = (Date.now() - fetchedAt) / 3600000;
         if (source.max_age_hours && ageHours > source.max_age_hours) {
-          stale.push({ name: name, days: Math.floor(ageHours / 24) });
+          stale.push({ name: name, fetchedAt: fetchedAt });
         }
       });
 
@@ -69,20 +87,14 @@
 
       // textContent, never innerHTML — the rule holds even for strings we
       // generated ourselves, so there is no judgement call at any call site.
-      var warning = document.createElement("p");
-      warning.className = "staleness";
-      var worst = stale.reduce(function (a, b) {
-        return b.days > a.days ? b : a;
+      var notice = document.createElement("p");
+      notice.className = "staleness";
+      var oldest = stale.reduce(function (a, b) {
+        return b.fetchedAt < a.fetchedAt ? b : a;
       });
-      warning.textContent =
-        "This data is out of date — " +
-        worst.name.replace(/_/g, " ") +
-        " was last fetched " +
-        worst.days +
-        " day" +
-        (worst.days === 1 ? "" : "s") +
-        " ago. The Council's own calendar is at nyc.legistar.com.";
-      footer.insertBefore(warning, footer.firstChild);
+      notice.textContent =
+        "Data fetched " + stamp(oldest.fetchedAt) + " (" + oldest.name.replace(/_/g, " ") + ").";
+      footer.insertBefore(notice, footer.firstChild);
     })
     .catch(function () {
       // A missing manifest is not worth a visible error: the page's own facts

@@ -146,13 +146,22 @@ class TestTheStalenessNoticeReallyRenders:
     def test_an_aged_manifest_produces_a_visible_notice(self, staleness_notice):
         assert staleness_notice
 
-    def test_it_states_the_age_rather_than_instructing(self, staleness_notice):
-        assert "out of date" in staleness_notice
-        assert "was last fetched" in staleness_notice
+    def test_it_states_the_fetch_time(self, staleness_notice):
+        # The aged fixture claims 2019-01-01T00:00:00+00:00 for every source, so the
+        # stamp is that instant in the reader's own zone — which is the arithmetic
+        # §2.12 exists to do at read time rather than at build time.
+        assert staleness_notice.startswith("Data fetched ")
+        assert "2018" in staleness_notice or "2019" in staleness_notice
+        assert re.search(r"\b\d{1,2}:\d{2}\b", staleness_notice), "no time of day"
 
-    def test_it_names_the_source_and_how_old_it_is(self, staleness_notice):
-        assert "days ago" in staleness_notice
-        assert "The Council's own calendar is at nyc.legistar.com" in staleness_notice
+    def test_it_names_the_source_the_stamp_belongs_to(self, staleness_notice):
+        assert "legistar calendar" in staleness_notice
+
+    def test_it_carries_no_verdict_and_no_instruction(self, staleness_notice):
+        for ours in ("out of date", "stale", "was last fetched", "days ago", "should"):
+            assert ours not in staleness_notice, (
+                f"{ours!r} is our verdict on the number rather than the number"
+            )
 
 
 @pytest.fixture(scope="module")

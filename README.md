@@ -10,7 +10,7 @@ week, not to score their neighbourhood.
 
 ## Status — Phase 1 built, running locally, not deployed
 
-110 pages generated from live city data: **51 council district pages** and **59 community
+115 pages generated from live city data: **51 council district pages** and **59 community
 board pages**. There is no domain and no hosting yet, by decision — see
 [docs/phase-1-scope.md](docs/phase-1-scope.md).
 
@@ -38,7 +38,7 @@ will be skipped.
 | Tests | **~9,000**, of which ~8,500 are generated fuzz cases |
 | Coverage | **100%**, enforced (`--cov-fail-under=100`) |
 | Live checks | **~350** against a running server (`make verify`) |
-| Runtime dependencies | **zero** so far — allowed, none needed yet |
+| Runtime dependencies | **two** — jinja2, beautifulsoup4; both build-time only |
 
 ## What it answers today
 
@@ -123,8 +123,9 @@ measurement on a reference profile, and the gate's own output says so in those w
 
 - **ETL:** Python 3.12 (uv, ruff, pytest), build-time only, no origin server
 - **Frontend:** vanilla ES modules. No framework. One ~7 KB script for the address box
-- **Runtime dependencies: none so far.** Open-source dependencies are allowed
-  ([docs/dependencies.md](docs/dependencies.md)); nothing has needed one yet
+- **Runtime dependencies: jinja2 and beautifulsoup4**, both build-time only — they render
+  `site/` and read scraped HTML, and neither reaches a reader
+  ([docs/dependencies.md](docs/dependencies.md))
 - **Third parties in the browser: none, and this one is a rule.** No analytics, no tag
   manager, no hosted fonts, no map tiles — it is a CSP-enforced promise to readers.
   The address you type goes to the NYC geocoder and nowhere else, and never enters a URL,
@@ -146,7 +147,7 @@ measurement on a reference profile, and the gate's own output says so in those w
   invariant
 - The community board view — a second page type, not a variant of the first
 - 100% coverage, a committed fuzz corpus, and the testing rules in `CLAUDE.md`
-- **M5, nearly all of it** — axe clean on all 114 pages at WCAG 2.2 AA; 122 keyboard and
+- **M5, nearly all of it** — axe clean on all 115 pages at WCAG 2.2 AA; 135 keyboard and
   accessibility-tree checks over 9 page types driven with real `Tab` keypresses; a gate
   that fails on any console error or CSP violation; the 60 KB and 3 s budgets enforced.
   All four run in CI, and all four fail loudly rather than skipping if Chrome is absent.

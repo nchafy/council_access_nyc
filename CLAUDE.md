@@ -37,18 +37,44 @@ would surface for the first time at deploy. `scripts/serve.py` applies the real
 source-conflict notice, missing committees, designed empty states. Check it after
 any renderer change.
 
-**State of play (2026-09-23).** Phase 1 is **built and runs locally**: 110 pages
-(51 district, 59 board), eight fetchers, 100% enforced coverage, CI green. Not
-deployed — no domain, no hosting, no scheduled refresh, all deferred together.
+**State of play (2026-10-07).** Phase 1 is **built and runs locally**: 115 pages
+(51 district, 59 board, two indexes, `/references/`, 404), eight fetchers, 9,233 tests at
+100% enforced coverage, 481 live checks, 77 browser gates, axe clean at WCAG 2.2 AA on
+every page. Heaviest page 14.0 KB gzipped of the 60 KB budget; cold-load p95 869 ms
+against the 3 s promise. Not deployed — no domain, no hosting, no scheduled refresh, all
+deferred together.
 
-The accessibility and performance pass is now built and gated in CI: axe clean on all
-115 pre-rendered pages at WCAG 2.2 AA, 135 keyboard and accessibility-tree checks over
-9 page types, no console error or CSP violation on any page, 13.9 KB gzipped on the
-heaviest page against the 60 KB budget, and a 906 ms cold-load p95 on throttled 3G
-against the 3 s promise. **The one open Phase 1 item is a real screen-reader pass**,
-which is the one part of R39 no gate can stand in for — the procedure and the record
-are in `docs/accessibility-pass.md`. `README.md` has the done/not-done list;
-`docs/phase-1-scope.md` §6 has the exit criteria ticked individually.
+**The one open Phase 1 item is a real screen-reader pass.** No gate substitutes for it;
+`docs/accessibility-pass.md` §3 is the procedure and §4 is the record, which says NOT RUN.
+Everything else in `docs/phase-1-scope.md` §6 is ticked.
+
+### Where to pick up
+
+| Open | Where |
+|---|---|
+| Screen-reader pass — the last Phase 1 criterion | `docs/accessibility-pass.md` §3.2, steps 5-11 |
+| Scheduled refresh; one source has a 12-hour window and nothing refreshes it | `docs/refresh.md` |
+| Hosting, domain, deploy — deferred together, and they gate the refresh | `docs/phase-1-scope.md` §7 |
+| Owner decisions still open (favicon/identity, public vs private repo) | `docs/phase-1-scope.md` §7 |
+| Board meeting venues: 39 of 59 obtainable, refused for now with the evidence | `docs/board-meeting-sources.json`, `docs/OBSERVATIONS.md` |
+
+### The binding documents
+
+Read these before changing anything they cover; each is a decision with evidence, not a
+preference.
+
+| Document | Governs |
+|---|---|
+| `docs/voice.md` | every user-facing string: no imperatives, no second person, no advice, headings name a thing, provenance lives on `/references/` |
+| `docs/commits.md` | commit size and message; one commit, one claim |
+| `docs/pull-requests.md` | the review loop; distrust the description and re-derive the number |
+| `docs/dependencies.md` | open-source dependencies allowed; no install-time code execution, no browser dependency |
+| `.claude/skills/validate/SKILL.md` | the nine gates, and the baseline-diff protocol for a refactor |
+| `docs/phase-1-scope.md` | scope, the §4 threat model, the §6 exit criteria |
+| `docs/OBSERVATIONS.md` | the dated evidence log. Append to it; never rewrite an entry |
+
+`make verify` passing is **necessary and not sufficient** — it excludes the four browser
+gates. `make gates` runs those.
 
 Building a gate? **Serve behind the real `_headers`, always.** `scripts/serve.py` has
 `background_server()` for this. The CSP already broke a shipped feature silently once:

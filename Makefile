@@ -45,8 +45,11 @@ fmt: ## apply ruff formatting
 	uv run ruff format .
 	uv run ruff check --fix .
 
+# COVERAGE_FILE is per-process: two suites in one worktree otherwise share the default
+# .coverage and overwrite each other, which reports a wrong total while every test passes.
 test: ## unit and contract tests (no network, no browser)
-	uv run pytest -m "not upstream and not browser"
+	COVERAGE_FILE=.coverage.$$$$ uv run pytest -m "not upstream and not browser"
+	@rm -f .coverage.*
 
 browser: build axe-fetch ## every browser gate in one pytest run (~110 s)
 	# --no-cov: the 100% floor in addopts applies to whatever subset runs, and the

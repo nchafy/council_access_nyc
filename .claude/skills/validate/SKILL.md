@@ -60,6 +60,17 @@ Do not treat these as interchangeable — each has already caught something no o
   (throttled cold load). Only the first is enforceable on every commit.
 - **`make shot`** is the only gate a human reads. An unstyled page passes every HTTP check.
 
+## Never run two suites at once in one worktree
+
+`COVERAGE_FILE` defaults to `.coverage` in the working directory, so concurrent pytest runs
+overwrite each other's data. **Every test passes and the total is wrong** — measured at
+100.00%, 93.16% and 94.52% across three runs of an identical command with six pytest processes
+live. A false 100% is the dangerous direction: it passes genuinely uncovered code through a gate
+this project treats as a hard floor.
+
+`make test` sets a per-process `COVERAGE_FILE`. If you invoke pytest directly while anything
+else might be running, do the same.
+
 ## Coverage is a floor, not evidence
 
 100% line coverage is enforced (`--cov-fail-under=100`) and it is the *minimum*. It says every

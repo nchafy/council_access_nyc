@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from showup.fetch import MEMBER_ROW_FLOOR
+from showup.model import DISTRICT_COUNT
+
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,9 +56,12 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
     """Populate `raw` with a cache that clears every source floor. Returns `raw`."""
     (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
 
-    # All 51 are needed to clear the floor, so the four real fixtures repeat.
+    # Every district is needed to clear the floor, so the four real fixtures repeat.
     available = sorted(district_page_html)
-    pages = {str(n): district_page_html[available[(n - 1) % len(available)]] for n in range(1, 52)}
+    pages = {
+        str(n): district_page_html[available[(n - 1) % len(available)]]
+        for n in range(1, DISTRICT_COUNT + 1)
+    }
     (raw / "district_pages.json").write_text(json.dumps(pages), encoding="utf-8")
 
     members = [
@@ -66,18 +72,18 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
             "term_start": "2026-01-01T00:00:00.000",
             "term_end": "2029-12-31T00:00:00.000",
         }
-        for n in range(1, 52)
+        for n in range(1, DISTRICT_COUNT + 1)
     ]
     # Pad past the members floor with historical rows, as the real dataset has.
     members += [
         {
             "name": f"Former Member {i}",
             "council_member_id": str(2000 + i),
-            "district": str((i % 51) + 1),
+            "district": str((i % DISTRICT_COUNT) + 1),
             "term_start": "2014-01-01T00:00:00.000",
             "term_end": "2017-12-31T00:00:00.000",
         }
-        for i in range(300)
+        for i in range(MEMBER_ROW_FLOOR)
     ]
     (raw / "members.json").write_text(json.dumps(members), encoding="utf-8")
 
@@ -88,10 +94,10 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
     # Six boards and two editions, including the future-dated one the loader must refuse.
     shutil.copy2(FIXTURES / "board_budget_requests.json", raw / "board_budget_requests.json")
 
-    # 51 synthetic squares: the build needs 51 features, and real-geometry accuracy is
-    # tests/unit/test_geo.py::TestSimplifiedGeometryAgrees against the actual DCP file.
+    # Synthetic squares, one per district: the build only counts features here, and
+    # real-geometry accuracy is tests/unit/test_geo.py::TestSimplifiedGeometryAgrees.
     features = []
-    for n in range(1, 52):
+    for n in range(1, DISTRICT_COUNT + 1):
         x0 = -74.3 + (n - 1) * 0.02
         y0 = 40.5
         features.append(

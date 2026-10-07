@@ -139,6 +139,10 @@ BUDGET_REQUEST_COLUMNS = (
     "publication",
     "tracking_code",
 )
+#: `uvw5-9znb` carries every term ever served, so the current 51 are a small fraction of
+#: it; under this the dataset has been truncated rather than gone quiet.
+MEMBER_ROW_FLOOR = 300
+
 BUDGET_REQUESTS_DATASET = "vn4m-mk4t"
 #: Editions run 3,411-3,814 rows; below 3,000 the shape has changed, not the year.
 BUDGET_REQUEST_ROW_FLOOR = 3_000
@@ -355,7 +359,7 @@ SOURCES: tuple[Source, ...] = (
         fetch=_socrata_rows(
             "uvw5-9znb", "name,council_member_id,term_start,term_end,district,office_id"
         ),
-        invariant=_json_rows(300),
+        invariant=_json_rows(MEMBER_ROW_FLOOR),
         min_bytes=50_000,
         max_age_hours=24 * 30,
         why="term windows decide which seats are currently held",

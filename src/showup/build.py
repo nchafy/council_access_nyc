@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
 from .crosswalk import load as load_crosswalk
-from .fetch import SOURCES
+from .fetch import MEMBER_ROW_FLOOR, SOURCES
 from .geo import load_features, to_geojson
 from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
 from .render import (
@@ -38,7 +38,7 @@ SHORTLIST_SIZE = 5
 FLOORS = {
     "calendar": 40,
     "district_pages": DISTRICT_COUNT,
-    "members": 300,
+    "members": MEMBER_ROW_FLOOR,
     "boards": BOARD_COUNT,
 }
 

@@ -4,12 +4,7 @@
     showup build [--raw etl/raw] [--out site]
     showup crosswalk                         regenerate the geometry crosswalk
 
-Kept deliberately thin: it parses arguments, calls the module that does the work,
-and reports. Anything worth testing lives in the modules it calls.
-
-The report lines are not decoration — they are how a human notices drift, and they
-are asserted in `tests/unit/test_cli.py`, because a change to one of them silently
-failed to apply once and the board page count stopped printing for two commits.
+The report lines are asserted in `tests/unit/test_cli.py`: they are how drift is noticed.
 """
 
 from __future__ import annotations
@@ -37,7 +32,6 @@ def _build(args: argparse.Namespace) -> int:
     try:
         report = build_site(raw, out)
     except BuildError as error:
-        # Fail closed: say what broke, leave the previous site alone.
         print(f"build refused: {error}", file=sys.stderr)
         return 1
 
@@ -67,7 +61,6 @@ def _build(args: argparse.Namespace) -> int:
 def _fetch(args: argparse.Namespace) -> int:
     raw = (REPO_ROOT / args.raw).resolve()
     if args.only is None and not args.force:
-        # Without this, a first-time run looks like a hang for eight minutes.
         print("refreshing the cache (district pages take ~8.5 min at the rate")
         print("council.nyc.gov's robots.txt asks for; skipped if already fresh)")
 
@@ -83,8 +76,6 @@ def _fetch(args: argparse.Namespace) -> int:
     print(f"fetched {len(fetched)}, already fresh {len(fresh)}, failed {len(report['failed'])}")
     if report["failed"]:
         print(f"  failed: {', '.join(report['failed'])}", file=sys.stderr)
-        # The operator must be told the cache still holds the last good copies, or
-        # they will assume the site is now broken.
         print("  previous cached copies were kept", file=sys.stderr)
         return 1
     return 0
@@ -118,9 +109,7 @@ def _crosswalk(args: argparse.Namespace) -> int:
     return 0
 
 
-#: A table rather than a chain of `if`s. There is then no unreachable "unknown
-#: command" branch to leave untested, and adding a subcommand without a handler
-#: raises a KeyError loudly instead of silently returning an exit code.
+#: A table, so there is no unreachable "unknown command" branch to leave untested.
 HANDLERS = {"build": _build, "fetch": _fetch, "crosswalk": _crosswalk}
 
 

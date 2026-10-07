@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} — Show Up NYC</title>
-<meta name="description" content="What your city government is doing, and what you can still do about it.">
+<meta name="description" content="City Council hearings and deadlines, council districts, and community boards.">
 <meta name="referrer" content="no-referrer">
 <link rel="stylesheet" href="/assets/site.css">
 </head>
@@ -12,19 +12,16 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="site">
   <p class="wordmark"><a href="/">Show Up NYC</a></p>
-  <p class="tagline">What your city government is doing, and what you can still do about it.</p>
+  <p class="tagline">City Council hearings and deadlines, council districts, and community boards.</p>
 </header>
 <main id="main">
 {% block body %}{% endblock +%}
 </main>
 <footer class="site">
   <p class="freshness" data-built-at="{{ built_at.isoformat(timespec="seconds") }}">
-    Data fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}. {% if window_end %}We can see meetings scheduled through {{ window_end.strftime("%-d %B %Y") }}.{% else %}No forward window could be determined from the calendar.{% endif +%}
+    Data fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}. {% if window_end %}Meetings scheduled through {{ window_end.strftime("%-d %B %Y") }}.{% else %}No forward window could be determined from the calendar.{% endif +%}
   </p>
-  <p class="caveat">
-    Hearings are deferred or moved without notice.
-    <strong>Confirm on Legistar before you travel.</strong>
-  </p>
+  <p class="caveat">Hearings are deferred or moved without notice.</p>
   <p class="caveat">
     Nothing here measures public opinion. No City source records who attended a
     hearing, who testified, or which side they took.

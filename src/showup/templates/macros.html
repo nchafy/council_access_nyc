@@ -3,7 +3,7 @@
 {% macro em(text) %}<em>{{ text }}</em>{% endmacro %}
 {% macro lines(parts) %}{% for part in parts if part %}{% if not loop.first %}<br>{% endif %}{{ part }}{% endfor %}{% endmacro %}
 {% macro email_suppressed(reason) %}<em>Not shown — {{ reason }}.</em>{% endmacro %}
-{% macro cadence(text) %}{{ text }}<br><small>The board's own published wording. Confirm on their site — boards move meetings.</small>{% endmacro %}
+{% macro cadence(text) %}{{ text }}<br><small>The board's own published wording. Boards move meetings.</small>{% endmacro %}
 {% macro dl(rows) %}{% if rows %}<dl>
 {% for key, value in rows if value %}  <dt>{{ key }}</dt>
   <dd>{{ value }}</dd>

@@ -165,7 +165,7 @@ def _run_checks(base: str, site: Path) -> None:
     check("unsafe-eval" not in csp, "CSP contains unsafe-eval")
 
     # --- index content ------------------------------------------------------
-    check("what your city government is doing" in index.lower(), "index missing its heading")
+    check("<h1>Districts and boards</h1>" in index, "index missing its heading")
     check(index.count('href="/district/') >= 51, "index does not link all 51 districts")
     check("<select" in index, "index has no dropdown")
 
@@ -176,7 +176,7 @@ def _run_checks(base: str, site: Path) -> None:
         status, page_headers, page = fetch(url)
         check(status == 200, f"{url} returned {status}")
         check(f"Council District {number}" in page, f"{url} missing its heading")
-        check("How to be heard" in page, f"{url} missing the participation block")
+        check("Testimony and attendance" in page, f"{url} missing the participation block")
         check(
             "IN-PERSON" in page.upper() or "In person: no pre-registration" in page,
             f"{url} does not state the no-pre-registration fact",

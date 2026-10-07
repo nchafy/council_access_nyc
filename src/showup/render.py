@@ -60,7 +60,7 @@ def render_index(
     """
     return templates.render(
         "index.html",
-        title="Find your district or board",
+        title="Council districts and community boards",
         districts=[
             {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
             for d in districts

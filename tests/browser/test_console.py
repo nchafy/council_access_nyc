@@ -146,13 +146,13 @@ class TestTheStalenessNoticeReallyRenders:
     def test_an_aged_manifest_produces_a_visible_notice(self, staleness_notice):
         assert staleness_notice
 
-    def test_it_says_not_to_rely_on_the_meeting_times(self, staleness_notice):
+    def test_it_states_the_age_rather_than_instructing(self, staleness_notice):
         assert "out of date" in staleness_notice
-        assert "Do not rely on the meeting times" in staleness_notice
+        assert "was last fetched" in staleness_notice
 
     def test_it_names_the_source_and_how_old_it_is(self, staleness_notice):
         assert "days ago" in staleness_notice
-        assert "nyc.legistar.com" in staleness_notice
+        assert "The Council's own calendar is at nyc.legistar.com" in staleness_notice
 
 
 @pytest.fixture(scope="module")

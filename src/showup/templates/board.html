@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% import "macros.html" as m %}
-{% macro website(url, label) %}{{ m.link(url, label) }}<br><small>The board's own site is where its agendas, minutes and meeting location are published. No City dataset carries a board meeting calendar.</small>{% endmacro %}
-{% macro website_as_text(host) %}<span class="nolink">{{ host }}</span><br><small>Given as text, not a link: this board uses its own domain rather than a City one, and we cannot verify at build time that it is still the board's. Search for it, or call the office above.</small>{% endmacro %}
+{% macro website(url, label) %}{{ m.link(url, label) }}<br><small>The board's own site publishes its agendas, minutes and meeting location. No City dataset carries a board meeting calendar.</small>{% endmacro %}
+{% macro website_as_text(host) %}<span class="nolink">{{ host }}</span><br><small>Given as text, not a link: this board uses its own domain rather than a City one, unverifiable at build time.</small>{% endmacro %}
 {% block body %}
 {% set rows = [] %}
 {% if board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
@@ -17,10 +17,9 @@
 <section class="where">
   <h1>{{ board.label }}</h1>
   <p class="distinction">
-    A <strong>community board</strong> is the most local unit of City government. It
-    advises on zoning, budget priorities and local services for one community
-    district. It is <em>not</em> the same thing as a council district — the Council
-    Members for this area are listed below.
+    A <strong>community board</strong> is the most local unit of City government,
+    advising on zoning, budget priorities and local services for one community
+    district. It is <em>not</em> a council district.
   </p>
 {{ m.dl(rows) }}
 </section>
@@ -34,23 +33,19 @@
   </p>
 {{ m.dl(cadence_rows) }}
   <p class="refusal">
-    <strong>Treat this as a hint, not a schedule, and confirm with the board before
-    you travel.</strong> Two things are missing and one may be wrong. We cannot tell
-    you <em>where</em> the board meets: the City publishes the board's office address,
-    which is often not the meeting venue. We have no dated calendar: no City dataset
-    publishes one, and the City Record
+    The City's dataset records the board office, not the meeting venue. No City dataset
+    publishes a dated board calendar, and the City Record
     (<a href="https://data.cityofnewyork.us/d/dg92-zbpx" rel="noopener noreferrer">dg92-zbpx</a>)
-    carries only a few dozen land-use hearing notices a year across all 59 boards. And
-    the cadence above is the City's record of it, which we have found to disagree with
-    what boards publish on their own sites.
+    carries only a few dozen land-use hearing notices a year across all 59 boards. The
+    cadence above is the City's record of it, which we have found to disagree with what
+    boards publish on their own sites.
   </p>
 </section>
 {% else %}
 <section class="meetings">
   <h2>When it meets</h2>
   <p class="designed-state">
-    This board does not publish a meeting cadence in the City's dataset. Contact the
-    office or check its website.
+    This board does not publish a meeting cadence in the City's dataset.
   </p>
 </section>
 {% endif %}
@@ -61,7 +56,7 @@
   <p class="designed-state">
     We hold no budget requests on file for this board. Every board files them with the
     Mayor's Office of Management and Budget each year, as the City Charter requires, so
-    an absence here is our gap rather than the board's — look it up in {{ m.link(register_url, "the OMB register (vn4m-mk4t)") }}.
+    an absence here is our gap rather than the board's. The filings are in {{ m.link(register_url, "the OMB register (vn4m-mk4t)") }}.
   </p>
 </section>
 {% else %}
@@ -87,14 +82,13 @@
 
 {% endfor %}
   <p class="refusal">
-    <strong>What this is not.</strong> It is an annual filing, not current activity: the
+    <strong>What this is not.</strong> This is an annual filing, not current activity: the
     register appears a few times a year, so an entry can be months old. A request is not
-    a commitment and not a funded outcome — nothing here says any money was spent. The
-    reply is the agency's own wording, quoted rather than sorted into yes and no, because
-    the phrasing changes between editions of the same row; it records a position, not an
-    outcome. Priority numbers repeat because each one ranks within a budget category —
-    capital, capital support, expense — so there is no single top request and we do not
-    present one. We do not compare this board with any other.
+    a commitment and not a funded outcome. The reply is the agency's own wording, quoted
+    rather than sorted into yes and no, because the phrasing changes between editions of
+    the same row; it records a position, not an outcome. Priority numbers repeat because
+    each one ranks within a budget category — capital, capital support, expense — so
+    there is no single top request. We do not compare this board with any other.
   </p>
 </section>
 {% endif %}
@@ -102,10 +96,9 @@
 <section class="committees">
   <h2>Council districts covering this board</h2>
   <p class="why">
-    These are the Council Members who can introduce legislation for this area — and
-    who nominate half of this board's members. Percentages are the share of
-    <em>this board</em> that sits in each district, computed from the City's
-    boundary files and approximate.
+    These Council Members can introduce legislation for this area, and nominate half
+    of this board's members. Percentages are the share of <em>this board</em> that
+    sits in each district, computed from the City's boundary files and approximate.
   </p>
   <ul class="district-list">
 {% for number, share in districts %}
@@ -115,39 +108,33 @@
 </section>
 
 <section class="participate">
-  <h2>How to get involved with this board</h2>
+  <h2>Public participation</h2>
   <p class="lead-truth">
-    The route most people do not know about: <strong>board committees admit
-    non-board members of the public.</strong> You can join the discussion and make
-    recommendations without being appointed to anything — you just cannot vote.
+    <strong>Board committees admit non-board members of the public.</strong>
   </p>
 
-  <h3>Join a committee as a public member</h3>
+  <h3>Public members on board committees</h3>
   <ul>
     <li>Committees are "composed of Board members, and non-Board (public) members".</li>
-    <li>As a public member you take part in discussion and offer recommendations, but are
+    <li>Public members take part in discussion and offer recommendations, but are
       "not allowed to vote".</li>
-    <li>Most boards ask for an application and a current resume — contact the board office
-      above.</li>
+    <li>Most boards require an application and a current resume.</li>
     <li>Committees are open to the public and, under the New York State Open Meetings Law,
       must keep full and accurate minutes.</li>
     <li><strong>Committees often meet at the board office listed above, and the full board
-      often does not.</strong> Several boards publish exactly that split — one lists "Board
-      Office" against every committee and "varies" against the full board. Others meet
-      elsewhere or on video, and at least one tells readers to ring before assuming. The
-      office address is the one we can give you; the room for a specific meeting is on the
-      board's own site.</li>
+      often does not.</strong> Several boards publish that split — one lists "Board Office"
+      against every committee and "varies" against the full board; others meet elsewhere
+      or on video.</li>
   </ul>
 
-  <h3>Apply to be a board member</h3>
+  <h3>Board membership</h3>
   <ul>
     <li>Each board has <strong>up to 50 unsalaried members</strong>, and <strong>half are
-      nominated by the City Council members</strong> whose districts cover it — which is why
-      the council districts listed above matter.</li>
+      nominated by the City Council members</strong> whose districts cover it.</li>
     <li>Members are appointed by the <strong>Borough President</strong>, whose office processes
       applications at various times of the year.</li>
-    <li>You must "reside, work, or have some other significant interest in the community".</li>
-    <li>Apply through the {{ board.borough_name }} Borough President: {% if bp_url %}{{ m.link(bp_url, bp_url.replace("https://", "").rstrip("/")) }}{% else %}<span class="nolink">see nyc.gov/communityboards</span>{% endif %}</li>
+    <li>Members must "reside, work, or have some other significant interest in the community".</li>
+    <li>Applications go to the {{ board.borough_name }} Borough President: {% if bp_url %}{{ m.link(bp_url, bp_url.replace("https://", "").rstrip("/")) }}{% else %}<span class="nolink">nyc.gov/communityboards</span>{% endif %}</li>
   </ul>
 
   <h3>What this board can and cannot do</h3>
@@ -157,8 +144,8 @@
       municipal facilities.</li>
     <li>Budget: boards assess local needs and meet with City agencies to make recommendations
       in the City's budget process.</li>
-    <li>The limit, stated plainly by the City: boards "do not have the ability to order any City
-      agency or official to perform any task". They advise, and are often persuasive.</li>
+    <li>The limit, stated by the City: boards "do not have the ability to order any City
+      agency or official to perform any task".</li>
     <li>Boards are "autonomous City agencies and members are City officers" — not a
       neighbourhood association.</li>
   </ul>
@@ -167,10 +154,9 @@
   <p class="refusal">
     We could not find an official source for how long a board term lasts, any minimum age to
     serve, how often the full board must meet, or whether and how the public may speak at a
-    full board meeting. Those vary by board and we will not guess. Ask the board office
-    directly — its phone and email are above.
+    full board meeting. Those vary by board and we will not guess.
   </p>
 </section>
 
-<p class="back"><a href="/">Find another board or district</a></p>
+<p class="back"><a href="/">All districts and boards</a></p>
 {% endblock %}

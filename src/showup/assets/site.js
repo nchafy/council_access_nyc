@@ -81,7 +81,7 @@
         worst.days +
         " day" +
         (worst.days === 1 ? "" : "s") +
-        " ago. Do not rely on the meeting times below. Check nyc.legistar.com directly.";
+        " ago. The Council's own calendar is at nyc.legistar.com.";
       footer.insertBefore(warning, footer.firstChild);
     })
     .catch(function () {

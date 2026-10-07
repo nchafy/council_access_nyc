@@ -304,7 +304,7 @@ class TestRenderFallbacks:
             window_end=None,
             today=date(2026, 9, 22),
         )
-        assert "Your Council Member" in html
+        assert "<h2>Council Member</h2>" in html
 
     def test_a_window_end_of_none_says_so_rather_than_implying_completeness(self):
         district = District(number=9, neighborhoods=None, member=None)

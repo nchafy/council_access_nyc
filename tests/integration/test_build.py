@@ -152,7 +152,7 @@ class TestVacantSeat:
         )
         assert "vacant" in html.lower()
         # The rest of the page must still be useful to that district's residents.
-        assert "How to be heard" in html
+        assert "Testimony and attendance" in html
         assert "hearings@council.nyc.gov" in html
 
 
@@ -299,12 +299,12 @@ class TestBoardView:
         # Term length, minimum age, meeting frequency and public-comment rules are
         # not published by the City, so the page says so rather than guessing.
         assert "could not find an official source" in page
-        assert "no City dataset publishes one" in page
+        assert "No City dataset publishes a dated board calendar" in page
         # The venue gap, stated rather than papered over with the office address.
-        assert "cannot tell you <em>where</em> the board meets" in page
-        assert "often not the meeting venue" in page
-        # The one dataset carrying any dated notices is named, not denied.
+        assert "The City's dataset records the board office, not the meeting venue" in page
+        # The one dataset carrying any dated notices is named, with its denominator.
         assert "dg92-zbpx" in page
+        assert "a few dozen land-use hearing notices a year across all 59 boards" in page
         assert "disagree with what boards publish" in page
 
     def test_board_page_distinguishes_the_office_from_the_full_board_venue(self, raw_dir, tmp_path):
@@ -319,7 +319,7 @@ class TestBoardView:
         page = " ".join((out / "board" / "302" / "index.html").read_text().split())
         assert "Committees often meet at the board office listed above" in page
         assert "the full board often does not" in page
-        assert "the room for a specific meeting is on the board" in page
+        assert "others meet elsewhere or on video" in page
 
     def test_board_page_links_its_council_districts(self, raw_dir, tmp_path):
         out = tmp_path / "site"

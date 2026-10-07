@@ -1,9 +1,8 @@
 """The template environment — the one place escaping is configured.
 
-`autoescape=True` makes escaping the default rather than something 75 call sites had
-to remember, so the risk inverts from "forgot to escape" to "opted out", and
+`autoescape=True` inverts the risk from "forgot to escape" to "opted out", and
 `tests/unit/test_template_safety.py` fails the build on every opt-out. Undefined names
-are fatal, because a typo'd variable that renders as nothing is a missing fact.
+are fatal, because a typo'd variable rendering as nothing is a missing fact.
 """
 
 from __future__ import annotations
@@ -19,9 +18,8 @@ __all__ = ["environment", "fragment", "render"]
 
 _MACROS = "macros.html"
 
-#: MarkupSafe and `text.esc` agree on `&`, `<` and `>` and disagree on the two quotes.
-#: Both spellings are inert; keeping `esc`'s is what makes the move off f-strings
-#: byte-identical rather than merely equivalent. Derived so the two cannot drift.
+#: MarkupSafe and `text.esc` disagree on the two quotes. Both spellings are inert; keeping
+#: `esc`'s is what makes the site byte-identical. Derived so the two cannot drift.
 _ENTITIES = tuple((str(escape(quote)), esc(quote)) for quote in "'\"")
 
 

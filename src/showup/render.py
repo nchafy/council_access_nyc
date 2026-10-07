@@ -1,16 +1,8 @@
-"""HTML generation.
+"""HTML generation: the only place text becomes markup (docs/phase-1-scope.md §4.1).
 
-The only place in the project where text becomes markup, which makes it the last
-line of the XSS defence described in docs/phase-1-scope.md §4.1. Two rules:
-
-1. **Escaping is the template engine's job, not something to remember.** The
-   environment in `templates.py` runs with `autoescape=True`, so every
-   interpolation is escaped unless someone opts out, and
-   `tests/unit/test_template_safety.py` fails the build on every way of opting
-   out. Nothing here hands a template pre-rendered HTML: it hands over plain
-   values, and the markup lives in `templates/`.
-2. **Links are only emitted for URLs that survived `urls.safe_url`.** A None URL
-   renders as plain text, never as a dead or unchecked `href`.
+Escaping is the environment's job, not a thing to remember — `templates.py` sets
+`autoescape=True` and `tests/unit/test_template_safety.py` fails the build on every way
+of opting out. A link is emitted only for a URL that survived `urls.safe_url`.
 """
 
 from __future__ import annotations
@@ -41,11 +33,6 @@ def _short(value: str | None, limit: int = 58) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip(" ,;") + "…"
 
 
-# --------------------------------------------------------------------------- #
-# Index
-# --------------------------------------------------------------------------- #
-
-
 def render_index(
     districts: list[District],
     boards: list[DistrictBoard],
@@ -53,11 +40,7 @@ def render_index(
     built_at: datetime,
     window_end: date | None,
 ) -> str:
-    """The front page: two ways in, because they answer different questions.
-
-    Residents routinely want the community board and go looking for the council
-    district, so both are offered side by side and the difference is stated.
-    """
+    """The front page: the council district list and the board list, side by side."""
     return templates.render(
         "index.html",
         title="Council districts and community boards",
@@ -77,10 +60,6 @@ def render_index(
         window_end=window_end,
     )
 
-
-# --------------------------------------------------------------------------- #
-# District page
-# --------------------------------------------------------------------------- #
 
 _MODE_LABEL = {
     "in_person": "In person",
@@ -167,13 +146,8 @@ def render_district(
     )
 
 
-# --------------------------------------------------------------------------- #
-# Board page
-# --------------------------------------------------------------------------- #
-
-#: Borough president offices appoint board members and process applications.
-#: Roots only: the Bronx deep link nyc.gov publishes is a 404, and three of these
-#: hosts return 403 to a non-browser client, so a deep path cannot be verified.
+#: Roots only: the Bronx deep link nyc.gov publishes is a 404, and three of these hosts
+#: return 403 to a non-browser client, so a deep path cannot be verified.
 BP_SITES = {
     "Bronx": "https://bronxboropres.nyc.gov/",
     "Brooklyn": "https://www.brooklynbp.nyc.gov/community-boards/",
@@ -184,8 +158,7 @@ BP_SITES = {
 
 BUDGET_REGISTER_URL = "https://data.cityofnewyork.us/d/vn4m-mk4t"
 
-#: Five, matching the shortlist size used for meetings. The register runs to 134
-#: requests for one board, and the whole edition is one link away.
+#: Five, matching the meeting shortlist. One board filed 134, and the register is linked.
 REQUESTS_SHOWN = 5
 _EXPLANATION_CHARS = 260
 _RESPONSE_CHARS = 260
@@ -224,11 +197,8 @@ def render_board(
     window_end: date | None,
     budget_requests: BoardBudgetRequests | None = None,
 ) -> str:
-    """The community board view — deliberately not a copy of the district page.
-
-    No dataset publishes board agendas or a venue, so this page says so and sends
-    the reader to the board's own site rather than pretending to a calendar.
-    """
+    """The community board view. No dataset publishes board agendas or a venue, so the
+    page states that rather than implying a calendar."""
     return templates.render(
         "board.html",
         title=board.label,
@@ -248,12 +218,8 @@ def render_not_found(*, built_at: datetime, window_end: date | None) -> str:
     )
 
 
-# --------------------------------------------------------------------------- #
-# References
-# --------------------------------------------------------------------------- #
-
-#: The City Record is cited for its denominator and never fetched: a few dozen
-#: land-use notices a year is not a board calendar, and saying so needs the number.
+#: Cited for its denominator, never fetched: a few dozen land-use notices a year is not
+#: a board calendar.
 CITY_RECORD_URL = "https://data.cityofnewyork.us/d/dg92-zbpx"
 
 

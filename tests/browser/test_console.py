@@ -147,9 +147,8 @@ class TestTheStalenessNoticeReallyRenders:
         assert staleness_notice
 
     def test_it_states_the_fetch_time(self, staleness_notice):
-        # The aged fixture claims 2019-01-01T00:00:00+00:00 for every source, so the
-        # stamp is that instant in the reader's own zone — which is the arithmetic
-        # §2.12 exists to do at read time rather than at build time.
+        # The aged fixture claims 2019-01-01T00:00:00+00:00 for every source, so the stamp
+        # is that instant in the reader's own zone — the arithmetic §2.12 wants at read time.
         assert staleness_notice.startswith("Data fetched ")
         assert "2018" in staleness_notice or "2019" in staleness_notice
         assert re.search(r"\b\d{1,2}:\d{2}\b", staleness_notice), "no time of day"

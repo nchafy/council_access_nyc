@@ -1,9 +1,7 @@
-"""The guard for the HTML-parsing library, in before the swap.
+"""The guard for the HTML-parsing library.
 
-Handing untrusted markup to a library inverts the risk: it stops being "the state
-machine has a hole" and becomes "the wrong backend" and "the parser handed back
-markup". Both are asserted here, the same way `test_template_safety.py` guards the
-opt-outs Jinja2 introduced.
+Handing untrusted markup to a library turns the risk from "the state machine has a hole"
+into "the wrong backend" and "the parser handed back markup". Both are asserted here.
 """
 
 from __future__ import annotations

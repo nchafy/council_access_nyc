@@ -1,8 +1,7 @@
 """The CDP channel's own properties, independent of any page under test.
 
-The four browser gates are the only proof `cdp.py` works, and they exercise it at
-typical sizes. These assert the two edges that a gate would only fail on
-intermittently: a message far larger than a library's usual read limit, and
+The browser gates exercise `cdp.py` at typical sizes; these assert the two edges a gate
+would only fail on intermittently — a message past a library's usual read limit, and
 multi-byte UTF-8 inside one.
 """
 
@@ -15,11 +14,8 @@ pytestmark = pytest.mark.browser
 
 
 class TestTheChannelCarriesLargeMessages:
-    """`axe.min.js` goes in at ~567 KB and a full AX tree comes back in megabytes.
-
-    A read limit near 1 MB would fail only on the largest pages, which is the worst
-    available shape of failure: intermittent, page-dependent, and green in review.
-    """
+    """`axe.min.js` goes in at ~567 KB and a full AX tree comes back in megabytes, so a
+    read limit near 1 MB would fail only on the largest pages."""
 
     def test_a_multi_megabyte_expression_reaches_the_page(self, chrome):
         characters = 4 * 1024 * 1024

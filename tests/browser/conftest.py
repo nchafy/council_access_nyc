@@ -18,11 +18,8 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures"
 
 @pytest.fixture(scope="session")
 def chrome() -> str:
-    """Path to a local Chrome, skipping the module when there is none.
-
-    The CI job asserts Chrome exists as its own step, so a skip can never be the
-    reason CI is green.
-    """
+    """Path to a local Chrome, skipping the module when there is none. The CI job asserts
+    Chrome exists as its own step, so a skip can never be why CI is green."""
     from cdp import find_chrome
 
     path = find_chrome()
@@ -33,11 +30,8 @@ def chrome() -> str:
 
 @pytest.fixture(scope="session")
 def built_site(raw_dir_session, tmp_path_factory) -> Path:
-    """A whole site built from committed fixtures, once per session.
-
-    `today` is pinned to the date the integration tests use, so the calendar window
-    and the deadline arithmetic are the ones those tests already assert.
-    """
+    """A whole site built from committed fixtures, once per session, with `today` pinned to
+    the date the integration tests use."""
     from showup.build import build_site
 
     out = tmp_path_factory.mktemp("built-site")
@@ -47,11 +41,8 @@ def built_site(raw_dir_session, tmp_path_factory) -> Path:
 
 @pytest.fixture(scope="session")
 def broken_site(tmp_path_factory) -> Path:
-    """The deliberately inaccessible fixture as a one-page site.
-
-    Copied rather than served in place so the fixture's `/broken.css` resolves at the
-    server root, as the real site's `/assets/site.css` does.
-    """
+    """The deliberately inaccessible fixture as a one-page site, copied rather than served
+    in place so its `/broken.css` resolves at the server root."""
     out = tmp_path_factory.mktemp("broken-site")
     shutil.copytree(FIXTURES / "a11y_broken", out, dirs_exist_ok=True)
     return out

@@ -1,9 +1,7 @@
 """The command line surface.
 
-Thin by design — the logic lives in the modules it calls — but not untested, for a
-specific reason: a change to the build report once silently failed to apply, so the
-board page count stopped being printed and nothing noticed. The report lines are how
-a regression gets seen by a human, which makes them worth asserting.
+Thin, but not untested: the report lines are how a human notices drift, so each is
+asserted here.
 """
 
 from __future__ import annotations
@@ -148,8 +146,6 @@ class TestFetch:
         assert main(["fetch", "--force"]) == 1
         err = capsys.readouterr().err
         assert "failed: calendar" in err
-        # The operator must be told the old copy is still there, or they will
-        # assume the site is now broken.
         assert "previous cached copies were kept" in err
 
     def test_unknown_source_is_rejected_by_argparse(self, tmp_path, monkeypatch):
@@ -254,7 +250,6 @@ class TestCrosswalkCommand:
         written = tmp_path / "crosswalks" / "council_to_boards.json"
         assert written.is_file()
         assert json.loads(written.read_text())["zips"] == {"11217": [35]}
-        # The report is what a human checks before committing the diff.
         assert "districts: 51" in out
         assert "zip codes: 1" in out
         assert "read the diff" in out

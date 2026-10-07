@@ -1,10 +1,8 @@
 """The OMB register of community board budget requests, `vn4m-mk4t`.
 
-Four upstream facts are each a silent bug if ignored, all recorded in
-docs/OBSERVATIONS.md on 2026-09-30, and each has a test here that fails if the code
-drifts back: the borough code is alphabetical rather than standard, the newest
-publication is dated in the future, `priority` repeats within a board, and `response`
-must never be bucketed.
+One test per upstream fact, all four recorded in docs/OBSERVATIONS.md on 2026-09-30: the
+borough code is alphabetical rather than standard, the newest publication is dated in the
+future, `priority` repeats within a board, and `response` must never be bucketed.
 """
 
 from __future__ import annotations

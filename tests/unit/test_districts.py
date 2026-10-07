@@ -1,8 +1,7 @@
-"""Parsing council.nyc.gov district pages — the only source for office addresses.
+"""Parsing council.nyc.gov district pages, the only source for office addresses.
 
-The fixtures are the observed pathological cases, not the happy path. An earlier
-assumption that all 51 pages were structurally identical was wrong, and these
-tests exist to keep that correction from being lost.
+The fixtures are the observed pathological cases, not the happy path: the 51 pages are not
+structurally identical (CLAUDE.md, "Every district-page field is independently optional").
 """
 
 from __future__ import annotations
@@ -31,8 +30,7 @@ class TestReferenceLayout:
     def test_committee_roles_are_captured(self, district_page_html):
         result = parse_district_page(1, district_page_html[1])
         roles = {c.role for c in result["committees"]}
-        # District 1's member chairs a subcommittee, so at least one non-Member
-        # role must survive; a "(Chair)" line sits below the committee name.
+        # District 1's member chairs a subcommittee, with "(Chair)" on its own line below.
         assert roles != {"Member"}
 
     def test_email_is_the_district_not_the_sitewide_footer(self, district_page_html):
@@ -50,7 +48,7 @@ class TestMissingFieldsAreReportedNotGuessed:
 
     @pytest.mark.parametrize("number", [35, 51])
     def test_office_hours_absent_does_not_break_the_office(self, district_page_html, number):
-        # D35 and D51 omit the "Office Hours:" line. The office must still parse.
+        # D35 and D51 omit the "Office Hours:" line.
         result = parse_district_page(number, district_page_html[number])
         assert result["offices"], f"district {number} lost its offices"
         office = result["offices"][0]

@@ -1,40 +1,8 @@
-"""Parsing council.nyc.gov/district-N/ — the only source for district offices.
+"""Parsing council.nyc.gov/district-N/, the only source for council district offices.
 
-No open dataset publishes council district office addresses or phone numbers, so
-these 51 WordPress pages are it. `wp-json` is not a substitute: it reports
-District 1's office as "101 Lafayette St, 9th Floor" while the rendered page says
-"65 East Broadway".
-
-We read the page by its visible-text structure, which is stable in *shape*:
-
-    District 1
-    Christopher Marte
-    The Lower East Side, Chinatown, ...      <- neighbourhoods
-    ...bio...
-    Committees
-    Committee on Public Housing
-    ...
-    (Chair)                                  <- role attaches to the line above
-    Caucuses
-    ...
-    District Office
-    65 East Broadway
-    New York, NY 10002
-    Phone: 212-587-3159
-    Legislative Office
-    250 Broadway, Suite 1749
-    ...
-    District1@council.nyc.gov
-
-But **every field is independently optional**, which was verified and contradicts
-an earlier assumption that the 51 pages were identical: `Office Hours` is absent
-on D35 and D51; there are three phone-label conventions
-(`Phone: 718-260-9191`, `(718) 984-5151 phone`, `phone 1`); two email conventions
-(`District35@…`, `Morano@…`); D51 writes `250 Broadway, 1551` with no "Suite";
-and committees are absent for districts 3, 5, 9, 14, 25 and 26. So nothing here
-raises on a missing field — it records the gap in `missing` and the build reports
-it. A silent blank where an office address belongs is the worst outcome, because
-someone travels to it.
+Read by visible-text structure, not by markup. Every field is independently optional, so
+nothing here raises on a gap — it records the gap in `missing` and the build reports it
+(CLAUDE.md, "Every district-page field is independently optional").
 """
 
 from __future__ import annotations
@@ -55,7 +23,6 @@ _SECTION_END = re.compile(
     r"|FY\d{4} Budget|Subscribe|Media Inquiries|Adopt a Tree)",
     re.IGNORECASE,
 )
-# Three observed phone conventions.
 _PHONE = re.compile(r"^(?:Phone\s*\d*\s*:\s*(.+)|(.+?)\s+phone\s*\d*)$", re.IGNORECASE)
 _FAX = re.compile(r"^(?:Fax\s*:\s*(.+)|(.+?)\s+fax)$", re.IGNORECASE)
 _HOURS = re.compile(r"^Office Hours\s*:\s*(.+)$", re.IGNORECASE)
@@ -68,19 +35,13 @@ _SITEWIDE_EMAIL = re.compile(
 
 
 def to_lines(html_text: str) -> list[str]:
-    """Flatten a page to its visible text lines, script and style dropped.
-
-    Delegates to `text.text_lines`, which walks the parsed tree and marks block
-    boundaries there rather than splitting raw HTML first — splitting first put a
-    `<script>` open tag and its body on different lines, so jQuery and CSS came
-    through as visible text.
-    """
+    """Flatten a page to its visible text lines, script and style dropped."""
     return text_lines(html_text)
 
 
 def _parse_committees(lines: list[str]) -> tuple[Committee, ...]:
-    """ "Committees" also appears twice in the site navigation, so anchor on the
-    occurrence actually followed by a committee name."""
+    """Committees, anchored on the occurrence followed by a committee name — the word
+    also appears twice in the site navigation."""
     start = -1
     for index, line in enumerate(lines):
         if (
@@ -97,9 +58,6 @@ def _parse_committees(lines: list[str]) -> tuple[Committee, ...]:
     for line in lines[start:]:
         if _SECTION_END.match(line):
             break
-        # A role can arrive two ways, and both occur in the real pages: on its
-        # own line below the committee, or as a trailing parenthetical on the
-        # same line ("Subcommittee on Landmarks … (Chair)").
         if _ROLE.match(line):
             if found:
                 found[-1] = Committee(found[-1].name, line.strip("()"))
@@ -133,9 +91,8 @@ def _parse_office(lines: list[str], heading_index: int, label: str) -> Office | 
         if match := _HOURS.match(line):
             hours = match.group(1).strip()
             continue
-        # The city/state/ZIP line ends the address, but scanning must continue —
-        # Phone, Fax and Office Hours all come *after* it. Breaking here (an
-        # earlier bug) lost the phone number on every district.
+        # The ZIP line ends the address, but Phone, Fax and Office Hours follow it, so
+        # the scan continues past it.
         if not address_done:
             address_parts.append(line)
             if _ZIP.search(line):
@@ -193,11 +150,8 @@ def parse_district_page(number: int, html_text: str | None) -> dict:
             offices.append(office)
     result["offices"] = tuple(offices)
 
-    # Prefer the district's own mailbox. Searching raw HTML and taking the first
-    # hit picked up a staff member's address (`ckelmar@` on District 1), because
-    # staff emails appear in markup above the office block. So: look only at
-    # visible text, and prefer the `district<N>@` convention before falling back
-    # to the surname convention some members use (`Morano@` on District 51).
+    # Visible text only, and `district<N>@` first: staff addresses sit in markup above the
+    # office block, and some members publish a surname mailbox instead.
     visible = " ".join(lines)
     preferred = re.compile(rf"\bdistrict{number}@council\.nyc\.gov\b", re.IGNORECASE)
     if match := preferred.search(visible):

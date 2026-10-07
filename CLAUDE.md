@@ -73,6 +73,14 @@ requirements. The brief governs *what*, the outline governs *how*, and the phase
 doc governs *what now*. This file carries the working conventions and the settled
 calls.
 
+**Voice: state the data, never direct the reader.** `docs/voice.md` is binding on every
+user-facing string. No imperatives, no second person, no advice, no catalogue of what the
+City does not publish; headings name a thing rather than asking a question; provenance
+lives on `/references/`. Both are owner decisions, measured and recorded — a voice pass
+took imperatives 16 to 0 and second-person uses 38 to 0, and the next one should find
+zero. Freshness is `docs/refresh.md`: one source has a 12-hour window and no scheduled
+refresh yet, so the footer states the fetch time rather than judging it.
+
 **Security is the owner's stated top priority.** The threat model is in
 `docs/phase-1-scope.md` §4. The short version, because it is easy to get wrong:
 this product has no accounts, so the primary risk is **injection through scraped

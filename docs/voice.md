@@ -59,3 +59,61 @@ information speaks for itself or it is not information.
   about the dataset, and the product's worst failure is confident wrongness.
 - **Procedural facts stay.** "In-person testimony requires no pre-registration" is a fact about
   a procedure, not advice about what to do with it.
+
+## Headings name a thing, they do not ask a question
+
+Owner, 2026-10-07: "The headings are assuming a question was asked too much."
+
+A heading is a label on a section of data, not the question a reader is imagined to have
+arrived with. Nominal, not interrogative, not instructional.
+
+| Was | Now |
+|---|---|
+| What this board asked the City for | Fiscal Year Requests |
+| When it meets | Meeting times |
+| Council districts covering this board | Council districts |
+| How to get involved with this board | Attending |
+| How to be heard | Testimony and attendance |
+| Two things nobody publishes | Time limits and registration |
+
+The same applies to field labels inside a record: `Asked of` / `The board's words` /
+`The reply, quoted` became `Requestee` / `Request` / `Response`. A field label should be the
+name of the field, not a narration of how the value got there.
+
+## Do not enumerate what is missing
+
+Owner, 2026-10-07: "we shouldn't be outlining what is missing, rather just focusing on what is
+there. If someone isn't looking for how long a board term lasts, why should we provide that we
+don't supply it?"
+
+A catalogue of absences is content nobody asked for, and it pads the page with our own
+limitations. The "Things the City does not publish" section is gone for exactly that reason.
+
+**The one narrow exception** is a field a reader will otherwise misread as present. These are
+not absence catalogues; they are labels on a value that is sitting right there:
+
+- The board office address renders directly above the meeting section. Silence reads as *that
+  is the venue* — wrong on 8 of 8 boards checked. One line says it is the office.
+- The per-speaker time limit and registration cut-off sit inside testimony procedure, where a
+  reader is already looking. Silence reads as *there is no limit*.
+
+The test: **would removing this sentence cause a reader to believe something false about a
+value on this page?** If yes it stays, as a field note. If it would only leave them not knowing
+a thing they never asked about, it goes.
+
+## State facts, not judgements about facts
+
+Owner, 2026-10-07, on the staleness notice: replace "the data is out of date" with "Data
+fetched 7 October 2026, 11:41."
+
+"Out of date" is our verdict. The fetch time is the fact, and the reader can judge it against
+whatever they are doing. This also removes a thing the page could be wrong about — and the
+measurement behind it is in `docs/refresh.md`, because a timestamp is only honest if something
+refreshes.
+
+## Provenance belongs on `/references/`, not in the paragraph
+
+Dataset ids, denominators, windows, methods and our own measurement caveats go on the
+references page. A page that shows a finding carries a short source link to it, not an inline
+essay. Relocating provenance is fine; losing it is not. If brevity and a citation conflict,
+the citation wins and the prose goes instead.

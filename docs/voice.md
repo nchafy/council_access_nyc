@@ -55,8 +55,9 @@ information speaks for itself or it is not information.
 
 - **Provenance is not decoration.** Every figure keeps its source link, its denominator and its
   window. Removing prose must never remove a citation.
-- **Refusal strings stay.** Where the City publishes nothing, the page says so — that is a fact
-  about the dataset, and the product's worst failure is confident wrongness.
+- **Refusals stay only where a value on the page would otherwise be misread** — see "Do not
+  enumerate what is missing" below, which narrowed this on 2026-10-07. Refusing to *invent* a
+  fact is absolute and always was; *listing* the facts we lack is padding and is now cut.
 - **Procedural facts stay.** "In-person testimony requires no pre-registration" is a fact about
   a procedure, not advice about what to do with it.
 

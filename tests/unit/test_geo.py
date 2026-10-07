@@ -1,9 +1,7 @@
 """Point-in-polygon and the overlap sweep.
 
-The synthetic cases pin the algorithm's edges (holes, shared edges, vertices on
-the ray). The real-geometry cases are marked `slow` because the full sweep takes
-~35 seconds, which is why the crosswalk is a committed file rather than a build
-step.
+Synthetic cases pin the algorithm's edges — holes, shared edges, a vertex on the ray. The
+real-geometry cases are `slow`, because the full sweep takes ~35 s.
 """
 
 from __future__ import annotations
@@ -43,8 +41,6 @@ class TestContains:
         assert not polygon.contains(5.0, 5.0), "inside the hole"
 
     def test_vertex_on_the_ray_is_not_double_counted(self):
-        # A ray passing exactly through a vertex is the classic way ray casting
-        # flips a point to the wrong side.
         triangle = [[(0.0, 0.0), (5.0, 5.0), (10.0, 0.0), (0.0, 0.0)]]
         polygon = Polygon("t", triangle)
         assert polygon.contains(5.0, 1.0)
@@ -164,23 +160,18 @@ class TestSimplify:
 
 @pytest.mark.slow
 class TestSimplifiedGeometryAgrees:
-    """The accuracy floor for the address path.
+    """The accuracy floor for the address path, measured rather than assumed.
 
-    The browser hit-tests against simplified geometry, so a resident's district is
-    only as correct as that simplification. This measures it rather than assuming
-    it: any point that resolves to a *different* district than the full-precision
-    geometry would tell someone the wrong council member.
-
-    Marked slow (~15 s). Runs in the default suite because it guards the product's
-    central claim, and a tolerance change must not be able to pass silently.
+    The browser hit-tests simplified geometry, so any point resolving to a different
+    district than full precision names the wrong council member. Slow (~15 s), and in the
+    default suite because a tolerance change must not pass silently.
     """
 
     def test_assignment_matches_full_precision(self, tmp_path):
         from showup.geo import to_geojson
 
-        # The gitignored cache, so this skips in CI rather than failing there. It
-        # is the one test that needs the real 3.8 MB geometry: the point is to
-        # compare against full precision, which a fixture cannot stand in for.
+        # The gitignored cache, so this skips in CI rather than failing. The one test that
+        # needs the real 3.8 MB geometry, because a fixture cannot stand in for it.
         source = REPO_ROOT / "etl" / "raw" / "districts.geojson"
         if not source.exists():
             pytest.skip("etl/raw/districts.geojson absent (gitignored cache; run showup fetch)")
@@ -213,7 +204,6 @@ class TestSimplifiedGeometryAgrees:
             y += step
 
         assert inside > 30_000, f"lattice only covered {inside} points"
-        # Measured at 0.011%. The floor is ~0.005% even unsimplified, because
-        # points on a shared edge are ambiguous. 0.05% would mean the tolerance
-        # was loosened without re-measuring.
+        # Measured at 0.011%, against a ~0.005% floor even unsimplified, because a point on
+        # a shared edge is ambiguous. Over 0.05% means the tolerance was loosened.
         assert wrong / inside < 0.0005, f"{wrong}/{inside} points get the wrong district"

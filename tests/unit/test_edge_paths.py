@@ -1,10 +1,7 @@
 """The defensive branches: malformed input that reaches a guard rather than a parser.
 
-100% coverage is the project floor (see CLAUDE.md), and these are the lines that get
-there — but each one is here because the branch is genuinely reachable from real
-upstream data, not to touch a line. Where a branch is *not* reachable it is deleted
-rather than tested: `unescape_once`, `Meeting.is_past`, `urls.is_internal` and a
-`Paths` dataclass were all removed as dead code while writing this file.
+Each is here because the branch is genuinely reachable from real upstream data, not to
+touch a line for the 100% floor. An unreachable branch is deleted instead.
 """
 
 from __future__ import annotations
@@ -25,13 +22,10 @@ class TestUrlGuards:
         assert absolutize("   ", "https://nyc.legistar.com/") is None
 
     def test_safe_url_rejects_a_value_that_is_only_control_characters(self):
-        # Real scrapes contain stray control bytes; after stripping them nothing is
-        # left, which must read as "no link" rather than as an empty href.
         assert safe_url("\x00\x01\x02") is None
 
     def test_safe_url_survives_a_string_urlsplit_rejects(self):
-        # An IPv6-looking bracket that never closes makes urlsplit raise; a parser
-        # error on untrusted input must not propagate as a crash.
+        # An unclosed IPv6-looking bracket makes urlsplit raise.
         assert safe_url("https://[oops") is None
 
     def test_relative_href_with_a_base_that_strips_to_nothing(self):
@@ -42,7 +36,7 @@ class TestBoardWebsiteGuards:
     """`cb_website` is a nested `{"url": ...}`, and only City-operated hosts are linked."""
 
     def test_the_nested_socrata_shape_is_unwrapped(self):
-        # Read as a string this became "{'url': ...}" and every board lost its link.
+        # Read as a string this becomes "{'url': ...}" and every board loses its link.
         assert (
             _board_website({"url": "https://www.nyc.gov/site/queenscb9/index.page"})
             == "https://www.nyc.gov/site/queenscb9/index.page"
@@ -97,8 +91,7 @@ class TestBoardWebsiteGuards:
         assert _board_website_hostname({"url": "https://[oops"}) is None
 
     def test_a_row_without_a_usable_code_is_skipped(self, tmp_path):
-        # Real exports carry blank and short codes; they cannot be joined to
-        # geometry, so they are dropped rather than guessed at.
+        # Real exports carry blank and short codes, which cannot be joined to geometry.
         path = tmp_path / "boards.json"
         path.write_text(
             json.dumps(
@@ -114,8 +107,7 @@ class TestBoardWebsiteGuards:
 
 class TestMemberGuards:
     def test_a_row_with_a_non_numeric_district_is_skipped(self, tmp_path):
-        # The dataset carries the Public Advocate and other citywide seats, which
-        # have no district number.
+        # The dataset carries the Public Advocate and other citywide seats.
         path = tmp_path / "members.json"
         path.write_text(
             json.dumps(

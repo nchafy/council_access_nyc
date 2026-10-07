@@ -390,22 +390,30 @@ class TestBudgetRequestsOnTheBoardPage:
 
     def test_no_single_top_request_is_presented(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        assert "there is no single top request" in page
         assert "top priority" not in page.lower()
         assert "number one request" not in page.lower()
 
-    def test_it_says_what_it_is_not(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        assert "annual filing, not current activity" in page
-        assert "not a commitment and not a funded outcome" in page
-        assert "records a position, not an outcome" in page
-
-    def test_it_neither_ranks_nor_scores_boards(self, raw_dir, tmp_path):
+    def test_the_section_neither_ranks_nor_scores_boards(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
         section = page.split("Fiscal Year Requests", 1)[1].split("</section>", 1)[0]
-        assert "do not compare this board with any other" in section
-        for banned in ("score", "percentile", "league", "out of 100"):
+        for banned in ("score", "percentile", "league", "out of 100", "compared with"):
             assert banned not in section.lower()
+
+    def test_the_caveats_moved_to_references_rather_than_vanishing(self, raw_dir, tmp_path):
+        """The board page's "What this is not" paragraph was deleted on 2026-10-07.
+
+        Its clauses are provenance, so they relocated to /references/ instead. Without
+        the priority clause somewhere, repeated "Priority 01" labels read as the board
+        filing twenty-three number-one requests.
+        """
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        references = unescape(" ".join((out / "references" / "index.html").read_text().split()))
+        assert "ranks within a budget category" in references
+        assert "not a commitment and not a funded outcome" in references
+        assert "quoted" in references
+        board = self._page(raw_dir, tmp_path)
+        assert "What this is not" not in board
 
     def test_a_board_the_register_does_not_cover_says_so(self, raw_dir, tmp_path):
         # The fixture carries six boards, so the other 53 are the empty state.

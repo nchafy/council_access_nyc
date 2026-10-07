@@ -215,12 +215,8 @@ def _run_checks(base: str, site: Path) -> None:
             check(f"<dt>{field}</dt>" in page, f"{url} request cards have no {field} field")
         check("/d/vn4m-mk4t" in page, f"{url} does not link the register it quotes")
         check(
-            "there is no single top request" in flat,
-            f"{url} does not say why priority numbers repeat",
-        )
-        check(
-            "not a commitment and not a funded outcome" in flat,
-            f"{url} presents a budget request as an outcome",
+            "top priority" not in flat.lower(),
+            f"{url} presents one request as the board's top priority",
         )
         _check_markup_safety(url, page)
         _check_links(url, page, site)
@@ -295,6 +291,11 @@ def _run_checks(base: str, site: Path) -> None:
     check(status == 200, f"{url} returned {status}")
     check("Content-Security-Policy" in reference_headers, f"{url} served without CSP")
     check("<h1>Sources</h1>" in references, f"{url} missing its heading")
+    for clause, why in (
+        ("ranks within a budget category", "why priority numbers repeat"),
+        ("not a commitment and not a funded outcome", "that a request is not an outcome"),
+    ):
+        check(clause in flat, f"{url} no longer states {why}")
     for dataset in (
         "Calendar.aspx",
         "uvw5-9znb",

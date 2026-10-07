@@ -1,12 +1,8 @@
 """The escaping boundary, asserted on the source rather than through a browser.
 
-`render.py` currently escapes by hand at 75 call sites, so the risk is a forgotten
-`esc()`. A template engine inverts that: escaping becomes the default and the risk
-becomes the opt-outs. This file holds the invariant that covers both arrangements, so it
-is in place before any migration rather than after.
-
-Hermetic and unmarked, so it runs on every commit — unlike the `innerHTML` grep in
-`tests/browser/test_address_box.py`, which is `browser`-marked and skips by default.
+With `autoescape=True` the risk is not a forgotten `esc()` but an opt-out, so this fails on
+every way of opting out. Hermetic and unmarked, so it runs on every commit — unlike the
+`innerHTML` grep in `tests/browser/test_address_box.py`, which skips by default.
 """
 
 from __future__ import annotations

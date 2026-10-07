@@ -1,13 +1,8 @@
 """Drive the real address box in a real browser.
 
-Marked `browser`, so it is excluded from the default run and from CI — a GitHub
-runner has no Chrome we control and this is not the place to install one. Run it
-locally with `make browser` after touching `assets/address.js`.
-
-Why a browser at all: `address.js` is the one piece of this project that only
-exists at runtime. Its local-resolution path — district number, ZIP, neighbourhood
-name — needs no network, which makes it genuinely testable headlessly, and those
-are the branches where a mistake sends someone to the wrong council member.
+`address.js` only exists at runtime, and its local-resolution path — district number, ZIP,
+neighbourhood name — needs no network, so it is testable headlessly. Marked `browser`:
+run it with `make browser` after touching the file.
 """
 
 from __future__ import annotations
@@ -45,10 +40,8 @@ def _chrome() -> str | None:
 class _Recorder(SimpleHTTPRequestHandler):
     """Static file server that also records the harness's result.
 
-    The harness cannot report through the DOM: this Chrome build's `--dump-dom`
-    serialises the page's original source rather than the live DOM, so the report
-    element always reads "running…". Reporting over HTTP sidesteps that entirely
-    and does not depend on any Chrome behaviour beyond running a script.
+    The harness cannot report through the DOM: this Chrome's `--dump-dom` serialises the
+    original source, so the report element always reads "running…".
     """
 
     received: ClassVar[list[dict[str, list[str]]]] = []
@@ -76,8 +69,7 @@ def harness_output():
     if not (site / "data" / "lookup.json").exists():
         pytest.skip("site/ not built — run `make build` first")
 
-    # Served from the same origin as /data/lookup.json, or the script's own
-    # fetches fail on CORS and the test would pass or fail for the wrong reason.
+    # Same origin as /data/lookup.json, or the script's own fetches fail on CORS.
     shutil.copy2(HARNESS, site / "_harness.html")
     _Recorder.received.clear()
     handler = partial(_Recorder, directory=str(site))
@@ -102,8 +94,7 @@ def harness_output():
             text=True,
             timeout=90,
         )
-        # Chrome exits when the virtual time budget expires; give the final
-        # report request a moment to land.
+        # Chrome exits when the virtual time budget expires, so wait for the last report.
         for _ in range(40):
             if _Recorder.received:
                 break
@@ -146,11 +137,8 @@ def test_harness_reports_ok(harness_output):
     ],
 )
 def test_each_check_ran_and_passed(harness_output, check):
-    """Assert each named check individually, so a failure names itself.
-
-    Also guards against the harness silently skipping a case: a check that never
-    ran is as much a problem as one that failed.
-    """
+    """Assert each named check individually, so a failure names itself and a check that
+    never ran fails too."""
     _, detail = harness_output
     assert f"PASS {check}" in detail, f"{check!r} did not pass:\n{detail}"
 
@@ -158,40 +146,28 @@ def test_each_check_ran_and_passed(harness_output, check):
 def _strip_js_comments(source: str) -> str:
     """Remove // and /* */ comments so a grep sees code, not prose.
 
-    Needed because these files *document* the rules they follow: address.js has a
-    comment saying "never innerHTML" and names the geocoder host in a privacy
-    docblock. Grepping raw source flagged both as violations — the check was
-    failing on its own documentation.
+    A comment naming a banned API or the geocoder host would otherwise read as a violation;
+    this has produced false failures twice.
     """
     without_block = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
-    # Strip line comments, but not inside a string literal. These two files have
-    # no // inside strings, and a full JS tokeniser is not worth it here.
+    # Not string-literal aware: neither file has // inside a string, and a JS tokeniser is
+    # not worth it here.
     return "\n".join(re.sub(r"(^|\s)//.*$", "", line) for line in without_block.splitlines())
 
 
 class TestSourceInvariants:
-    """Properties easier to assert on the source than through a browser.
-
-    All three run against comment-stripped source: the files describe their own
-    rules, so a naive grep matches the documentation.
-    """
+    """Properties easier to assert on the source than through a browser, all against
+    comment-stripped source."""
 
     def test_the_geocoder_is_called_from_exactly_one_place(self):
-        """R33, stated the way the code is actually shaped.
-
-        An earlier version of this test looked for `private=true` within 800
-        characters of the host name. That was wrong: the host is a constant at the
-        top of the file and the URL is built ~200 lines later, so the check failed
-        on correct code. The invariant that matters is that there is exactly ONE
-        place constructing a geocoder URL, and that place carries `private=true` —
-        which is both easier to audit and harder to regress than proximity.
-        """
+        """R33, stated the way the code is shaped: exactly one place constructs a geocoder
+        URL, and that place carries `private=true`. Proximity would be the wrong test —
+        the host is a constant and the URL is built ~200 lines later."""
         source = _strip_js_comments(
             (REPO_ROOT / "src" / "showup" / "assets" / "address.js").read_text()
         )
-        # One URL-shaped mention, i.e. one place that could actually contact it.
-        # The bare host also appears in a user-facing string, because R40c requires
-        # the slow-dependency message to name it — so count the scheme'd form only.
+        # The scheme'd form only: R40c requires the slow-dependency message to name the
+        # bare host, so it legitimately appears in a user-facing string too.
         as_url = source.count("https://geosearch.planninglabs.nyc")
         assert as_url == 1, f"the geocoder URL is constructed in {as_url} places"
         uses = re.findall(r"\bGEOCODER\b", source)
@@ -199,7 +175,6 @@ class TestSourceInvariants:
             f"GEOCODER referenced {len(uses)} times (declaration + 1 use expected)"
         )
 
-        # The one function that builds the URL must ask not to be logged.
         builder = re.search(r"function search\(query\)\s*\{(.*?)\n  \}", source, re.DOTALL)
         assert builder, "could not find the geocoder URL builder"
         assert "private=true" in builder.group(1), "the geocoder URL omits private=true"
@@ -232,7 +207,6 @@ class TestSourceInvariants:
         source = _strip_js_comments(
             (REPO_ROOT / "src" / "showup" / "assets" / "address.js").read_text()
         )
-        # The navigating branch cannot be exercised headlessly, so assert the guard
-        # exists: a redirect built from data must be validated before use.
+        # The navigating branch cannot be exercised headlessly, so assert the guard exists.
         assert "location.assign" in source
         assert re.search(r"/\^\\/district\\/.*\\/\$/", source), "navigation target is unguarded"

@@ -1,9 +1,8 @@
-"""The template environment, which is where the escaping boundary now lives.
+"""The template environment, where the escaping boundary lives.
 
-`test_template_safety.py` holds the invariant that spans both renderers — no opt-outs,
-autoescape on. This file pins what the environment itself has to do for that invariant
-to mean anything: find its templates, escape, refuse a misspelled name, and spell the
-two quote entities the way `text.esc` spelled them.
+`test_template_safety.py` holds the no-opt-out invariant; this pins what the environment
+must do for it to mean anything: find its templates, escape, refuse a misspelled name, and
+spell the two quote entities as `text.esc` does.
 """
 
 from __future__ import annotations
@@ -32,8 +31,7 @@ TEMPLATES = {
 
 class TestTheEnvironment:
     def test_the_templates_ship_inside_the_package(self):
-        # PackageLoader reads from the installed package, so a template left out of
-        # the wheel would only fail after install, never in the source tree.
+        # A template left out of the wheel would only fail after install.
         assert templates.environment().get_template("layout.html")
 
     def test_escaping_is_on_without_asking(self):
@@ -64,17 +62,16 @@ class TestPercentFilter:
 
 
 class TestVoice:
-    """docs/voice.md, enforced over the shipped page copy rather than re-measured by hand.
+    """docs/voice.md, over the shipped page copy.
 
-    Second person is mechanical and gated here. Imperatives are not — mood needs a reader
-    — so what is gated instead is that the sentences already cut do not come back.
-    `tests/unit/test_venues.py` holds the same two checks over the venue entry strings.
+    Second person is mechanical and gated. Mood is not, so what is gated instead is that
+    the sentences already cut do not come back.
     """
 
     SECOND_PERSON = re.compile(r"\b(you|your|yours|yourself|you're)\b", re.IGNORECASE)
 
-    #: Deleted on the owner's instruction, 2026-10-07. Each one is either direction, a
-    #: heading phrased as a question, or a catalogue of what the City does not publish.
+    #: Deleted on the owner's instruction, 2026-10-07: direction, an interrogative heading,
+    #: or a catalogue of what the City does not publish.
     CUT = (
         "What this board asked the City for",
         "When it meets",

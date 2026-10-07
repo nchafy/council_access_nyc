@@ -34,15 +34,11 @@ from pathlib import Path
 
 __all__ = ["GRID_SPACING_DEG", "Polygon", "load_features", "locate", "overlap_shares"]
 
-#: Lattice spacing in degrees, about 110 m north-south at this latitude. Fine
-#: enough that a board covering a meaningful slice of a council district is never
-#: missed, coarse enough to keep the whole sweep near a second.
+#: ~110 m north-south at this latitude.
 GRID_SPACING_DEG = 0.001
 
-#: Boards smaller than this share of a council district are dropped from its list.
-#: Council and community district lines were drawn independently, so almost every
-#: pair of neighbours overlaps by a sliver; listing those would bury the two or
-#: three boards that actually matter to a resident.
+#: Council and community lines were drawn independently, so neighbours overlap by
+#: slivers; below this share a board is a sliver, not a covering board.
 MIN_SHARE = 0.04
 
 
@@ -197,33 +193,11 @@ def overlap_shares(
     return result
 
 
-# --------------------------------------------------------------------------- #
-# Simplification, for shipping geometry to a browser
-# --------------------------------------------------------------------------- #
-
-#: Douglas-Peucker tolerance in degrees, ~2.2 m. Chosen by measurement, not taste.
-#: Measured over a 37,000-point citywide lattice, comparing the district each point
-#: resolves to against the full-precision geometry:
-#:
-#:     tolerance   gzipped   points assigned to the WRONG district
-#:     11 m         60 KB    0.059%
-#:     2.2 m       132 KB    0.011%   <- chosen
-#:     none        372 KB    0.005%
-#:
-#: The floor is not zero: even unsimplified geometry disagrees on 2 points, which
-#: are lattice points sitting exactly on a shared edge — an artifact of the
-#: comparison rather than of simplification. So 2.2 m is close to as good as this
-#: gets, at a third of the 300 KB payload budget. Going coarser is a fivefold
-#: accuracy cost for 72 KB, which is the wrong trade for a page whose whole claim
-#: is "this is your council member".
-#:
-#: Boundary cases remain possible, which is why the address result always offers
-#: the City's own lookup as the authority — our geometry is a copy of DCP's
-#: published lines, not the legal definition of a district.
+#: ~2.2 m. Measured, not chosen: docs/phase-1-scope.md §3 carries the lattice table, and
+#: tests/unit/test_geo.py::TestSimplifiedGeometryAgrees fails if it is loosened.
 SIMPLIFY_TOLERANCE_DEG = 0.00002
 
-#: Coordinate precision. 5 decimals is ~1 m, well below any boundary's accuracy,
-#: and truncating there is most of the file-size win.
+#: ~1 m, below any boundary's accuracy.
 COORD_PRECISION = 5
 
 

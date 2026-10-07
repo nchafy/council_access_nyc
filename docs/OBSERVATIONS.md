@@ -381,3 +381,24 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   "keep every citation" are not the same lever and the second one binds first. A word-count target
   is the wrong instrument for a voice change in either jurisdiction; count imperatives and
   second-person uses instead, because those go to zero and words do not.
+
+- 2026-10-07 | `src/showup/templates/board.html`, `scripts/a11y_audit.py` | Chrome's accessibility
+  tree exposes an `<h3>` nested inside a `<summary>` as a real level-3 heading *and* exposes the
+  `summary` as a `DisclosureTriangle` with `expanded`, so progressive disclosure costs no heading
+  outline — `/board/302/` still names all five request cards while collapsed, and axe reports 0
+  WCAG 2.2 AA violations across 115 pages. Two things did break: `summary` was absent from the
+  keyboard audit's focusable selector (`a[href], button, input, select, textarea, [tabindex]`), so
+  the Tab budget ran one short per card; and a closed `<details>` hides its children with
+  `content-visibility` rather than `display: none`, so a computed-style filter alone still counts
+  them as reachable. Both are now in `TAG_FOCUSABLE_JS`. | so what: `<details>` is a free win for
+  disclosure, but any audit that enumerates focusable elements by selector has to be told about it,
+  and a `display`/`visibility` check is not a substitute.
+
+- 2026-10-07 | `site/`, `scripts/perf.py` | Moving three disclosure paragraphs off the pages onto a
+  new `/references/` made every document lighter — board 4,106 -> 3,678 gzipped bytes (-10%),
+  district/35 3,720 -> 3,701, index 5,049 -> 4,993, 404 664 -> 610 — while `site.css` grew 2,059 ->
+  2,267 and `site.js` 1,640 -> 1,869 for the disclosure rules and a locale-free date formatter. Per
+  page on the critical path that is about +0.4 KB, because the critical path counts the shared CSS
+  and JS every time. `/references/` is 2,822 gzipped, 11% of the 60 KB budget. | so what: on a site
+  this small the shared assets dominate a page-weight diff, so "the page got lighter" and "the
+  critical path got lighter" are different claims and the second one is the gated number.

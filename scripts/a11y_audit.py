@@ -41,15 +41,20 @@ INTERACTIVE_ROLES = frozenset(
 REQUIRED_LANDMARKS = ("banner", "main", "contentinfo")
 
 #: Tags each focusable element with its DOM-order index, so focus can be identified by index.
+#: `summary` is in the list because a request card's disclosure is a real stop in the tab
+#: order; leaving it out made the Tab budget one short per card and the walk run off the end.
 TAG_FOCUSABLE_JS = """
 (() => {
-  const selector = 'a[href], button, input, select, textarea, [tabindex]';
+  const selector = 'a[href], button, input, select, textarea, summary, [tabindex]';
   const nodes = [...document.querySelectorAll(selector)].filter((element) => {
     if (element.disabled || element.type === 'hidden') return false;
     if (element.getAttribute('tabindex') === '-1') return false;
     // `hidden` on an ancestor removes it from the tab order; load-order sensitive,
     // because the address section ships hidden and is revealed by script.
     if (element.closest('[hidden]')) return false;
+    // A closed <details> hides its content with content-visibility rather than
+    // display, so computed style alone would still count it as reachable.
+    if (element.tagName !== 'SUMMARY' && element.closest('details:not([open])')) return false;
     const style = getComputedStyle(element);
     if (style.visibility === 'hidden' || style.display === 'none') return false;
     return true;

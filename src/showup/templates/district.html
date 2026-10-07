@@ -100,7 +100,7 @@
 
 {% if not district.boards %}
 <section class="boards">
-  <h2>Community boards covering this district</h2>
+  <h2>Community boards</h2>
   <p class="designed-state">
     We could not match a community board to this district. Boards are listed by
     <a href="https://www.nyc.gov/site/cau/community-boards/community-boards.page"
@@ -109,7 +109,7 @@
 </section>
 {% else %}
 <section class="boards">
-  <h2>Community {% if district.boards|length > 1 %}boards{% else %}board{% endif %} covering this district</h2>
+  <h2>Community {% if district.boards|length > 1 %}boards{% else %}board{% endif %}</h2>
   <p class="why">
     {%+ if district.boards|length > 1 %}This council district overlaps {{ district.boards|length }} community boards, listed by how much of the district each covers.{% else %}This council district falls almost entirely inside one community board.{% endif %} A community board meets on a <strong>standing monthly
     cadence</strong>, unlike Council committees.
@@ -121,6 +121,7 @@
     Board members are volunteers appointed by the Borough President. We list the
     board <em>office</em>, not individual members.
   </p>
+{{ m.source("Shares are approximate") }}
 </section>
 {% endif %}
 
@@ -147,7 +148,7 @@
     <li>Pre-recorded testimony is not played. Audio or video links need a transcript too.</li>
     <li>Submissions become part of the <strong>permanent public record</strong>.</li>
   </ul>
-  <h3>Two things nobody publishes</h3>
+  <h3>Time limits and registration</h3>
   <p class="refusal">
     The Council does not publish a <strong>registration cut-off time</strong> before a hearing,
     or a <strong>per-speaker time limit</strong>. We will not guess at either. Chairs usually

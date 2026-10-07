@@ -4,6 +4,9 @@
 {% macro lines(parts) %}{% for part in parts if part %}{% if not loop.first %}<br>{% endif %}{{ part }}{% endfor %}{% endmacro %}
 {% macro email_suppressed(reason) %}<em>Not shown — {{ reason }}.</em>{% endmacro %}
 {% macro cadence(text) %}{{ text }}<br><small>The board's own published wording. Boards move meetings.</small>{% endmacro %}
+{# One line naming where a section's facts came from. The identifiers, windows and
+   caveats are on /references/, which is also what keeps these sections short. #}
+{% macro source(what) %}  <p class="source">{{ what }}. <a href="/references/">Sources</a>.</p>{% endmacro %}
 {% macro dl(rows) %}{% if rows %}<dl>
 {% for key, value in rows if value %}  <dt>{{ key }}</dt>
   <dd>{{ value }}</dd>

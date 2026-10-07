@@ -172,24 +172,24 @@ dd small { color: var(--muted); font-size: .84rem; display: inline-block; margin
 
 .member-name { font-size: 1.28rem; font-weight: 700; margin: .3rem 0 0; }
 
-/* Meetings */
-.meeting {
+/* Meetings, budget requests, and one dataset on /references/: the same card */
+.meeting, .request, .dataset {
   border: 1px solid var(--rule);
   border-radius: 8px;
   padding: .85rem 1rem 1rem;
   margin: .9rem 0;
 }
-.meeting h3 { margin-top: 0; }
+.meeting h3, .dataset h3 { margin-top: 0; }
 .meeting .links { margin: .8rem 0 0; font-size: .93rem; }
-
-/* Budget requests */
-.request {
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: .85rem 1rem 1rem;
-  margin: .9rem 0;
-}
 .request h3 { margin-top: 0; font-size: 1.05rem; }
+/* Collapsed, a card is its own header; expanded, it carries the quoted detail. No
+   script: <details> is keyboard-operable and announces its own state. */
+.request summary { cursor: pointer; padding: .1rem 0; }
+.request summary h3 { display: inline; }
+.request summary .priority, .source { color: var(--muted); font-size: .85rem; }
+.request summary::marker { color: var(--muted); }
+summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.source { margin: .7rem 0 0; }
 
 .deadline { font-weight: 700; padding: .1rem .35rem; border-radius: 4px; }
 .deadline.open { background: var(--ok-bg); color: var(--ok-ink); }
@@ -216,8 +216,8 @@ dd small { color: var(--muted); font-size: .84rem; display: inline-block; margin
   font-size: .95rem;
 }
 
-.participate ul { padding-left: 1.15rem; }
-.participate li { margin: .3rem 0; }
+.participate ul, .references ul { padding-left: 1.15rem; }
+.participate li, .references li { margin: .3rem 0; }
 
 .back { margin: 2.2rem 0 0; }
 

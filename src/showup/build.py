@@ -20,9 +20,16 @@ from pathlib import Path
 
 from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
 from .crosswalk import load as load_crosswalk
+from .fetch import SOURCES
 from .geo import load_features, to_geojson
 from .model import District, DistrictBoard, Manifest, Member
-from .render import render_board, render_district, render_index, render_not_found
+from .render import (
+    render_board,
+    render_district,
+    render_index,
+    render_not_found,
+    render_references,
+)
 from .sources.boards import load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
@@ -175,6 +182,33 @@ def _load_districts(
             )
         )
     return districts, current, boards_by_code
+
+
+def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
+    """Every fetched source as `/references/` shows it: registry joined to fetch dates.
+
+    The registry in `fetch.py` carries the identifier, the URL and the window; the
+    manifest carries the fetch date and the row count. Neither is typed into a template.
+    """
+    rows: list[dict] = []
+    for source in SOURCES:
+        recorded = manifest_sources.get(Path(source.filename).stem, {})
+        cached = raw / source.filename
+        fetched_at = recorded.get("fetched_at") or (_mtime(cached) if cached.exists() else None)
+        rows.append(
+            {
+                "label": source.label,
+                "dataset": source.dataset,
+                "url": source.url,
+                "why": source.why,
+                "fetched_at": datetime.fromisoformat(str(fetched_at)) if fetched_at else None,
+                # The manifest's window where there is one: that is the number the
+                # browser compares against, so it is the number a reader can check.
+                "max_age_hours": recorded.get("max_age_hours", source.max_age_hours),
+                "rows": recorded.get("rows"),
+            }
+        )
+    return rows
 
 
 def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> dict:
@@ -354,6 +388,17 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "max_age_hours": 24 * 30,
             "rows": budget_request_rows,
         }
+
+    # Every disclosure the pages used to carry inline now lives here, so the pages
+    # keep a source line and this page keeps the identifiers, windows and caveats.
+    references_root = staging / "references"
+    references_root.mkdir()
+    (references_root / "index.html").write_text(
+        render_references(
+            _reference_rows(raw, manifest_sources), built_at=now, window_end=window_end
+        ),
+        encoding="utf-8",
+    )
 
     manifest = Manifest(sources=manifest_sources, built_at=now, calendar_window_end=window_end)
     (staging / "manifest.json").write_text(

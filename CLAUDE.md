@@ -9,14 +9,14 @@ registering, and how many hours are left to file written testimony.
 
 ```bash
 make fetch    # refresh the upstream cache (~9 min cold; skips anything fresh)
-make verify   # build + lint + ~9,000 tests + 357 live-response assertions. The gate.
+make verify   # build + lint + ~9,200 tests + 482 live-response assertions. The gate.
 make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
 make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
 make browser  # every browser gate in one pytest run (~100 s)
 make gates    # the same four gates as operator tools, with readable output
 ```
 
-`make gates` is `axe` (WCAG 2.2 AA over all 114 pages), `a11y` (real `Tab` keypresses and
+`make gates` is `axe` (WCAG 2.2 AA over all 115 pages), `a11y` (real `Tab` keypresses and
 the accessibility tree), `console` (any console error or CSP violation) and `perf` (page
 weight, and cold-load p95 on throttled 3G). They are deliberately **not** part of `make
 verify`: together they are about two minutes of real browser time, and the fast gate has to
@@ -42,7 +42,7 @@ any renderer change.
 deployed — no domain, no hosting, no scheduled refresh, all deferred together.
 
 The accessibility and performance pass is now built and gated in CI: axe clean on all
-114 pre-rendered pages at WCAG 2.2 AA, 122 keyboard and accessibility-tree checks over
+115 pre-rendered pages at WCAG 2.2 AA, 135 keyboard and accessibility-tree checks over
 9 page types, no console error or CSP violation on any page, 13.9 KB gzipped on the
 heaviest page against the 60 KB budget, and a 906 ms cold-load p95 on throttled 3G
 against the 3 s promise. **The one open Phase 1 item is a real screen-reader pass**,

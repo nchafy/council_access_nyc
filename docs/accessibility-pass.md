@@ -11,8 +11,8 @@ All four run in CI on every commit.
 
 | Gate | Command | What it proves |
 |---|---|---|
-| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 114 pre-rendered pages |
-| Keyboard + accessibility tree | `make a11y` | 122 checks over 9 page types, 0 failures |
+| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 115 pre-rendered pages |
+| Keyboard + accessibility tree | `make a11y` | 135 checks over 10 page types, 0 failures |
 | Console and CSP | `make console` | 0 complaints — no page logs an error or trips its own policy |
 | Weight and cold load | `make perf` | 13.9 KB heaviest page vs 60 KB; 906 ms p95 vs 3000 ms |
 
@@ -68,6 +68,13 @@ disagreements are informative.
    publishes nowhere. Does a listener hear "nobody has this" rather than an error on our part?
 9. On `/district/3/`, the degraded page: do the empty states read as deliberate? "No committee
    assignments are published on this district's page" must not sound like a bug.
+10. On `/board/302/`, the five request cards are native `<details>` with the `<h3>` inside the
+    `<summary>`. Chrome's tree exposes **both** — a `DisclosureTriangle` carrying the title plus
+    the priority and announcing `expanded`, and a separate level-3 heading carrying the title — so
+    heading navigation still reaches every card while collapsed. Check that the doubled title does
+    not obscure the state, and that expanding announces the change.
+11. On `/references/`: does each identifier, fetch date and freshness window stay attached to its
+    own dataset, or do the eight cards run together as one list?
 
 ## 4. The record
 

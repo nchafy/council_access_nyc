@@ -49,7 +49,7 @@ def _submit_address(page, base_url, query, settle_seconds=6.0):
 
 @pytest.fixture(scope="module")
 def complaints(chrome, built_site):
-    """One load of each page type. A policy violation appears identically on all 114."""
+    """One load of each page type. A policy violation appears identically on all 115."""
     return check(built_site, list(REPRESENTATIVE))
 
 

@@ -25,6 +25,10 @@ REPRESENTATIVE: dict[str, str] = {
     "/district/": "the district index — the no-JavaScript path to all 51",
     "/board/302/": "the community board view, a different page type rather than a variant",
     "/board/": "the board index — the no-JavaScript path to all 59",
+    "/references/": (
+        "the sources page: every dataset identifier, fetch date and freshness window, "
+        "and what every other page's source line points at"
+    ),
     "/404.html": "the not-found page, which is still a page a person has to read",
 }
 

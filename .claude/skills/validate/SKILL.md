@@ -11,7 +11,7 @@ change big enough that "the tests pass" is not sufficient evidence.
 ## The one command, and what it does not cover
 
 ```bash
-make verify     # build + lint + ~9,100 tests + 391 live-response checks
+make verify     # build + lint + ~9,200 tests + 482 live-response checks
 ```
 
 `make verify` deliberately excludes the four browser gates — together they are about two
@@ -29,17 +29,17 @@ Cheapest and most specific first, so a failure names itself before you spend two
 | # | Command | Proves | Cost |
 |---|---|---|---|
 | 1 | `make lint` | ruff clean, formatted | seconds |
-| 2 | `make test` | ~9,100 tests, **100% coverage floor** | ~75 s |
+| 2 | `make test` | ~9,200 tests, **100% coverage floor** | ~110 s |
 | 3 | `make build` | cached sources → `site/`, fails closed | ~10 s |
-| 4 | `uv run python scripts/verify.py` | 391 assertions against live responses | ~15 s |
+| 4 | `uv run python scripts/verify.py` | 482 assertions against live responses | ~15 s |
 | 5 | `make perf` | 60 KB gzipped page budget; 3 s cold on throttled 3G | ~2 min |
-| 6 | `make axe` | 0 WCAG 2.2 AA violations, all 114 pages | ~25 s |
-| 7 | `make a11y` | 122 keyboard + accessibility-tree checks | ~40 s |
+| 6 | `make axe` | 0 WCAG 2.2 AA violations, all 115 pages | ~25 s |
+| 7 | `make a11y` | 135 keyboard + accessibility-tree checks | ~40 s |
 | 8 | `make console` | no console error or CSP violation | ~20 s |
 | 9 | `make shot` | layout damage a human must see | ~20 s |
 
 `make browser` runs 6–8 as one pytest run. Add `ALL=1` to `make axe` / `make console` for all
-114 pages instead of one of each type.
+115 pages instead of one of each type.
 
 **A change is validated when 1–8 pass and you have looked at 9.** Not before.
 

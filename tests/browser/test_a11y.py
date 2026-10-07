@@ -41,8 +41,8 @@ class TestAxe:
 
     def test_it_really_checked_every_page(self, axe_report, built_site):
         assert set(axe_report["pages"]) == set(every_page(built_site))
-        # 51 districts + 59 boards + two indexes + the front page + 404.
-        assert len(axe_report["pages"]) == 114
+        # 51 districts + 59 boards + two indexes + the front page + /references/ + 404.
+        assert len(axe_report["pages"]) == 115
 
     def test_every_page_actually_exercised_rules(self, axe_report):
         for path, result in axe_report["pages"].items():

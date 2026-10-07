@@ -183,6 +183,7 @@ def _run_checks(base: str, site: Path) -> None:
         )
         check("hearings@council.nyc.gov" in page, f"{url} missing the hearings contact")
         check("Community Board" in page, f"{url} missing the community board block")
+        check('href="/references/"' in page, f"{url} does not link its sources")
         check(
             "community board" in page.lower() and "council district" in page.lower(),
             f"{url} does not distinguish council district from community board",
@@ -210,18 +211,27 @@ def _run_checks(base: str, site: Path) -> None:
         # The route that justifies this view existing at all.
         check("non-Board (public) members" in flat, f"{url} missing the public-member route")
         check("up to 50 unsalaried members" in flat, f"{url} missing the appointment facts")
-        # Refusals, not guesses.
+        # The office is not the venue. The address is directly above this line, so
+        # without it the silence reads as "this is where the board meets".
         check(
-            "could not find an official source" in flat,
-            f"{url} does not refuse the unpublished facts (term length, age, cadence)",
+            "The City's dataset records the board office, not the meeting venue" in flat,
+            f"{url} presents the board office as the meeting venue",
         )
+        check('href="/references/"' in page, f"{url} does not link its sources")
         check(
             'href="/district/' in page,
             f"{url} does not link the council districts covering it",
         )
         check("of this board" in flat, f"{url} share is not labelled as of-the-board")
         # The budget requests, with their edition, their denominator and their register.
-        check("What this board asked the City for" in flat, f"{url} missing the budget requests")
+        check("Fiscal Year Requests" in flat, f"{url} missing the budget requests")
+        # Collapsed, a card is its header; expanded, the quoted detail. No script.
+        check(
+            page.count("<details>") == page.count("<summary>") == 5,
+            f"{url} does not carry five collapsible request cards",
+        )
+        for field in ("Requestee", "Request", "Response"):
+            check(f"<dt>{field}</dt>" in page, f"{url} request cards have no {field} field")
         check("/d/vn4m-mk4t" in page, f"{url} does not link the register it quotes")
         check(
             "there is no single top request" in flat,
@@ -302,6 +312,44 @@ def _run_checks(base: str, site: Path) -> None:
         "manifest bakes in a staleness verdict; it must carry inputs only",
     )
     print(f"GET /manifest.json  {status}")
+
+    # --- /references/: the one page every source line points at -----------------
+    # Provenance may be relocated and must never be lost, so each identifier,
+    # denominator and caveat moved off a page is asserted to have landed here.
+    url = base + "/references/"
+    status, reference_headers, references = fetch(url)
+    flat = " ".join(references.split())
+    check(status == 200, f"{url} returned {status}")
+    check("Content-Security-Policy" in reference_headers, f"{url} served without CSP")
+    check("<h1>Sources</h1>" in references, f"{url} missing its heading")
+    for dataset in (
+        "Calendar.aspx",
+        "uvw5-9znb",
+        "ruf7-3wgc",
+        "vn4m-mk4t",
+        "872g-cjhh",
+        "5crt-au7u",
+        "pri4-ifjk",
+        "dg92-zbpx",
+    ):
+        check(dataset in flat, f"{url} does not name the source {dataset}")
+    for relocated in (
+        "a few dozen land-use hearing notices a year across all 59 community boards",
+        "no City dataset publishes a dated board calendar",
+        "disagree with what boards publish on their own sites",
+        "records the board office address, not the meeting venue",
+        "rounded to a whole number and approximate",
+        "nominate half of the board's members",
+    ):
+        check(relocated in flat, f"{url} lost the relocated provenance {relocated!r}")
+    check(flat.count("<dt>Fetched</dt>") >= 6, f"{url} does not date every fetched source")
+    check(
+        flat.count("<dt>Freshness window</dt>") >= 8,
+        f"{url} does not state a freshness window per source",
+    )
+    _check_markup_safety(url, references)
+    _check_links(url, references, site)
+    print(f"GET /references/  {status}  {len(references)} bytes")
 
     # --- the privacy line: no community board chair or district manager --------
     # The committed fixture, not the gitignored cache, so this check works on a

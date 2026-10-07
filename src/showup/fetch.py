@@ -375,6 +375,11 @@ class Source:
     #: changes daily; boundaries change about once a decade.
     max_age_hours: float
     why: str = field(default="")
+    #: The three fields `/references/` renders. Declared here rather than typed into
+    #: a template, so a source cannot be fetched without being disclosed.
+    label: str = field(default="")
+    dataset: str = field(default="")
+    url: str = field(default="")
 
 
 SOURCES: tuple[Source, ...] = (
@@ -386,6 +391,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=200_000,
         max_age_hours=12,
         why="the only source of forward-looking meeting dates; the open dataset ends 2024",
+        label="Legistar meeting calendar",
+        dataset="Calendar.aspx, the live Legistar layer",
+        url="https://nyc.legistar.com/Calendar.aspx",
     ),
     Source(
         name="districts",
@@ -395,6 +403,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=1_000_000,
         max_age_hours=24 * 30,
         why="the only source for council district office addresses",
+        label="Council district pages",
+        dataset="council.nyc.gov/district-N/, one page per district",
+        url="https://council.nyc.gov/districts/",
     ),
     Source(
         name="members",
@@ -406,6 +417,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=50_000,
         max_age_hours=24 * 30,
         why="term windows decide which seats are currently held",
+        label="Council members and term windows",
+        dataset="uvw5-9znb",
+        url="https://data.cityofnewyork.us/d/uvw5-9znb",
     ),
     Source(
         name="boards",
@@ -420,6 +434,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=20_000,
         max_age_hours=24 * 60,
         why="community board contact details and meeting cadence",
+        label="Community boards",
+        dataset="ruf7-3wgc",
+        url="https://data.cityofnewyork.us/d/ruf7-3wgc",
     ),
     Source(
         name="budget-requests",
@@ -429,6 +446,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=1_000_000,
         max_age_hours=24 * 30,
         why="what each board asked the City for, in the board's own words",
+        label="Community board budget requests",
+        dataset="vn4m-mk4t",
+        url="https://data.cityofnewyork.us/d/vn4m-mk4t",
     ),
     Source(
         name="council-geometry",
@@ -438,6 +458,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="address lookup and the board crosswalk",
+        label="Council district boundaries",
+        dataset="872g-cjhh",
+        url="https://data.cityofnewyork.us/d/872g-cjhh",
     ),
     Source(
         name="community-geometry",
@@ -448,6 +471,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="the council-district to community-board crosswalk",
+        label="Community district boundaries",
+        dataset="5crt-au7u",
+        url="https://data.cityofnewyork.us/d/5crt-au7u",
     ),
     Source(
         name="zip-geometry",
@@ -457,6 +483,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="ZIP code lookup without touching the geocoder",
+        label="ZIP code boundaries",
+        dataset="pri4-ifjk",
+        url="https://data.cityofnewyork.us/d/pri4-ifjk",
     ),
 )
 

@@ -21,7 +21,7 @@ from . import templates
 from .deadlines import accommodation_state, written_state
 from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
 
-__all__ = ["render_district", "render_index", "render_not_found"]
+__all__ = ["render_district", "render_index", "render_not_found", "render_references"]
 
 
 def _link(url: str | None, label: str, *, extra: str = "") -> str:
@@ -245,4 +245,31 @@ def render_board(
 def render_not_found(*, built_at: datetime, window_end: date | None) -> str:
     return templates.render(
         "not_found.html", title="Not found", built_at=built_at, window_end=window_end
+    )
+
+
+# --------------------------------------------------------------------------- #
+# References
+# --------------------------------------------------------------------------- #
+
+#: The City Record is cited for its denominator and never fetched: a few dozen
+#: land-use notices a year is not a board calendar, and saying so needs the number.
+CITY_RECORD_URL = "https://data.cityofnewyork.us/d/dg92-zbpx"
+
+
+def _window(hours: float) -> str:
+    """A max_age as an exact unit: hours below two days, days above. Never rounded."""
+    return f"{hours:g} hours" if hours < 48 else f"{hours / 24:g} days"
+
+
+def render_references(sources: list[dict], *, built_at: datetime, window_end: date | None) -> str:
+    """The one page carrying every identifier, fetch date, window and caveat."""
+    return templates.render(
+        "references.html",
+        title="Sources",
+        sources=[{**source, "window": _window(source["max_age_hours"])} for source in sources],
+        city_record_url=CITY_RECORD_URL,
+        register_url=BUDGET_REGISTER_URL,
+        built_at=built_at,
+        window_end=window_end,
     )

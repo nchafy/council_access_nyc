@@ -2,10 +2,13 @@
 {% import "macros.html" as m %}
 {% macro website(url, label) %}{{ m.link(url, label) }}<br><small>The board's own site publishes its agendas, minutes and meeting location. No City dataset carries a board meeting calendar.</small>{% endmacro %}
 {% macro website_as_text(host) %}<span class="nolink">{{ host }}</span><br><small>Given as text, not a link: this board uses its own domain rather than a City one, unverifiable at build time.</small>{% endmacro %}
+{# The office note is a field label, not a disclosure: the address sits right here, and
+   silence reads as "this is the venue", which was wrong on 8 of 8 boards checked. #}
+{% macro office(address) %}{{ address }}<br><small>The City's dataset records the board office, not the meeting venue.</small>{% endmacro %}
 {% block body %}
 {% set rows = [] %}
 {% if board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
-{% if board.address %}{% do rows.append(("Office", board.address)) %}{% endif %}
+{% if board.address %}{% do rows.append(("Office", office(board.address))) %}{% endif %}
 {% if board.phone %}{% do rows.append(("Phone", board.phone)) %}{% endif %}
 {% if board.email %}{% do rows.append(("Email", board.email)) %}
 {% elif board.email_suppressed %}{% do rows.append(("Email", m.email_suppressed(board.email_suppressed))) %}{% endif %}
@@ -26,24 +29,13 @@
 
 {% if cadence_rows %}
 <section class="meetings">
-  <h2>When it meets</h2>
-  <p class="why">
-    Quoted exactly as the City's dataset records it. Unlike Council committees, which
-    are called by their chair, a community board meets on a standing monthly cadence.
-  </p>
+  <h2>Meeting times</h2>
 {{ m.dl(cadence_rows) }}
-  <p class="refusal">
-    The City's dataset records the board office, not the meeting venue. No City dataset
-    publishes a dated board calendar, and the City Record
-    (<a href="https://data.cityofnewyork.us/d/dg92-zbpx" rel="noopener noreferrer">dg92-zbpx</a>)
-    carries only a few dozen land-use hearing notices a year across all 59 boards. The
-    cadence above is the City's record of it, which we have found to disagree with what
-    boards publish on their own sites.
-  </p>
+{{ m.source("Quoted from the City's community boards dataset") }}
 </section>
 {% else %}
 <section class="meetings">
-  <h2>When it meets</h2>
+  <h2>Meeting times</h2>
   <p class="designed-state">
     This board does not publish a meeting cadence in the City's dataset.
   </p>
@@ -52,7 +44,7 @@
 
 {% if budget is none %}
 <section class="budget-requests">
-  <h2>What this board asked the City for</h2>
+  <h2>Fiscal Year Requests</h2>
   <p class="designed-state">
     We hold no budget requests on file for this board. Every board files them with the
     Mayor's Office of Management and Budget each year, as the City Charter requires, so
@@ -61,7 +53,7 @@
 </section>
 {% else %}
 <section class="budget-requests">
-  <h2>What this board asked the City for</h2>
+  <h2>Fiscal Year Requests</h2>
   <p class="why">
     {%+ if budget.fiscal_year %}Fiscal Year {{ budget.fiscal_year }}{% else %}An unstated fiscal year{% endif %} requests, from the edition OMB published on
     {{ budget.published }} — the newest one not dated in the
@@ -70,14 +62,16 @@
     Explanations and replies are quoted from it and cut short here.
   </p>
 {% for request in budget.requests %}
-{% set request_rows = [("Priority", request.priority)] %}
-{% if request.agency %}{% do request_rows.append(("Asked of", request.agency)) %}{% endif %}
-{% if request.explanation %}{% do request_rows.append(("The board's words", request.explanation)) %}{% endif %}
-{% if request.response %}{% do request_rows.append(("The reply, quoted", request.response)) %}{% endif %}
+{% set request_rows = [] %}
+{% if request.agency %}{% do request_rows.append(("Requestee", request.agency)) %}{% endif %}
+{% if request.explanation %}{% do request_rows.append(("Request", request.explanation)) %}{% endif %}
+{% if request.response %}{% do request_rows.append(("Response", request.response)) %}{% endif %}
 {% do request_rows.append(("Register reference", request.tracking_code)) %}
   <article class="request">
-    <h3>{{ request.title }}</h3>
+    <details>
+      <summary><h3>{{ request.title }}</h3> <span class="priority">{{ request.priority }}</span></summary>
 {{ m.dl(request_rows) }}
+    </details>
   </article>
 
 {% endfor %}
@@ -94,21 +88,17 @@
 {% endif %}
 
 <section class="committees">
-  <h2>Council districts covering this board</h2>
-  <p class="why">
-    These Council Members can introduce legislation for this area, and nominate half
-    of this board's members. Percentages are the share of <em>this board</em> that
-    sits in each district, computed from the City's boundary files and approximate.
-  </p>
+  <h2>Council districts</h2>
   <ul class="district-list">
 {% for number, share in districts %}
     <li><a href="/district/{{ number }}/">Council District {{ number }}</a> <span class="share">{{ share|percent }} of this board</span></li>
 {% endfor %}
   </ul>
+{{ m.source("Shares are approximate") }}
 </section>
 
 <section class="participate">
-  <h2>Public participation</h2>
+  <h2>Attending</h2>
   <p class="lead-truth">
     <strong>Board committees admit non-board members of the public.</strong>
   </p>
@@ -149,13 +139,6 @@
     <li>Boards are "autonomous City agencies and members are City officers" — not a
       neighbourhood association.</li>
   </ul>
-
-  <h3>Things the City does not publish</h3>
-  <p class="refusal">
-    We could not find an official source for how long a board term lasts, any minimum age to
-    serve, how often the full board must meet, or whether and how the public may speak at a
-    full board meeting. Those vary by board and we will not guess.
-  </p>
 </section>
 
 <p class="back"><a href="/">All districts and boards</a></p>

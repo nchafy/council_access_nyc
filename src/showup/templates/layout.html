@@ -22,10 +22,7 @@
     Data fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}. {% if window_end %}Meetings scheduled through {{ window_end.strftime("%-d %B %Y") }}.{% else %}No forward window could be determined from the calendar.{% endif +%}
   </p>
   <p class="caveat">Hearings are deferred or moved without notice.</p>
-  <p class="caveat">
-    Nothing here measures public opinion. No City source records who attended a
-    hearing, who testified, or which side they took.
-  </p>
+  <p class="caveat"><a href="/references/">Sources and freshness windows</a>.</p>
 </footer>
 <script src="/assets/site.js" defer></script>
 {% block extra_script %}{% endblock +%}

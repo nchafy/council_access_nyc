@@ -51,6 +51,8 @@ PAGES = {
     "district-3": "/district/3/",
     # The second view.
     "board-302": "/board/302/",
+    # The page every source line points at, and the only one built from a registry.
+    "references": "/references/",
 }
 
 

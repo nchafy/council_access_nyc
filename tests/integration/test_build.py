@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime
+from html import unescape
 from pathlib import Path
 
 import pytest
@@ -292,20 +293,32 @@ class TestBoardView:
         assert "Borough President" in page
         assert "reside, work, or have some other significant interest" in page
 
-    def test_board_page_refuses_what_the_city_does_not_publish(self, raw_dir, tmp_path):
+    def test_board_page_says_the_office_is_not_the_venue(self, raw_dir, tmp_path):
+        """A field note, not a disclosure paragraph: the address is directly above it.
+
+        Silence there reads as *that is where the board meets* — wrong on 8 of 8 boards
+        checked — so this one line stays on the page when the rest of that paragraph
+        moved to /references/.
+        """
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         page = " ".join((out / "board" / "302" / "index.html").read_text().split())
-        # Term length, minimum age, meeting frequency and public-comment rules are
-        # not published by the City, so the page says so rather than guessing.
-        assert "could not find an official source" in page
-        assert "No City dataset publishes a dated board calendar" in page
-        # The venue gap, stated rather than papered over with the office address.
         assert "The City's dataset records the board office, not the meeting venue" in page
-        # The one dataset carrying any dated notices is named, with its denominator.
-        assert "dg92-zbpx" in page
-        assert "a few dozen land-use hearing notices a year across all 59 boards" in page
-        assert "disagree with what boards publish" in page
+        assert "<dd>350 Jay Street, 8th Floor, Brooklyn, NY 11201<br><small>" in page
+
+    def test_the_board_page_does_not_catalogue_what_is_missing(self, raw_dir, tmp_path):
+        """Owner, 2026-10-07: absences nobody asked about are padding, not honesty.
+
+        Refusing to *invent* a fact is untouched — the office-is-not-the-venue note above
+        and the district page's time limits both stay. What is gone is the list of facts
+        the City happens not to publish.
+        """
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
+        assert "Things the City does not publish" not in page
+        assert "could not find an official source" not in page
+        assert "measures public opinion" not in page
 
     def test_board_page_distinguishes_the_office_from_the_full_board_venue(self, raw_dir, tmp_path):
         """The office is the committee room for several boards and not the full-board venue.
@@ -379,7 +392,7 @@ class TestBudgetRequestsOnTheBoardPage:
 
     def test_the_section_names_the_fiscal_year_and_the_publication_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        assert "What this board asked the City for" in page
+        assert "Fiscal Year Requests" in page
         assert "Fiscal Year 2027" in page
         assert "30 June 2026" in page
 
@@ -418,7 +431,7 @@ class TestBudgetRequestsOnTheBoardPage:
 
     def test_it_neither_ranks_nor_scores_boards(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        section = page.split("What this board asked the City for", 1)[1].split("</section>", 1)[0]
+        section = page.split("Fiscal Year Requests", 1)[1].split("</section>", 1)[0]
         assert "do not compare this board with any other" in section
         for banned in ("score", "percentile", "league", "out of 100"):
             assert banned not in section.lower()
@@ -513,3 +526,117 @@ class TestShippedData:
         )
         with pytest.raises(BuildError, match="district geometry"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+
+class TestProgressiveDisclosureOnRequestCards:
+    """Owner, 2026-10-07: collapsed a card is its headers, expanded it is the detail.
+
+    Native `<details>`, because the CSP is `script-src 'self'` with no inline script and
+    R39 requires the page to work with JavaScript off. The `<h3>` sits inside the
+    `<summary>`: Chrome's accessibility tree exposes both the heading and the
+    disclosure's expanded state that way, which `tests/browser/test_keyboard.py` holds.
+    """
+
+    @staticmethod
+    def _page(raw_dir, tmp_path) -> str:
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        return (out / "board" / "302" / "index.html").read_text()
+
+    def test_each_card_is_a_details_with_the_heading_inside_the_summary(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        assert page.count("<details>") == 5
+        assert page.count("<summary><h3>") == 5
+
+    def test_the_priority_label_stays_visible_collapsed(self, raw_dir, tmp_path):
+        """It is short, and it is what makes the collapsed list readable."""
+        page = self._page(raw_dir, tmp_path)
+        for summary in re.findall(r"<summary>(.*?)</summary>", page, re.DOTALL):
+            assert 'class="priority"' in summary
+
+    def test_the_detail_fields_are_inside_the_disclosure(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        for body in re.findall(r"</summary>(.*?)</details>", page, re.DOTALL):
+            assert "<dt>Register reference</dt>" in body
+        assert "<dt>Requestee</dt>" in page
+        assert "<dt>Response</dt>" in page
+
+    def test_the_old_narrated_field_labels_are_gone(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        for narration in ("Asked of", "The board&#x27;s words", "The reply, quoted"):
+            assert narration not in page
+
+    def test_nothing_about_the_disclosure_needs_script(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        assert "<script" not in page.split("<footer")[0]
+        assert "onclick" not in page.lower()
+
+
+class TestReferencesPage:
+    """One page carrying every identifier, fetch date, window and relocated caveat.
+
+    Built from the `fetch.SOURCES` registry joined to `manifest.json`, so a source
+    cannot be fetched and used without appearing here.
+    """
+
+    @staticmethod
+    def _page(raw_dir, tmp_path) -> str:
+        """Flattened and unescaped: these assertions are about text, not markup."""
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        return unescape(" ".join((out / "references" / "index.html").read_text().split()))
+
+    def test_it_is_written(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        assert (out / "references" / "index.html").is_file()
+
+    def test_every_registered_source_is_disclosed(self, raw_dir, tmp_path):
+        from showup.fetch import SOURCES
+
+        page = self._page(raw_dir, tmp_path)
+        for source in SOURCES:
+            assert source.label in page, f"{source.name} is fetched and not disclosed"
+            assert source.dataset in page, f"{source.name} has no identifier on the page"
+            assert source.url in page, f"{source.name} has no link on the page"
+            assert source.why in page, f"{source.name} does not say what it is used for"
+
+    def test_each_source_carries_its_freshness_window(self, raw_dir, tmp_path):
+        from showup.fetch import SOURCES
+
+        page = self._page(raw_dir, tmp_path)
+        assert page.count("<dt>Freshness window</dt>") == len(SOURCES)
+        # The manifest's window where there is one: that is the number the browser
+        # compares a fetch date against, so it is the number worth publishing.
+        assert "12 hours" in page
+        assert "40 days" in page
+
+    def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
+        page = self._page(raw_dir, tmp_path)
+        # The five sources the build reads; the two geometry files the committed
+        # crosswalk was generated from are not in this fixture's cache.
+        assert page.count("<dt>Fetched</dt>") == 6
+
+    def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
+        """Deleting a disclosure paragraph may relocate a citation, never lose one."""
+        page = self._page(raw_dir, tmp_path)
+        for relocated in (
+            "dg92-zbpx",
+            "a few dozen land-use hearing notices a year across all 59 community boards",
+            "no City dataset publishes a dated board calendar",
+            "quoted exactly as ruf7-3wgc records it",
+            "disagree with what boards publish on their own sites",
+            "records the board office address, not the meeting venue",
+            "rounded to a whole number and approximate",
+            "nominate half of the board's members",
+            "called by their chair, a community board meets on a standing monthly cadence",
+        ):
+            assert relocated in page, f"lost in relocation: {relocated!r}"
+
+    def test_every_page_links_it(self, raw_dir, tmp_path):
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        for page_file in out.rglob("*.html"):
+            if page_file.parent.name == "references":
+                continue
+            assert 'href="/references/"' in page_file.read_text(), page_file

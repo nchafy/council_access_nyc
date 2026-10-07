@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Which pages the accessibility and performance gates run against.
 
-One list shared by three gates, so a new page type gets checked by all of them at
-once. `REPRESENTATIVE` is every *kind* of page, including the designed degraded
-states, and is what the keyboard and performance gates use because both cost seconds
-per page. `every_page()` walks the built site for the axe gate, where data
-differences do change results and the full sweep earns its runtime.
+One list shared by three gates. `REPRESENTATIVE` is every *kind* of page, including the
+designed degraded states, and is what the keyboard and performance gates use because both
+cost seconds per page. `every_page()` walks the built site for the axe gate, where data
+differences do change results.
 """
 
 from __future__ import annotations

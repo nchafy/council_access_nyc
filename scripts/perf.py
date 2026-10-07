@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """The R40 performance gate: 60 KB gzipped on the critical path, 3 s cold on 3G.
 
-Page weight is arithmetic — gzip the document and everything it blocks on, compare
-against the budget — so it runs on every commit, cannot be flaky, and fails with an
-exact byte count. Cold load is a measurement with a distribution: Chrome loads each
-page throttled to the reference profile on a cold cache, and the p95 is compared
-against 3 s. Thresholds live in the committed `perf-budget.json`. Both figures are
-synthetic; analytics are banned, so no number here is an observed field percentile.
+Page weight is arithmetic — gzip the document and everything it blocks on — so it runs on
+every commit and fails with an exact byte count. Cold load is a measurement with a
+distribution, so Chrome loads each page throttled on a cold cache and the p95 is compared
+against 3 s. Thresholds live in `perf-budget.json`. Both figures are synthetic: analytics
+are banned, so no number here is an observed field percentile.
 
     python3 scripts/perf.py                 # both, against site/
     python3 scripts/perf.py --weight-only   # the arithmetic half, no browser needed

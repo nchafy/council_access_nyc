@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Fail if any page logs a console error or trips its own Content-Security-Policy.
 
-A CSP violation is not a crash: Chrome refuses the request, writes a console line, and
-the page carries on looking fine. So the check is crude on purpose — load every page
-behind the real `_headers`, collect everything the browser complains about, and fail on
-any of it, with no allowlist. A site with zero third parties and 4 KB of first-party
-script has no reason to log anything.
+A CSP violation is not a crash: Chrome refuses the request, writes a console line, and the
+page carries on looking fine. So this is crude on purpose — load every page behind the
+real `_headers` and fail on anything the browser complains about, with no allowlist.
+`tests/unit/test_csp.py` checks the same property statically, from the policy side.
 
     python3 scripts/console_check.py              # every page type
     python3 scripts/console_check.py --all        # every pre-rendered page
-
-`tests/unit/test_csp.py` checks the same property statically, from the policy side.
 """
 
 from __future__ import annotations

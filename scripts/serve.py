@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """Serve the built site locally with the real response headers.
 
-`python -m http.server` sends no CSP, so developing against it would mean every
-policy violation surfaces for the first time at deploy — which is exactly when it
-gets waived under pressure. This server parses the same `_headers` file Cloudflare
-Pages will read, so the policy is exercised in a browser from day one.
-
-Stdlib only, no dependencies, matching the project's dependency posture.
+`python -m http.server` sends no CSP, so a policy violation would surface for the first
+time at deploy — which is exactly when it gets waived under pressure. This parses the same
+`_headers` file Cloudflare Pages will read.
 
     python3 scripts/serve.py [--root site] [--port 8000]
 """

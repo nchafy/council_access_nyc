@@ -370,3 +370,14 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   membership is the participation route this product singles out as "the route most people do not know
   about". The board page listed the office and pitched committee membership in separate sections and
   connected them nowhere; it now states the split, with the caveat, and a test pins it.
+
+- 2026-10-07 | `src/showup/templates/*.html`, `docs/voice.md` | Applying the voice policy removed 38
+  second-person uses and 16 imperative sentences from the four templates but only 23% of the words
+  (1,804 -> 1,385, measured with Jinja and HTML tags stripped and alphabetic tokens counted). The
+  brief asked for roughly half. What stopped it: of what remains, the great majority is quoted
+  Charter and City wording, provenance (source link + denominator + window), or a refusal string,
+  and all three are protected. Only ~15% of the starting prose was direction or explanation —
+  i.e. the thing the policy removes. | so what: on a provenance-first page, "halve the prose" and
+  "keep every citation" are not the same lever and the second one binds first. A word-count target
+  is the wrong instrument for a voice change in either jurisdiction; count imperatives and
+  second-person uses instead, because those go to zero and words do not.

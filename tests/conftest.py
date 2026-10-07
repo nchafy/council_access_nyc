@@ -10,8 +10,7 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# The a11y and perf gates live in `scripts/` as operator tools; the tests drive that
-# same code rather than a second copy, so CI and `make axe` can never disagree.
+# The tests drive the operator tools in `scripts/`, not a second copy of them.
 if str(REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -25,9 +24,8 @@ def fixtures() -> Path:
 def calendar_html() -> str:
     """A real Legistar calendar trimmed to 60 dated rows.
 
-    `__VIEWSTATE` was replaced with a marker rather than kept: it is hundreds of
-    kilobytes, this parser never reads it, and its absence in the fixture
-    documents that we never POST it for pagination.
+    `__VIEWSTATE` is a marker, not the real hundreds of kilobytes: the parser never reads
+    it, and its absence records that we never POST it for pagination.
     """
     return (FIXTURES / "calendar_60rows.html").read_text(encoding="utf-8")
 
@@ -49,14 +47,13 @@ def district_page_html() -> dict[int, str]:
     return pages
 
 
-# A plain function with two fixtures over it, because the same cache is needed with two
-# lifetimes: per-session for the browser gates, per-test for the build tests.
+# A plain function with two fixtures over it: per-session for the browser gates,
+# per-test for the build tests.
 def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int, str]) -> Path:
     """Populate `raw` with a cache that clears every source floor. Returns `raw`."""
     (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
 
-    # All 51 pages must be present to clear the district_pages floor; reuse the
-    # four real fixtures cyclically for the rest.
+    # All 51 are needed to clear the floor, so the four real fixtures repeat.
     available = sorted(district_page_html)
     pages = {str(n): district_page_html[available[(n - 1) % len(available)]] for n in range(1, 52)}
     (raw / "district_pages.json").write_text(json.dumps(pages), encoding="utf-8")
@@ -84,22 +81,15 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
     ]
     (raw / "members.json").write_text(json.dumps(members), encoding="utf-8")
 
-    # Real community-board rows: 59 of them, needed to clear the boards floor and
-    # to carry the real chair / district-manager names the privacy test checks.
-    # From tests/fixtures, NOT etl/raw — the cache is gitignored, and reading it
-    # here made these tests pass locally and error in CI.
+    # From tests/fixtures and never etl/raw, which is gitignored: these rows carry the
+    # real chair and district-manager names the privacy test checks.
     shutil.copy2(FIXTURES / "community_boards.json", raw / "community_boards.json")
 
-    # Real rows from the OMB budget-request register, trimmed to six boards and two
-    # editions — including the future-dated one the loader must refuse.
+    # Six boards and two editions, including the future-dated one the loader must refuse.
     shutil.copy2(FIXTURES / "board_budget_requests.json", raw / "board_budget_requests.json")
 
-    # Synthetic district geometry: 51 disjoint squares. The build needs 51 features
-    # to emit site/data/districts.geo.json, and nothing here depends on the shapes
-    # being real — the accuracy of the real simplification is covered separately by
-    # tests/unit/test_geo.py::TestSimplifiedGeometryAgrees, which runs against the
-    # actual DCP file. Committing a 3.8 MB geojson to satisfy a smoke test would be
-    # the wrong trade.
+    # 51 synthetic squares: the build needs 51 features, and real-geometry accuracy is
+    # tests/unit/test_geo.py::TestSimplifiedGeometryAgrees against the actual DCP file.
     features = []
     for n in range(1, 52):
         x0 = -74.3 + (n - 1) * 0.02

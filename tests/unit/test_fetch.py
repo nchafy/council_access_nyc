@@ -1,10 +1,7 @@
 """The fetch stage, tested without touching the network.
 
-Every test here substitutes the fetcher, because what matters is not that urllib
-works — it is that a bad response can never replace a good cache entry. That is the
-property the build depends on, and the one that would fail silently.
-
-One network test exists, marked `upstream`, excluded from CI and run on a schedule.
+What matters is not that urllib works but that a bad response can never replace a good
+cache entry, so every fetcher is substituted. One network test is marked `upstream`.
 """
 
 from __future__ import annotations
@@ -43,11 +40,8 @@ class TestFailClosed:
         assert not (tmp_path / CALENDAR.filename).exists()
 
     def test_an_error_page_served_as_200_is_refused(self, tmp_path):
-        """The case this whole design exists for.
-
-        Legistar returns HTTP 200 with an error body, so a status check would cache
-        it happily. Only a body invariant catches it.
-        """
+        """The case this design exists for: Legistar returns HTTP 200 with an error body,
+        so only a body invariant catches it."""
         error_page = b"<html><title>Invalid feed</title></html>" + b"y" * 300_000
         with pytest.raises(FetchError, match="calendar grid"):
             fetch_one(_returning(CALENDAR, error_page), tmp_path, log=lambda m: None)
@@ -82,8 +76,7 @@ class TestInvariants:
 
     def test_wrong_geojson_feature_count_is_caught(self, tmp_path):
         geometry = _source("council-geometry")
-        # 50 features, not 51 — a boundary change or a truncated export. Either way
-        # the build's address lookup would be wrong, so refuse here.
+        # 50 features, not 51: a boundary change, or a truncated export.
         body = (
             json.dumps(
                 {"type": "FeatureCollection", "features": [{"properties": {}} for _ in range(50)]}
@@ -155,11 +148,8 @@ class TestFreshness:
 
 class TestFetchAll:
     def test_one_failure_does_not_stop_the_others(self, tmp_path, monkeypatch):
-        """A dead source must not block the rest.
-
-        The build has its own floors, so a partly-refreshed cache is caught there;
-        aborting the whole run would mean one flaky host blocks every refresh.
-        """
+        """A dead source must not block the rest: the build's own floors catch a partly
+        refreshed cache, and aborting would let one flaky host block every refresh."""
 
         def boom(log):
             raise FetchError("upstream is down")
@@ -196,10 +186,8 @@ class TestPoliteness:
     def test_every_scraped_host_has_a_declared_delay(self):
         """Politeness is a per-host decision and must be explicit.
 
-        council.nyc.gov publishes Crawl-delay: 10 and data.cityofnewyork.us
-        publishes 1 (both checked 2026-09-22). nyc.legistar.com serves no
-        robots.txt at all, so the 2 s there is our own choice, not a permission we
-        were given.
+        council.nyc.gov publishes Crawl-delay: 10, data.cityofnewyork.us 1, and
+        nyc.legistar.com no robots.txt at all, so its 2 s is our choice, not a permission.
         """
         from showup.fetch import CRAWL_DELAY
 
@@ -252,17 +240,14 @@ class TestAgainstRealHosts:
 class TestHttpLayer:
     """`_get`, `_fetch_calendar` and the Socrata pager, with urlopen substituted.
 
-    These carry the retry, failover and paging logic, which is exactly the code
-    that only runs when something has gone wrong upstream — so it is the code least
-    likely to be exercised by accident and most likely to be broken when needed.
+    Retry, failover and paging only run when something upstream has already gone wrong, so
+    they are the least likely code to be exercised by accident.
     """
 
     @staticmethod
     def _fake_urlopen(responses, calls=None):
-        """Return a urlopen stand-in that yields each response in turn.
-
-        A response may be bytes (a 200) or an exception instance (raised).
-        """
+        """A urlopen stand-in yielding each response in turn: bytes for a 200, or an
+        exception instance to raise."""
         import io
 
         queue = list(responses)
@@ -319,7 +304,6 @@ class TestHttpLayer:
         )
         with pytest.raises(FetchError, match="not retryable"):
             fetch_module._get("https://example.gov/missing")
-        # Retrying a 404 is just rudeness; it must stop after one attempt.
         assert len(calls) == 1
 
     def test_gives_up_after_the_retry_budget(self, monkeypatch):
@@ -385,8 +369,8 @@ class TestHttpLayer:
         fetcher = fetch_module._socrata_rows("abcd-1234", "i", page=3)
         rows = json.loads(fetcher(lambda m: None))
         assert [r["i"] for r in rows] == [0, 1, 2, 3, 4]
-        # Without a stable sort Socrata gives no ordering guarantee and rows
-        # silently duplicate or vanish between pages.
+        # Without a stable sort Socrata gives no ordering guarantee, so rows duplicate or
+        # vanish between pages.
         assert "%24order=%3Aid" in calls[0]
         assert "%24offset=3" in calls[1]
 
@@ -403,12 +387,6 @@ class TestHttpLayer:
         fetcher = fetch_module._socrata_rows("abcd-1234", "i")
         with pytest.raises(FetchError, match="Socrata error"):
             fetcher(lambda m: None)
-
-    # `test_district_scrape_records_a_failure_without_aborting` lived here. It drove
-    # the scrape with a fixed response queue, which the retry pass added in
-    # TestDistrictScrapeRetry exhausts. Its intent — one dead page must not abort
-    # the other fifty — is covered there with a mechanism that survives retries, so
-    # it was removed rather than padded.
 
     def test_polite_wait_actually_waits(self, monkeypatch):
         from showup import fetch as fetch_module
@@ -450,9 +428,9 @@ def _budget_rows(*, pairs: int = 59, per_board: int = 52, publication: str = "20
 
 
 class TestBudgetRegisterInvariant:
-    """`vn4m-mk4t` is cached one publication at a time, so the invariant has to prove
-    the payload really is that dataset, really covers all 59 boards, and really carries
-    exactly one publication — a `$where` that silently stopped filtering looks fine."""
+    """`vn4m-mk4t` is cached one publication at a time, so the invariant proves the payload
+    is that dataset, covers all 59 boards, and carries exactly one publication — a `$where`
+    that silently stopped filtering looks fine."""
 
     @staticmethod
     def _invariant(body: bytes):
@@ -601,10 +579,8 @@ class TestBudgetRegisterPublicationChoice:
 class TestDistrictScrapeRetry:
     """The whole set gets one retry pass before the fetch is refused.
 
-    A cold run on a fresh clone lost four of 51 pages to transient DNS failures. The
-    invariant correctly refused the incomplete set, but a fresh clone has no previous
-    cache to keep, so the operator had to repeat nine minutes of polite crawling for
-    a blip. One retry pass over only the failures fixes that.
+    A cold run lost four of 51 pages to transient DNS failures, and a fresh clone has no
+    previous cache to keep (docs/OBSERVATIONS.md, 2026-09-23).
     """
 
     @staticmethod
@@ -645,7 +621,6 @@ class TestDistrictScrapeRetry:
 
         assert all(pages[str(n)] for n in range(1, 52)), "the retry pass did not rescue them"
         assert any("retrying 4 page(s)" in m for m in messages)
-        # And the resulting file clears the invariant, which is the point.
         source = next(s for s in SOURCES if s.name == "districts")
         assert source.invariant(json.dumps(pages).encode()) is None
 
@@ -680,6 +655,5 @@ class TestDistrictScrapeRetry:
 
         assert pages["7"] is None
         assert any("failed twice: [7]" in m for m in messages)
-        # A genuinely missing page must still refuse the fetch.
         source = next(s for s in SOURCES if s.name == "districts")
         assert "of 51 district pages" in source.invariant(json.dumps(pages).encode())

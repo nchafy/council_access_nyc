@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Drive a real Chrome over the DevTools Protocol.
 
-A rendered accessibility tree, real `Tab` keypresses, and the browser's own clock
-under the browser's own throttling cannot be obtained from outside a browser. CDP is
-JSON over a loopback WebSocket, so the useful subset is small enough to own outright
-instead of depending on Playwright, which downloads and runs its own browser build on
-install — the `docs/dependencies.md` rule this file exists because of. The framing
-underneath is `websocket-client`'s: pure Python, installing no binaries. Used as a
-library by `axe_check`, `a11y_audit`, `console_check` and `perf`. Run directly for a
-smoke test:
+A rendered accessibility tree, real `Tab` keypresses and the browser's own clock under
+its own throttling cannot be had from outside a browser. CDP is JSON over a loopback
+WebSocket, so the useful subset is small enough to own rather than depend on Playwright,
+which installs and runs its own browser build — the `docs/dependencies.md` rule this file
+exists because of. Used as a library by `axe_check`, `a11y_audit`, `console_check`
+and `perf`.
 
     python3 scripts/cdp.py https://example.com
 """
@@ -57,11 +55,8 @@ def find_chrome() -> str | None:
 
 
 class WebSocket:
-    """A CDP-shaped channel over `websocket-client`, which owns the RFC 6455 framing.
-
-    Kept as a class so `Session` and `Browser` are unchanged: frame headers, the
-    mandatory client masking, continuation reassembly and pings are the library's now.
-    """
+    """A CDP-shaped channel over `websocket-client`, which owns the RFC 6455 framing —
+    frame headers, client masking, continuation reassembly and pings."""
 
     def __init__(self, url: str, timeout: float = 30.0) -> None:
         if urlsplit(url).scheme != "ws":
@@ -72,9 +67,8 @@ class WebSocket:
                 timeout=timeout,
                 # Chrome's debugging endpoint rejects an upgrade carrying an Origin.
                 suppress_origin=True,
-                # The library's UTF-8 validator is a per-byte Python loop, ~0.1 s per
-                # megabyte; `recv_text` decodes strictly anyway, so on an AX tree it is
-                # pure cost. There is no read ceiling to raise: see `test_cdp.py`.
+                # The library's validator is a per-byte Python loop, ~0.1 s per megabyte,
+                # and `recv_text` decodes strictly anyway (tests/unit/test_cdp.py).
                 skip_utf8_validation=True,
                 # One request is ever in flight, so the read lock buys nothing.
                 enable_multithread=False,
@@ -102,8 +96,8 @@ class WebSocket:
 
     def close(self) -> None:
         """Close the socket, tolerating a Chrome that has already gone."""
-        # Bounded: `Browser.__exit__` closes every socket before Chrome is terminated,
-        # so one that accepts the close frame and never answers must not hold up exit.
+        # Bounded, because a socket that accepts the close frame and never answers would
+        # otherwise hold up `Browser.__exit__`.
         with contextlib.suppress(WebSocketException, OSError):
             self._socket.close(timeout=1)
 
@@ -111,9 +105,8 @@ class WebSocket:
 class Session:
     """A CDP session against one page target.
 
-    Every `call` is synchronous, buffering events that arrive before the matching
-    response so a later `wait_for` can still find them. Because there is never more
-    than one request in flight, no reader thread or future registry is needed.
+    Every `call` is synchronous and buffers events that arrive before its response, so
+    one request is ever in flight and no reader thread or future registry is needed.
     """
 
     def __init__(self, websocket: WebSocket) -> None:
@@ -141,10 +134,7 @@ class Session:
         self._events.clear()
 
     def consume_events(self) -> list[dict[str, Any]]:
-        """Take every buffered event, leaving the buffer empty.
-
-        For callers that want everything that happened rather than the first match.
-        """
+        """Take every buffered event, leaving the buffer empty."""
         events, self._events = self._events, []
         return events
 
@@ -161,13 +151,11 @@ class Session:
                 self._events.append(message)
         raise CDPError(f"timed out after {timeout}s waiting for {method}")
 
-    # --- the handful of domain calls every caller needs ---------------------
-
     def evaluate(self, expression: str, *, await_promise: bool = False) -> Any:
         """Run JavaScript in the page and return the value.
 
-        A page exception is raised, not returned as None, so a check that could not
-        run cannot report clean.
+        A page exception raises rather than returning None, so a check that could not run
+        cannot report clean.
         """
         result = self.call(
             "Runtime.evaluate",
@@ -199,8 +187,8 @@ class Session:
     def _event_type_for_key(inserted_text: str) -> str:
         """`keyDown` for a key that inserts text, `rawKeyDown` for one that does not.
 
-        A text-less `keyDown` leaves Chrome waiting for a `char` event and Tab never
-        moves focus; Enter as `rawKeyDown` skips Blink's implicit form submission.
+        A text-less `keyDown` leaves Chrome waiting for a `char` event and Tab never moves
+        focus; Enter as `rawKeyDown` skips Blink's implicit form submission.
         """
         return "keyDown" if inserted_text else "rawKeyDown"
 
@@ -224,17 +212,15 @@ class Session:
             self.call("Input.dispatchKeyEvent", **params)
 
     def type_text(self, text: str) -> None:
-        """Put text into the focused field in one `Input.insertText`.
-
-        No code path listens for keystrokes: the address box is submit-only.
-        """
+        """Put text into the focused field in one `Input.insertText`, which is enough
+        because no code path listens for keystrokes."""
         self.call("Input.insertText", text=text)
 
     def throttle(self, *, download_bps: float, upload_bps: float, latency_ms: float, cpu: float):
         """Shape the network and CPU to the reference profile.
 
-        Both halves matter: an unthrottled developer CPU parses and styles a document
-        several times faster than the mid-tier Android the budget is written for.
+        Both halves matter: an unthrottled developer CPU parses a document several times
+        faster than the mid-tier Android the budget is written for.
         """
         self.call("Network.enable")
         self.call(
@@ -256,8 +242,8 @@ class Session:
 class Browser:
     """A headless Chrome on a throwaway profile, as a context manager.
 
-    The profile directory is temporary and removed on exit, which is what makes
-    `clear_cache` believable and keeps a run out of the developer's own Chrome state.
+    The profile is temporary and removed on exit, which is what makes `clear_cache`
+    believable and keeps a run out of the developer's own Chrome state.
     """
 
     def __init__(self, *, extra_args: tuple[str, ...] = (), timeout: float = 30.0) -> None:

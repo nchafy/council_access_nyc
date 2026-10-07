@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Run axe-core over the built site and fail on any WCAG 2.2 AA violation.
 
-R39. The site is served with its real `_headers`, and axe is injected over the DevTools
-protocol rather than added to the page, so the document under test is byte-identical to
-the one we publish and the CSP under test is the one in force at deploy.
+R39. Served with the real `_headers`, and axe is injected over CDP rather than added to
+the page, so the document under test is the one we publish and the CSP is the one in
+force. Automated checking reaches a minority of WCAG: `docs/accessibility-pass.md` carries
+the human pass, and this gate is the floor beneath it, not a substitute.
 
     python3 scripts/axe_check.py                  # every page type, ~10 pages
     python3 scripts/axe_check.py --all            # every pre-rendered page
     python3 scripts/axe_check.py --json out.json  # the full result, for triage
-
-Automated checking reaches a minority of WCAG. `docs/accessibility-pass.md` carries the
-human pass, and this gate is the floor beneath it rather than a substitute for it.
 """
 
 from __future__ import annotations
@@ -29,15 +27,14 @@ from serve import background_server
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: WCAG 2.2 AA as tags axe understands. 2.2 conformance implies 2.1 and 2.0, so all six
-#: are the one requirement spelled out rather than a widening of it.
+#: WCAG 2.2 AA as axe spells it. 2.2 implies 2.1 and 2.0, so all six are one requirement.
 GATING_TAGS = ("wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa")
 
 #: Reported but never gating: house style rather than conformance.
 ADVISORY_TAGS = ("best-practice",)
 
-#: Rules that must actually have run. Fewer means axe did not inspect the page, so
-#: "0 violations" is not a result. The 404 exercised 11 here, a district page 14.
+#: Rules that must actually have run, or "0 violations" is not a result. Measured: the 404
+#: exercises 11, a district page 14.
 MINIMUM_RULES_EXERCISED = 8
 
 
@@ -50,8 +47,8 @@ def _run_axe(page: Any, tags: tuple[str, ...]) -> dict[str, Any]:
 def _summarise(result: dict[str, Any]) -> list[dict[str, Any]]:
     """Reduce axe's result to what a failure message needs: the rule, and where.
 
-    axe's own output carries the full DOM snippet per node, which runs to hundreds of
-    kilobytes on a repeated component. `--json` is there when the detail is wanted.
+    axe's own output carries a full DOM snippet per node, hundreds of kilobytes on a
+    repeated component; `--json` is there when that detail is wanted.
     """
     return [
         {

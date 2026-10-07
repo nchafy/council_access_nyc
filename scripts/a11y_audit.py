@@ -2,11 +2,10 @@
 """The keyboard pass and the screen-reader surface, checked by machine.
 
 R39 asks for a documented keyboard-only and screen-reader pass per release;
-`docs/accessibility-pass.md` is that document and this is the part a machine can do.
-The keyboard audit presses real `Tab` keys and records where focus actually lands. The
-tree audit reads Chrome's own accessibility tree — the computed roles, names and levels
-a screen reader consumes — which cannot judge whether a link name is useful but can
-prove that names exist, landmarks exist, and heading levels do not skip.
+`docs/accessibility-pass.md` is that document and this is the machine-checkable part. The
+keyboard audit presses real `Tab` keys; the tree audit reads Chrome's own accessibility
+tree, which cannot judge whether a name is useful but can prove names, landmarks and
+unskipped heading levels exist.
 
     python3 scripts/a11y_audit.py              # every page type
     python3 scripts/a11y_audit.py -v           # list every check, not just failures
@@ -40,9 +39,8 @@ INTERACTIVE_ROLES = frozenset(
 #: Landmarks every page owes a screen-reader user; `contentinfo` holds the staleness notice.
 REQUIRED_LANDMARKS = ("banner", "main", "contentinfo")
 
-#: Tags each focusable element with its DOM-order index, so focus can be identified by index.
-#: `summary` is in the list because a request card's disclosure is a real stop in the tab
-#: order; leaving it out made the Tab budget one short per card and the walk run off the end.
+#: Tags each focusable element with its DOM-order index. `summary` is in the selector
+#: because a disclosure is a real tab stop (docs/OBSERVATIONS.md, 2026-10-07).
 TAG_FOCUSABLE_JS = """
 (() => {
   const selector = 'a[href], button, input, select, textarea, summary, [tabindex]';
@@ -108,8 +106,8 @@ def _poll(
 ) -> Any:
     """Evaluate until the value satisfies `until`, then return it.
 
-    On timeout it returns the last value rather than raising, so the caller can report
-    a named failing check instead of a crashed audit.
+    A timeout returns the last value rather than raising, so the caller reports a named
+    failing check instead of a crashed audit.
     """
     deadline = time.monotonic() + timeout
     value = None
@@ -134,8 +132,8 @@ class Check:
 def _focus_after_each_tab(page: Session, presses: int) -> list[dict[str, Any]]:
     """Press Tab exactly `presses` times, recording where focus lands each time.
 
-    Exactly, not until focus leaves the document: headless Chrome has no browser
-    controls to escape into, so focus wraps to the top instead.
+    Exactly, not until focus leaves the document: headless Chrome has no browser controls
+    to escape into, so focus wraps to the top instead.
     """
     focus_states = []
     for _ in range(presses):
@@ -320,9 +318,8 @@ def audit_tree(page: Session, path: str) -> list[Check]:
 def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
     """R39: all procedural content must work with JavaScript disabled.
 
-    Script execution is turned off in the browser rather than inferred from the markup.
-    The front page is the one that matters: the plain link lists are the real
-    no-JavaScript path, and the address box must stay hidden rather than take input.
+    Turned off in the browser rather than inferred from the markup, on the front page,
+    where the link lists are the real no-JavaScript path.
     """
     page = browser.page()
     page.call("Emulation.setScriptExecutionDisabled", value=True)
@@ -364,8 +361,7 @@ def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
 def audit_address_box_by_keyboard(browser: Browser, base: str) -> list[Check]:
     """Reach the address box, type into it and submit, using only the keyboard.
 
-    A district number resolves locally with no geocoder call, so this stays hermetic;
-    `tests/browser/test_address_box.py` covers the resolution logic.
+    A district number resolves locally, so this stays hermetic.
     """
     page = browser.page()
     page.navigate(base + "/")

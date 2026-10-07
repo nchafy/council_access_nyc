@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Screenshot the built site with headless Chrome.
 
-The point is not pretty pictures: it is that a layout regression, an unstyled
-page (CSS blocked by a CSP mistake), or an empty region is invisible to an HTTP
-assertion and obvious in an image. Rendering through a real browser also proves
-the CSP does not block our own stylesheet or script — the most likely
-self-inflicted CSP failure.
-
-Uses the Chrome already on the machine rather than adding Playwright, keeping the
-dependency count at zero.
+A layout regression, an unstyled page, or an empty region is invisible to an HTTP
+assertion and obvious in an image. Rendering through a real browser also proves the CSP
+does not block our own stylesheet or script. Uses the Chrome already on the machine,
+because `docs/dependencies.md` refuses a dependency that installs its own browser.
 
     python3 scripts/shot.py [--port 8098] [--out screenshots]
 """
@@ -32,26 +28,18 @@ CHROME_CANDIDATES = [
     shutil.which("chromium") or "",
 ]
 
-#: Mobile-first, so the narrow shot is the primary one.
-#
-#: The narrow width is 500, not a true phone width like 390, because macOS clamps a
-#: Chrome window's minimum width somewhere below 500: asking for 390 produced a
-#: 390-pixel-wide *image* of a ~704-pixel-wide *layout*, i.e. a silently cropped
-#: screenshot that looked like a CSS overflow bug. 500 is the narrowest width the
-#: layout is actually honoured at, and it still sits below the 34rem (544px)
-#: breakpoint, so it exercises the single-column mobile path. Verifying true
-#: 390px layout needs CDP emulation (Playwright), which Phase 1 does not carry.
+#: 500 and not a true phone width, because macOS clamps a Chrome window below ~500 px and
+#: a narrower request silently crops (docs/OBSERVATIONS.md, 2026-09-23). Still under the
+#: 34rem breakpoint, so it exercises the single-column path; the gap is recorded in
+#: docs/accessibility-pass.md.
 VIEWPORTS = {"narrow": (500, 1400), "desktop": (1280, 1600)}
 
 PAGES = {
     "index": "/",
     "district-35": "/district/35/",
-    # District 3 is the degraded-state page: vacant-seat handling, the
-    # source-conflict notice, missing committees.
+    # The deliberate degraded-state page (CLAUDE.md).
     "district-3": "/district/3/",
-    # The second view.
     "board-302": "/board/302/",
-    # The page every source line points at, and the only one built from a registry.
     "references": "/references/",
 }
 

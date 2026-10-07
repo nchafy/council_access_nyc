@@ -47,8 +47,7 @@
     var p = document.createElement("p");
     p.className = "hint";
     p.textContent =
-      "You can also pick your district or board from the dropdowns below, or " +
-      "browse the full lists.";
+      "The dropdowns below list every council district and community board.";
     results.appendChild(p);
   }
 
@@ -280,7 +279,7 @@
         if (local && local.kind === "choices") {
           say("");
           showChoices(
-            "ZIP " + local.zip + " covers more than one council district. Pick yours:",
+            "ZIP " + local.zip + " covers more than one council district:",
             local.districts.map(function (n) {
               return { href: "/district/" + n + "/", label: "Council District " + n };
             })
@@ -303,7 +302,7 @@
 
         timers.push(
           setTimeout(function () {
-            say("Looking up your address…");
+            say("Looking up…");
           }, RESOLVING_MS)
         );
         timers.push(
@@ -386,7 +385,7 @@
         // Genuinely ambiguous: one street number exists in three boroughs.
         say("");
         showChoices(
-          "More than one place matches “" + query + "”. Which did you mean?",
+          "More than one place matches “" + query + "”:",
           resolved.map(function (item) {
             return {
               href: "/district/" + item.district + "/",

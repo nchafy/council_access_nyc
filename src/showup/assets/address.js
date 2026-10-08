@@ -1,33 +1,17 @@
-// The address box.
+// The address box. Rendered hidden and revealed here, so the dropdowns and the full
+// link lists are the no-script interface rather than a fallback.
 //
-// Loaded only on the front page. Everything here is progressive: with JavaScript
-// off the box is hidden and the two dropdowns plus the full link lists are the
-// interface, which is why the no-script path is not an afterthought.
-//
-// PRIVACY, which drives most of the design
-// The typed address is the most sensitive thing this site ever touches — it is
-// where somebody lives. So:
-//   - it is sent on SUBMIT ONLY. There is no autocomplete-as-you-type, which
-//     removes a whole class of keystroke leakage to a third party.
-//   - the request carries `private=true`, which asks NYC Planning Labs not to log
-//     it. A CI grep asserts every call site includes it.
-//   - it never enters a URL, the History API, a cookie, localStorage,
-//     sessionStorage, or any log. The redirect target is `/district/35/`.
-//   - anything resolvable locally — a district number, a ZIP, a neighbourhood or
-//     board name — never reaches the network at all.
-//
-// WHY THE BROWSER DOES THE POINT-IN-POLYGON
-// The geocoder returns a coordinate but not a council district, so the assignment
-// has to happen somewhere. Doing it here keeps the address on the machine.
+// The typed address is sent on submit only, never on keystroke; it never enters a URL,
+// storage or a log; and anything resolvable locally never reaches the network. R33 and
+// CLAUDE.md state the rule, scripts/verify.py and tests/browser/test_address_box.py
+// enforce it.
 
 (function () {
   "use strict";
 
   var GEOCODER = "https://geosearch.planninglabs.nyc/v2/search";
 
-  // Timings from docs/phase-1-scope.md §6A / R40c. The point of the middle state
-  // is to name the slow dependency rather than leave a spinner implying we are
-  // broken; the point of the last is that a spinner with no escape is a defect.
+  // docs/phase-1-scope.md §6A / R40c.
   var RESOLVING_MS = 150;
   var SLOW_MS = 1200;
   var ABANDON_MS = 5000;
@@ -39,8 +23,6 @@
   var section = document.getElementById("address-section");
   if (!form || !input || !status || !results || !section) return;
 
-  // With JS running, reveal the box. Rendered hidden so a no-script reader is not
-  // shown a control that cannot work.
   section.hidden = false;
 
   var lookup = null;
@@ -52,8 +34,6 @@
     timers = [];
   }
 
-  // textContent throughout — never innerHTML, per the project rule. It holds even
-  // for strings we generated, so no call site needs a judgement call.
   function say(message, kind) {
     status.textContent = message || "";
     status.className = "address-status" + (kind ? " " + kind : "");
@@ -67,8 +47,7 @@
     var p = document.createElement("p");
     p.className = "hint";
     p.textContent =
-      "You can also pick your district or board from the dropdowns below, or " +
-      "browse the full lists.";
+      "The dropdowns below list every council district and community board.";
     results.appendChild(p);
   }
 
@@ -93,19 +72,32 @@
   }
 
   function go(district) {
-    // Validate even though we produced it: a future change to how districts are
-    // derived must not be able to turn this into an open redirect.
+    // Validated even though we produced it, so this can never become an open redirect.
     var target = "/district/" + district + "/";
     if (/^\/district\/([1-9]|[1-4]\d|5[01])\/$/.test(target)) {
       window.location.assign(target);
     }
   }
 
+  var SITE_DATA_UNREACHABLE = "site-data";
+  var GEOCODER_UNREACHABLE = "geocoder";
+
+  function failure(blame, detail) {
+    var error = new Error(detail);
+    error.blame = blame;
+    return error;
+  }
+
   function loadJSON(url) {
-    return fetch(url, { credentials: "omit" }).then(function (response) {
-      if (!response.ok) throw new Error(url + " " + response.status);
-      return response.json();
-    });
+    return fetch(url, { credentials: "omit" }).then(
+      function (response) {
+        if (!response.ok) throw failure(SITE_DATA_UNREACHABLE, url + " " + response.status);
+        return response.json();
+      },
+      function () {
+        throw failure(SITE_DATA_UNREACHABLE, url + " could not be fetched");
+      }
+    );
   }
 
   function ensureLookup() {
@@ -147,9 +139,8 @@
     });
   }
 
-  // Ray casting with even-odd fill — the same rule as the Python `Polygon.contains`,
-  // so the browser and the build agree about which district a point is in. The
-  // bounding box check first is what makes 51 polygons cheap.
+  // Even-odd ray casting, the same rule as Python's `Polygon.contains`, so the browser
+  // and the build agree about which district a point is in.
   function contains(shape, x, y) {
     if (x < shape.minX || x > shape.maxX || y < shape.minY || y > shape.maxY) return false;
     var inside = false;
@@ -175,22 +166,17 @@
     return null;
   }
 
-  // ----- local resolution, no network ------------------------------------- //
-
   function resolveLocally(raw) {
     var query = raw.trim();
     if (!query) return null;
 
-    // A bare district number.
     var asNumber = query.match(/^(?:council\s+)?(?:district\s*)?#?(\d{1,2})$/i);
     if (asNumber) {
       var n = parseInt(asNumber[1], 10);
       if (n >= 1 && n <= 51) return { kind: "district", district: n };
     }
 
-    // A ZIP. Straddling districts is the norm, so this offers the choice rather
-    // than picking one — a ZIP is not a district and pretending otherwise would
-    // send a reader to the wrong member.
+    // A ZIP straddling districts is the norm, so offer the choice rather than pick one.
     var asZip = query.match(/^(\d{5})(?:-\d{4})?$/);
     if (asZip && lookup.zips[asZip[1]]) {
       var districts = lookup.zips[asZip[1]];
@@ -199,7 +185,6 @@
     }
     if (asZip) return { kind: "not_nyc", what: "ZIP code " + asZip[1] };
 
-    // A neighbourhood or board name.
     var needle = query.toLowerCase();
     var hits = [];
     lookup.districts.forEach(function (d) {
@@ -213,20 +198,17 @@
         hits.push({ href: "/board/" + b.code + "/", label: b.label + (b.hoods ? " — " + b.hoods : "") });
       }
     });
-    // Only treat a name match as an answer when the query looks like a name
-    // rather than a street address, so "100 Broadway" still goes to the geocoder.
+    // A name match answers only when the query has no digit, so a street address still
+    // goes to the geocoder.
     if (hits.length && !/\d/.test(query)) {
       return { kind: "matches", items: hits.slice(0, 8) };
     }
     return null;
   }
 
-  // ----- the geocoder ------------------------------------------------------ //
-
   function outOfArea(feature) {
-    // Checked on what the geocoder says it PARSED, before anything renders. A
-    // Newark address can still return a plausible-looking NYC-adjacent point, and
-    // silently assigning it to a council district would be a confident lie.
+    // Checked against what the geocoder says it parsed: a Newark address still returns a
+    // plausible NYC-adjacent point.
     var parsed = feature && feature.parsed_text;
     var region = ((parsed && parsed.region) || "").toUpperCase();
     if (region && region !== "NY" && region !== "NEW YORK") return region;
@@ -238,9 +220,8 @@
   }
 
   function dedupe(features) {
-    // The same address often comes back several times (a building with multiple
-    // entrances, or an alias like "100 B'WAY"). Deduping on a rounded coordinate
-    // collapses those without needing to compare label strings.
+    // One address returns several times, for multiple entrances and for aliases, so
+    // collapse on a rounded coordinate rather than on the label.
     var seen = {};
     var out = [];
     features.forEach(function (feature) {
@@ -260,18 +241,18 @@
       "?text=" +
       encodeURIComponent(query) +
       "&size=8" +
-      // private=true asks NYC Planning Labs not to log the query. Every call site
-      // must carry it; scripts/verify.py greps for exactly this.
+      // Asks NYC Planning Labs not to log the query; scripts/verify.py greps for it.
       "&private=true";
     return fetch(url, { credentials: "omit", referrerPolicy: "no-referrer" }).then(
       function (response) {
-        if (!response.ok) throw new Error("geocoder " + response.status);
+        if (!response.ok) throw failure(GEOCODER_UNREACHABLE, "geocoder " + response.status);
         return response.json();
+      },
+      function () {
+        throw failure(GEOCODER_UNREACHABLE, "geocoder unreachable");
       }
     );
   }
-
-  // ----- submit ------------------------------------------------------------ //
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
@@ -298,7 +279,7 @@
         if (local && local.kind === "choices") {
           say("");
           showChoices(
-            "ZIP " + local.zip + " covers more than one council district. Pick yours:",
+            "ZIP " + local.zip + " covers more than one council district:",
             local.districts.map(function (n) {
               return { href: "/district/" + n + "/", label: "Council District " + n };
             })
@@ -319,10 +300,9 @@
           return null;
         }
 
-        // Nothing local matched, so this needs the geocoder and the geometry.
         timers.push(
           setTimeout(function () {
-            say("Looking up your address…");
+            say("Looking up…");
           }, RESOLVING_MS)
         );
         timers.push(
@@ -369,7 +349,6 @@
           return;
         }
 
-        // Resolve each candidate to a district, then decide.
         var resolved = [];
         features.forEach(function (feature) {
           var coords = feature.geometry.coordinates;
@@ -403,11 +382,10 @@
           return;
         }
 
-        // Genuinely ambiguous — "100 Broadway" exists in three boroughs. Ask,
-        // borough first, because that is how a New Yorker disambiguates.
+        // Genuinely ambiguous: one street number exists in three boroughs.
         say("");
         showChoices(
-          "More than one place matches “" + query + "”. Which did you mean?",
+          "More than one place matches “" + query + "”:",
           resolved.map(function (item) {
             return {
               href: "/district/" + item.district + "/",
@@ -419,11 +397,14 @@
           })
         );
       })
-      .catch(function () {
+      .catch(function (error) {
         clearTimers();
         say(
-          "The City's address lookup did not respond. Nothing was saved — try again, " +
-            "or use the dropdowns below.",
+          error && error.blame === SITE_DATA_UNREACHABLE
+            ? "This page could not load its own lookup data, so the address box is not " +
+                "working. That is a fault here, not with the City. Use the dropdowns below."
+            : "The City's address lookup did not respond. Nothing was saved — try again, " +
+                "or use the dropdowns below.",
           "warn"
         );
         offerFallback();

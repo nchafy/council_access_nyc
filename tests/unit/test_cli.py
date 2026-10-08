@@ -1,9 +1,7 @@
 """The command line surface.
 
-Thin by design — the logic lives in the modules it calls — but not untested, for a
-specific reason: a change to the build report once silently failed to apply, so the
-board page count stopped being printed and nothing noticed. The report lines are how
-a regression gets seen by a human, which makes them worth asserting.
+Thin, but not untested: the report lines are how a human notices drift, so each is
+asserted here.
 """
 
 from __future__ import annotations
@@ -16,64 +14,18 @@ from showup.cli import main
 
 
 @pytest.fixture
-def repo(tmp_path, monkeypatch, calendar_html, district_page_html):
-    """A minimal repo layout the CLI can run against."""
+def repo(tmp_path, monkeypatch, write_cache):
+    """A minimal repo layout the CLI can run against.
+
+    The cache comes from `write_cache`, the one description of a floor-passing `etl/raw/`
+    the whole suite shares.
+    """
     import shutil
     from pathlib import Path
 
-    fixtures = Path(__file__).resolve().parents[1] / "fixtures"
     raw = tmp_path / "etl" / "raw"
     raw.mkdir(parents=True)
-    (raw / "legistar_calendar.html").write_text(calendar_html, encoding="utf-8")
-
-    available = sorted(district_page_html)
-    pages = {str(n): district_page_html[available[(n - 1) % len(available)]] for n in range(1, 52)}
-    (raw / "district_pages.json").write_text(json.dumps(pages), encoding="utf-8")
-
-    members = [
-        {
-            "name": f"Member {n}",
-            "council_member_id": str(1000 + n),
-            "district": str(n),
-            "term_start": "2026-01-01T00:00:00.000",
-            "term_end": "2029-12-31T00:00:00.000",
-        }
-        for n in range(1, 52)
-    ] + [
-        {
-            "name": f"Former {i}",
-            "council_member_id": str(2000 + i),
-            "district": str((i % 51) + 1),
-            "term_start": "2014-01-01T00:00:00.000",
-            "term_end": "2017-12-31T00:00:00.000",
-        }
-        for i in range(300)
-    ]
-    (raw / "members.json").write_text(json.dumps(members), encoding="utf-8")
-    shutil.copy2(fixtures / "community_boards.json", raw / "community_boards.json")
-
-    features = [
-        {
-            "type": "Feature",
-            "properties": {"coundist": str(n)},
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [
-                    [
-                        [-74.3 + (n - 1) * 0.02, 40.5],
-                        [-74.282 + (n - 1) * 0.02, 40.5],
-                        [-74.282 + (n - 1) * 0.02, 40.518],
-                        [-74.3 + (n - 1) * 0.02, 40.518],
-                        [-74.3 + (n - 1) * 0.02, 40.5],
-                    ]
-                ],
-            },
-        }
-        for n in range(1, 52)
-    ]
-    (raw / "districts.geojson").write_text(
-        json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8"
-    )
+    write_cache(raw)
 
     crosswalks = tmp_path / "crosswalks"
     crosswalks.mkdir()
@@ -148,8 +100,6 @@ class TestFetch:
         assert main(["fetch", "--force"]) == 1
         err = capsys.readouterr().err
         assert "failed: calendar" in err
-        # The operator must be told the old copy is still there, or they will
-        # assume the site is now broken.
         assert "previous cached copies were kept" in err
 
     def test_unknown_source_is_rejected_by_argparse(self, tmp_path, monkeypatch):
@@ -254,7 +204,6 @@ class TestCrosswalkCommand:
         written = tmp_path / "crosswalks" / "council_to_boards.json"
         assert written.is_file()
         assert json.loads(written.read_text())["zips"] == {"11217": [35]}
-        # The report is what a human checks before committing the diff.
         assert "districts: 51" in out
         assert "zip codes: 1" in out
         assert "read the diff" in out

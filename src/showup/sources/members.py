@@ -1,17 +1,8 @@
 """Current Council Members from NYC Open Data `uvw5-9znb`.
 
-558 rows spanning 1999 to the present, one per member-term. "Current" is a
-predicate over term windows rather than a flag in the data:
-
-    term_start <= today <= term_end
-
-A district with no matching row is **vacant**, which is a designed result and not
-an error — the page names the vacancy and still shows every other fact, because a
-resident of a vacant district needs the committee and hearing information more
-than most, not less.
-
-`term_end` is authoritative over any list of "who holds the seat" we could
-hardcode, so nothing here is hardcoded.
+One row per member-term, so "current" is the predicate `term_start <= today <= term_end`
+rather than a flag, and nothing about who holds a seat is hardcoded. A district with no
+matching row is vacant, which is a designed result the page names.
 """
 
 from __future__ import annotations

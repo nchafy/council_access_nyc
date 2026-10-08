@@ -1,5 +1,4 @@
-/* Mobile-first, system fonts only.
-   No web fonts: a hosted font is a third party, and the CSP in _headers has no
+/* Mobile-first, system fonts only. A hosted font is a third party, and the CSP has no
    font-src, so there is nothing to load even by accident. */
 
 :root {
@@ -70,14 +69,12 @@ a:focus-visible, select:focus-visible, button:focus-visible {
 .distinction { background: #f5f7fa; padding: .7rem .85rem; border-radius: 6px; }
 .gap { font-style: italic; }
 
-/* Forms */
 .picker form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .picker label { flex: 1 0 100%; font-weight: 600; font-size: .95rem; }
 select {
   flex: 1 1 16rem;
-  /* A <select> sizes itself to its longest option, and these options carry long
-     neighbourhood lists — without these two it overflows the container on a
-     narrow screen, which a screenshot caught. */
+  /* A <select> sizes to its longest option, and these carry neighbourhood lists, so
+     without min-width it overflows the container on a narrow screen. */
   min-width: 0;
   max-width: 100%;
   min-height: 2.9rem;
@@ -126,7 +123,6 @@ input[type="text"]:focus-visible { outline: 3px solid var(--accent); outline-off
   border-radius: 6px;
 }
 
-/* Lists */
 .district-list {
   list-style: none;
   padding: 0;
@@ -139,7 +135,6 @@ input[type="text"]:focus-visible { outline: 3px solid var(--accent); outline-off
 .committee-list { margin: .4rem 0; padding-left: 1.15rem; }
 .committee-list .role { color: var(--muted); font-size: .9rem; }
 
-/* Community boards */
 .board {
   border: 1px solid var(--rule);
   border-left: 3px solid var(--accent);
@@ -157,7 +152,6 @@ input[type="text"]:focus-visible { outline: 3px solid var(--accent); outline-off
   border-radius: 10px;
 }
 
-/* Definition lists carry most of the facts */
 dl { margin: .5rem 0; }
 dt {
   font-weight: 600;
@@ -172,15 +166,23 @@ dd small { color: var(--muted); font-size: .84rem; display: inline-block; margin
 
 .member-name { font-size: 1.28rem; font-weight: 700; margin: .3rem 0 0; }
 
-/* Meetings */
-.meeting {
+.meeting, .request, .dataset {
   border: 1px solid var(--rule);
   border-radius: 8px;
   padding: .85rem 1rem 1rem;
   margin: .9rem 0;
 }
-.meeting h3 { margin-top: 0; }
+.meeting h3, .dataset h3 { margin-top: 0; }
 .meeting .links { margin: .8rem 0 0; font-size: .93rem; }
+.request h3 { margin-top: 0; font-size: 1.05rem; }
+/* <details> is keyboard-operable and announces its own state, so no script
+   (docs/OBSERVATIONS.md, 2026-10-07). */
+.request summary { cursor: pointer; padding: .1rem 0; }
+.request summary h3 { display: inline; }
+.request summary .priority, .source { color: var(--muted); font-size: .85rem; }
+.request summary::marker { color: var(--muted); }
+summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.source { margin: .7rem 0 0; }
 
 .deadline { font-weight: 700; padding: .1rem .35rem; border-radius: 4px; }
 .deadline.open { background: var(--ok-bg); color: var(--ok-ink); }
@@ -207,12 +209,11 @@ dd small { color: var(--muted); font-size: .84rem; display: inline-block; margin
   font-size: .95rem;
 }
 
-.participate ul { padding-left: 1.15rem; }
-.participate li { margin: .3rem 0; }
+.participate ul, .references ul { padding-left: 1.15rem; }
+.participate li, .references li { margin: .3rem 0; }
 
 .back { margin: 2.2rem 0 0; }
 
-/* Footer */
 footer.site {
   margin-top: 2.5rem;
   padding-top: 1rem;

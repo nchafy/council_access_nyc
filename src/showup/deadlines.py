@@ -1,19 +1,8 @@
-"""The two dates this product computes rather than repeats.
+"""The two dates this product computes rather than copies. Both are deliberately conservative.
 
-Everything else on the site is a fact copied from an official page with a link
-back to it. These two are arithmetic, so they carry the risk of being confidently
-wrong about a deadline — which is the worst thing this product can do. Both are
-therefore computed conservatively and labelled with their basis.
-
-1. `written_safe_until` — written testimony is accepted "up to 72 hours after
-   [the] hearing has been adjourned" (council.nyc.gov/testify/). Adjournment time
-   is published nowhere. But adjournment is always at or after the scheduled
-   start, so `start + 72h` is provably *inside* the real window: filing before it
-   is always safe. It is a lower bound, never presented as the deadline.
-
-2. `accommodation_by` — ASL, CART and interpretation must be requested "at least
-   three (3) business days before the hearing". Business days exclude weekends
-   and holidays, so this needs a real calendar rather than `date - 3`.
+`written_safe_until` is `start + 72h`: a provable lower bound on the window
+council.nyc.gov/testify/ states, because adjournment time is published nowhere.
+`accommodation_by` counts three business days against `HOLIDAYS`, not `date - 3`.
 """
 
 from __future__ import annotations
@@ -25,12 +14,9 @@ __all__ = ["HOLIDAYS", "WRITTEN_TESTIMONY_HOURS", "accommodation_deadline", "wri
 WRITTEN_TESTIMONY_HOURS = 72
 ACCOMMODATION_BUSINESS_DAYS = 3
 
-#: Observed NYC government holidays. Committed as data rather than computed,
-#: because Election Day, Juneteenth and the floating holidays are political
-#: decisions and a rule that derives them will silently drift. Extend by hand.
-#: Being wrong here makes an accommodation deadline too late to act on, so the
-#: table is deliberately generous: a holiday listed in error only moves a
-#: deadline earlier, which is safe.
+#: Committed as data and extended by hand, because the floating holidays are political
+#: decisions a derivation would drift from. Generous on purpose: a holiday listed in error
+#: only moves a deadline earlier, which is the safe direction.
 HOLIDAYS: frozenset[date] = frozenset(
     {
         date(2026, 1, 1),  # New Year's Day
@@ -71,11 +57,8 @@ def is_business_day(day: date) -> bool:
 def written_safe_until(hearing_date: date, start_time: time | None) -> datetime:
     """A timestamp before which filing written testimony is certainly in time.
 
-    When the start time is unknown — the source said "Deferred", or published no
-    time at all — we fall back to midnight at the *start* of the hearing day.
-    That makes the bound earlier, i.e. more conservative, which is the correct
-    direction for a deadline: it may tell someone to hurry more than strictly
-    necessary, and will never tell them they have time they do not have.
+    An unknown start time falls back to midnight at the start of the hearing day, which
+    moves the bound earlier and never tells someone they have time they do not have.
     """
     anchor = datetime.combine(hearing_date, start_time or time(0, 0))
     return anchor + timedelta(hours=WRITTEN_TESTIMONY_HOURS)
@@ -84,10 +67,9 @@ def written_safe_until(hearing_date: date, start_time: time | None) -> datetime:
 def accommodation_deadline(
     hearing_date: date, business_days: int = ACCOMMODATION_BUSINESS_DAYS
 ) -> date:
-    """The last business day that is at least `business_days` before the hearing.
+    """The last business day at least `business_days` before the hearing.
 
-    Counts backwards over business days only. The hearing day itself does not
-    count, since "three business days before the hearing" excludes it.
+    The hearing day itself does not count, since "before the hearing" excludes it.
     """
     remaining = business_days
     day = hearing_date
@@ -101,9 +83,8 @@ def accommodation_deadline(
 def accommodation_state(hearing_date: date, today: date | None = None) -> str:
     """ "open" while an accommodation can still be requested, else "too_late".
 
-    A passed deadline is a designed state: the UI still shows the contacts,
-    because the Council may accommodate a late request and hiding the phone
-    number guarantees they cannot.
+    "too_late" is a designed state: the page keeps the contacts, because the Council may
+    still accommodate a late request.
     """
     now = today or date.today()
     return "open" if now <= accommodation_deadline(hearing_date) else "too_late"

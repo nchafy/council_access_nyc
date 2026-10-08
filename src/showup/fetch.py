@@ -1,30 +1,9 @@
-"""Stage 1: pull every upstream payload into the local cache.
+"""Stage 1: pull every upstream payload into `etl/raw/`, which the build then reads offline.
 
-Separate from the build on purpose. The build never touches the network, so it is
-reproducible, testable offline, and a flaky download can never half-write a site.
-This stage's only job is to leave `etl/raw/` in a state the build can trust.
-
-FAIL CLOSED, THE SAME WAY THE BUILD DOES
-A download is written to a temporary file, checked against a size floor **and** a
-body invariant, and only then moved into place. A cache entry is therefore either
-the last known-good payload or a new known-good payload — never a truncated file,
-never an error page. This matters more here than anywhere else: a 200-response
-containing an error page, silently cached, would make the build produce a
-confident, wrong site.
-
-BODY INVARIANTS, NOT STATUS CODES
-Three verified cases where these hosts return HTTP 200 carrying an error:
-`nyc.legistar.com/Feed.ashx` yields a 721-byte `<title>Invalid feed</title>`; a bad
-`LegislationDetail` GUID yields a 19-byte `Invalid parameters!`; and a Socrata
-query error arrives as JSON with an `error` key. So every source declares what its
-body must contain to count as real.
-
-POLITENESS, FROM EACH HOST'S OWN robots.txt (checked 2026-09-22)
-  council.nyc.gov        Crawl-delay: 10   -> 51 district pages take ~8.5 minutes
-  data.cityofnewyork.us  Crawl-delay: 1
-  nyc.legistar.com       no robots.txt (404) -> no stated policy, so 2 s by choice
-We are a guest on these servers. Hammering a city website would be a failure in
-the one direction entirely under our control.
+A payload replaces a cache entry only after clearing a size floor and a body invariant,
+because these hosts return HTTP 200 carrying error pages — CLAUDE.md, "Check body
+invariants, not status codes". Crawl rates come from each host's own robots.txt
+(docs/OBSERVATIONS.md, 2026-09-22).
 """
 
 from __future__ import annotations
@@ -36,18 +15,20 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
-__all__ = ["SOURCES", "FetchError", "fetch_all", "fetch_one"]
+from .model import BOARD_COUNT, DISTRICT_COUNT
+from .sources.boards import JOINT_INTEREST_AREAS
+
+__all__ = ["SOURCES", "FetchError", "cache_path", "fetch_all", "fetch_one", "manifest_key"]
 
 USER_AGENT = (
     "showup-nyc/0.1 (civic data ETL for a public-interest site; "
     "contact via github.com/nchafy/council_access_nyc)"
 )
 
-#: Seconds between requests to the same host. Sourced from robots.txt where the
-#: host publishes one; conservative where it does not.
+#: Seconds between requests to the same host; 2 s where the host publishes no robots.txt.
 CRAWL_DELAY = {
     "council.nyc.gov": 10.0,
     "data.cityofnewyork.us": 1.0,
@@ -57,8 +38,7 @@ DEFAULT_DELAY = 2.0
 
 SOCRATA = "https://data.cityofnewyork.us"
 LEGISTAR = "https://nyc.legistar.com"
-#: Verified to serve a byte-identical calendar, so it is a real failover rather
-#: than a hopeful one.
+#: Verified byte-identical to LEGISTAR, so this is a real failover and not a hopeful one.
 LEGISTAR_FAILOVER = "https://legistar.council.nyc.gov"
 
 _last_request: dict[str, float] = {}
@@ -94,7 +74,6 @@ def _get(url: str, *, tries: int = 4, timeout: int = 120) -> bytes:
                 return response.read()
         except urllib.error.HTTPError as error:
             last = error
-            # A 404 or 403 will not fix itself; retrying is just rudeness.
             if error.code not in (408, 429, 500, 502, 503, 504):
                 raise FetchError(f"{url} -> HTTP {error.code} (not retryable)") from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
@@ -105,11 +84,6 @@ def _get(url: str, *, tries: int = 4, timeout: int = 120) -> bytes:
             time.sleep(backoff)
 
     raise FetchError(f"{url} failed after {tries} attempts: {last}")
-
-
-# --------------------------------------------------------------------------- #
-# Invariants
-# --------------------------------------------------------------------------- #
 
 
 def _must_contain(needle: bytes, what: str) -> Callable[[bytes], str | None]:
@@ -126,7 +100,6 @@ def _json_rows(minimum: int) -> Callable[[bytes], str | None]:
         except json.JSONDecodeError as error:
             return f"not valid JSON ({error})"
         if isinstance(parsed, dict) and "error" in parsed:
-            # Socrata reports query errors as a 200 with an error object.
             return f"Socrata error: {str(parsed)[:120]}"
         if not isinstance(parsed, list):
             return f"expected a JSON array, got {type(parsed).__name__}"
@@ -153,6 +126,52 @@ def _geojson_features(expected: int) -> Callable[[bytes], str | None]:
     return check
 
 
+#: Doubles as a shape invariant: without every one of these the payload is not `vn4m-mk4t`.
+BUDGET_REQUEST_COLUMNS = (
+    "boro",
+    "board",
+    "priority",
+    "request",
+    "explanation",
+    "responsible_agency",
+    "response",
+    "responded_by",
+    "publication",
+    "tracking_code",
+)
+#: `uvw5-9znb` carries every term ever served, so the current 51 are a small fraction of
+#: it; under this the dataset has been truncated rather than gone quiet.
+MEMBER_ROW_FLOOR = 300
+
+BUDGET_REQUESTS_DATASET = "vn4m-mk4t"
+#: Editions run 3,411-3,814 rows; below 3,000 the shape has changed, not the year.
+BUDGET_REQUEST_ROW_FLOOR = 3_000
+
+
+def _board_budget_requests(body: bytes) -> str | None:
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError as error:
+        return f"not valid JSON ({error})"
+    if isinstance(parsed, dict) and "error" in parsed:
+        return f"Socrata error: {str(parsed)[:120]}"
+    if not isinstance(parsed, list):
+        return f"expected a JSON array, got {type(parsed).__name__}"
+    if len(parsed) < BUDGET_REQUEST_ROW_FLOOR:
+        return f"{len(parsed)} rows, floor is {BUDGET_REQUEST_ROW_FLOOR}"
+
+    absent = [column for column in BUDGET_REQUEST_COLUMNS if column not in parsed[0]]
+    if absent:
+        return f"not vn4m-mk4t: no {', '.join(absent)} column"
+    boards = {(row.get("boro"), row.get("board")) for row in parsed}
+    if len(boards) < BOARD_COUNT:
+        return f"{len(boards)} boro/board pairs, expected all {BOARD_COUNT}"
+    editions = {row.get("publication") for row in parsed}
+    if len(editions) != 1:
+        return f"{len(editions)} publications in one payload, expected exactly 1"
+    return None
+
+
 def _district_pages(body: bytes) -> str | None:
     try:
         parsed = json.loads(body)
@@ -161,10 +180,9 @@ def _district_pages(body: bytes) -> str | None:
     if not isinstance(parsed, dict):
         return "expected an object keyed by district number"
     present = [key for key, value in parsed.items() if value]
-    if len(present) != 51:
-        return f"{len(present)} of 51 district pages have content"
-    # Each page must actually look like a district page, or we have cached 51
-    # copies of a login wall.
+    if len(present) != DISTRICT_COUNT:
+        return f"{len(present)} of {DISTRICT_COUNT} district pages have content"
+    # A hand-picked sample — first, middle, last — not a count, so these stay literal.
     for number in ("1", "26", "51"):
         page = parsed.get(number) or ""
         if f"District {number}" not in page:
@@ -172,17 +190,10 @@ def _district_pages(body: bytes) -> str | None:
     return None
 
 
-# --------------------------------------------------------------------------- #
-# Fetchers
-# --------------------------------------------------------------------------- #
-
-
 def _fetch_calendar(log: Callable[[str], None]) -> bytes:
-    """One plain GET of page 1.
+    """One plain GET of page 1, which already spans months ahead.
 
-    Page 1 is date-descending and already spans months ahead, so it answers "when
-    is the next meeting" on its own. Page 2 would require POSTing a ~374 KB
-    `__VIEWSTATE` for the least valuable rows, which we never do.
+    Page 2 would need a POST of the ~374 KB `__VIEWSTATE`, which we never send.
     """
     for base in (LEGISTAR, LEGISTAR_FAILOVER):
         try:
@@ -198,18 +209,10 @@ def _fetch_calendar(log: Callable[[str], None]) -> bytes:
 
 
 def _fetch_district_pages(log: Callable[[str], None]) -> bytes:
-    """All 51 pages, at the rate council.nyc.gov's robots.txt asks for.
+    """All 51 pages at `Crawl-delay: 10`, so ~8.5 minutes.
 
-    ~8.5 minutes at Crawl-delay: 10. A page that fails is recorded as null rather
-    than aborting, and the invariant then rejects an incomplete file — so a partial
-    scrape never replaces a complete cached one.
-
-    **The whole set is retried once before giving up.** A cold run on a fresh clone
-    measured four pages lost to transient DNS failures out of 51, which refused the
-    whole fetch — correct, but on a fresh clone there is no previous cache to fall
-    back to, so the build could not proceed at all and the operator had to repeat
-    nine minutes of crawling. A second pass over only the failures costs seconds in
-    the normal case and rescues exactly this.
+    Failures are recorded as null and retried once as a set, then the invariant refuses an
+    incomplete file (docs/OBSERVATIONS.md, 2026-09-23: a cold run lost 4 of 51 to DNS).
     """
     pages: dict[str, str | None] = {}
 
@@ -224,10 +227,10 @@ def _fetch_district_pages(log: Callable[[str], None]) -> bytes:
                 pages[str(number)] = None
                 failed.append(number)
             if number % 10 == 0:
-                log(f"    {number}/51 district pages")
+                log(f"    {number}/{DISTRICT_COUNT} district pages")
         return failed
 
-    failed = attempt(list(range(1, 52)), "")
+    failed = attempt(list(range(1, DISTRICT_COUNT + 1)), "")
     if failed:
         log(f"    retrying {len(failed)} page(s) that failed: {failed}")
         still_failed = attempt(failed, " again")
@@ -236,7 +239,9 @@ def _fetch_district_pages(log: Callable[[str], None]) -> bytes:
     return json.dumps(pages).encode()
 
 
-def _socrata_rows(dataset: str, select: str, *, page: int = 50_000) -> Callable[..., bytes]:
+def _socrata_rows(
+    dataset: str, select: str, *, page: int = 50_000, where: str | None = None
+) -> Callable[..., bytes]:
     def fetch(log: Callable[[str], None]) -> bytes:
         rows: list[dict] = []
         offset = 0
@@ -244,12 +249,10 @@ def _socrata_rows(dataset: str, select: str, *, page: int = 50_000) -> Callable[
             query = urllib.parse.urlencode(
                 {
                     "$select": select,
-                    # A stable sort is required for correct paging: without it
-                    # Socrata gives no ordering guarantee and rows silently
-                    # duplicate or vanish between pages.
                     "$order": ":id",
                     "$limit": page,
                     "$offset": offset,
+                    **({"$where": where} if where else {}),
                 }
             )
             body = _get(f"{SOCRATA}/resource/{dataset}.json?{query}")
@@ -266,16 +269,47 @@ def _socrata_rows(dataset: str, select: str, *, page: int = 50_000) -> Callable[
     return fetch
 
 
+def _published_not_in_the_future(log: Callable[[str], None], today: date) -> str:
+    """The newest edition of the register not dated ahead of `today`.
+
+    The newest value overall is in the future (docs/OBSERVATIONS.md, 2026-09-30).
+    """
+    query = urllib.parse.urlencode(
+        {"$select": "publication", "$group": "publication", "$order": "publication DESC"}
+    )
+    body = _get(f"{SOCRATA}/resource/{BUDGET_REQUESTS_DATASET}.json?{query}")
+    parsed = json.loads(body)
+    if isinstance(parsed, dict) and "error" in parsed:
+        raise FetchError(f"{BUDGET_REQUESTS_DATASET}: Socrata error {str(parsed)[:160]}")
+
+    stamp = today.strftime("%Y%m%d")
+    editions = sorted({str(row.get("publication") or "") for row in parsed}, reverse=True)
+    for candidate in editions:
+        if len(candidate) == 8 and candidate.isdigit() and candidate <= stamp:
+            return candidate
+        log(f"    skipping publication {candidate!r}: not a date on or before {stamp}")
+    raise FetchError(
+        f"{BUDGET_REQUESTS_DATASET}: no publication on or before {stamp}. "
+        "Refusing to cache a future-dated register."
+    )
+
+
+def _fetch_board_budget_requests(log: Callable[[str], None]) -> bytes:
+    """Only the edition the page will cite, so the cache cannot hold a future one."""
+    publication = _published_not_in_the_future(log, date.today())
+    log(f"    publication {publication}")
+    return _socrata_rows(
+        BUDGET_REQUESTS_DATASET,
+        ",".join(BUDGET_REQUEST_COLUMNS),
+        where=f"publication='{publication}'",
+    )(log)
+
+
 def _geospatial(dataset: str) -> Callable[..., bytes]:
     def fetch(log: Callable[[str], None]) -> bytes:  # noqa: ARG001
         return _get(f"{SOCRATA}/api/geospatial/{dataset}?method=export&format=GeoJSON")
 
     return fetch
-
-
-# --------------------------------------------------------------------------- #
-# The source table
-# --------------------------------------------------------------------------- #
 
 
 @dataclass(frozen=True)
@@ -285,10 +319,13 @@ class Source:
     fetch: Callable[[Callable[[str], None]], bytes]
     invariant: Callable[[bytes], str | None]
     min_bytes: int
-    #: How old a cached copy may be before `fetch` refreshes it. The calendar
-    #: changes daily; boundaries change about once a decade.
     max_age_hours: float
     why: str = field(default="")
+    #: `label`, `dataset` and `url` are what `/references/` renders, so a source cannot
+    #: be fetched without being disclosed.
+    label: str = field(default="")
+    dataset: str = field(default="")
+    url: str = field(default="")
 
 
 SOURCES: tuple[Source, ...] = (
@@ -300,6 +337,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=200_000,
         max_age_hours=12,
         why="the only source of forward-looking meeting dates; the open dataset ends 2024",
+        label="Legistar meeting calendar",
+        dataset="Calendar.aspx, the live Legistar layer",
+        url="https://nyc.legistar.com/Calendar.aspx",
     ),
     Source(
         name="districts",
@@ -309,6 +349,9 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=1_000_000,
         max_age_hours=24 * 30,
         why="the only source for council district office addresses",
+        label="Council district pages",
+        dataset="council.nyc.gov/district-N/, one page per district",
+        url="https://council.nyc.gov/districts/",
     ),
     Source(
         name="members",
@@ -316,10 +359,13 @@ SOURCES: tuple[Source, ...] = (
         fetch=_socrata_rows(
             "uvw5-9znb", "name,council_member_id,term_start,term_end,district,office_id"
         ),
-        invariant=_json_rows(300),
+        invariant=_json_rows(MEMBER_ROW_FLOOR),
         min_bytes=50_000,
         max_age_hours=24 * 30,
         why="term windows decide which seats are currently held",
+        label="Council members and term windows",
+        dataset="uvw5-9znb",
+        url="https://data.cityofnewyork.us/d/uvw5-9znb",
     ),
     Source(
         name="boards",
@@ -330,29 +376,50 @@ SOURCES: tuple[Source, ...] = (
             "cb_address_line_2,cb_office_phone,cb_office_email,cb_website,cb_chair,"
             "cb_district_manager,cb_board_meeting,cb_cabinet_meeting",
         ),
-        invariant=_json_rows(59),
+        invariant=_json_rows(BOARD_COUNT),
         min_bytes=20_000,
         max_age_hours=24 * 60,
         why="community board contact details and meeting cadence",
+        label="Community boards",
+        dataset="ruf7-3wgc",
+        url="https://data.cityofnewyork.us/d/ruf7-3wgc",
+    ),
+    Source(
+        name="budget-requests",
+        filename="board_budget_requests.json",
+        fetch=_fetch_board_budget_requests,
+        invariant=_board_budget_requests,
+        min_bytes=1_000_000,
+        max_age_hours=24 * 30,
+        why="what each board asked the City for, in the board's own words",
+        label="Community board budget requests",
+        dataset="vn4m-mk4t",
+        url="https://data.cityofnewyork.us/d/vn4m-mk4t",
     ),
     Source(
         name="council-geometry",
         filename="districts.geojson",
         fetch=_geospatial("872g-cjhh"),
-        invariant=_geojson_features(51),
+        invariant=_geojson_features(DISTRICT_COUNT),
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="address lookup and the board crosswalk",
+        label="Council district boundaries",
+        dataset="872g-cjhh",
+        url="https://data.cityofnewyork.us/d/872g-cjhh",
     ),
     Source(
         name="community-geometry",
         filename="community_districts.geojson",
         fetch=_geospatial("5crt-au7u"),
         # 59 real boards plus 12 joint interest areas (parks, airports).
-        invariant=_geojson_features(71),
+        invariant=_geojson_features(BOARD_COUNT + len(JOINT_INTEREST_AREAS)),
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="the council-district to community-board crosswalk",
+        label="Community district boundaries",
+        dataset="5crt-au7u",
+        url="https://data.cityofnewyork.us/d/5crt-au7u",
     ),
     Source(
         name="zip-geometry",
@@ -362,8 +429,28 @@ SOURCES: tuple[Source, ...] = (
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
         why="ZIP code lookup without touching the geocoder",
+        label="ZIP code boundaries",
+        dataset="pri4-ifjk",
+        url="https://data.cityofnewyork.us/d/pri4-ifjk",
     ),
 )
+
+
+_BY_NAME: dict[str, Source] = {source.name: source for source in SOURCES}
+
+
+def cache_path(raw_dir: Path, name: str) -> Path:
+    """Where a registered source's payload sits under `raw_dir`.
+
+    `SOURCES` is the only place a cache filename is spelled, so a reader cannot drift from
+    the writer.
+    """
+    return Path(raw_dir) / _BY_NAME[name].filename
+
+
+def manifest_key(name: str) -> str:
+    """A source's key in `manifest.json`: its cache filename without the suffix."""
+    return Path(_BY_NAME[name].filename).stem
 
 
 def _age_hours(path: Path) -> float | None:
@@ -373,10 +460,10 @@ def _age_hours(path: Path) -> float | None:
 
 
 def fetch_one(source: Source, raw_dir: Path, *, log: Callable[[str], None] = print) -> str:
-    """Fetch one source into the cache. Returns "fetched", "fresh", or raises.
+    """Fetch one source into the cache, or raise `FetchError`.
 
-    The download lands in a `.part` file and is validated before replacing the
-    real one, so a bad response cannot destroy a good cache entry.
+    The download lands in a `.part` file and is validated before it replaces the real
+    one, so a bad response cannot destroy a good cache entry.
     """
     target = raw_dir / source.filename
     body = source.fetch(log)
@@ -392,7 +479,6 @@ def fetch_one(source: Source, raw_dir: Path, *, log: Callable[[str], None] = pri
 
     partial = target.with_suffix(target.suffix + ".part")
     partial.write_bytes(body)
-    # Atomic on the same filesystem, so the cache is never a half-written file.
     partial.replace(target)
     return "fetched"
 
@@ -406,9 +492,8 @@ def fetch_all(
 ) -> dict:
     """Refresh the cache. Returns a per-source report.
 
-    A source whose cached copy is younger than its `max_age_hours` is skipped
-    unless `force`, which makes this cheap to run often — the calendar refreshes
-    and the once-a-decade boundary files do not.
+    A source younger than its `max_age_hours` is skipped unless `force`. One failed
+    source does not stop the others; the build's own floors refuse what is unusable.
     """
     raw_dir = Path(raw_dir)
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -435,8 +520,6 @@ def fetch_all(
         try:
             fetch_one(source, raw_dir, log=log)
         except FetchError as error:
-            # Keep going: one dead source should not stop the others, and the
-            # build's own floors will refuse if what remains is unusable.
             log(f"    REFUSED: {error}")
             report[source.name] = {"status": "failed", "error": str(error)}
             failures.append(source.name)

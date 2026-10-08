@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-"""End-to-end self-check against a running local server.
+"""End-to-end self-check against a running local server, with the real headers applied.
 
-This is the script that lets a change be *validated* rather than assumed. It
-starts the real server, requests real pages, and asserts the things that are easy
-to break silently and expensive to discover later:
-
-  - the security headers are actually served (a CSP in a file is not a CSP)
-  - no inline <script> or style attribute survives, which the CSP would block in
-    a browser but which is cheaper to catch here with a clear message
-  - pages contain the facts they are supposed to contain
-  - every internal link resolves, so a rename cannot leave a dead end
-  - no upstream host appears in an href outside the allowlist
-  - the not-found path returns 404 rather than a 200 with an empty page
-
-Exit code is non-zero on the first failure, so `make verify` gates a commit.
+Asserts what breaks silently and is expensive to find later: that the security headers
+are served rather than merely written, that no inline script or style attribute survives,
+that pages carry their facts, that every internal link resolves, that no href names a host
+outside the allowlist, and that a missing district 404s. Non-zero exit on the first
+failure, so `make verify` gates a commit.
 
     python3 scripts/verify.py [--port 8099]
 """
@@ -35,10 +27,12 @@ from urllib.parse import urljoin, urlsplit
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from pageset import document_file  # noqa: E402
 from serve import parse_headers_file  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
-from showup.urls import ALLOWED_HOSTS  # noqa: E402
+from showup.model import BOARD_COUNT, DISTRICT_COUNT  # noqa: E402
+from showup.urls import host_allowed  # noqa: E402
 
 REQUIRED_HEADERS = {
     "Content-Security-Policy": "default-src 'none'",
@@ -47,10 +41,7 @@ REQUIRED_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 
-# Imported, never re-listed. A second copy of the allowlist is a copy that drifts:
-# this check passed for weeks and then failed the moment the real list grew, which
-# is the wrong way round for a security assertion.
-ALLOWED_LINK_HOSTS = ALLOWED_HOSTS
+# The allowlist is imported above, never re-listed here: a second copy drifts.
 
 _INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", re.IGNORECASE)
 _STYLE_ATTR = re.compile(r"\sstyle\s*=\s*[\"']", re.IGNORECASE)
@@ -146,7 +137,6 @@ def _wait_for(base: str, server: subprocess.Popen) -> None:
 
 
 def _run_checks(base: str, site: Path) -> None:
-    # --- the headers file itself agrees with what is served -----------------
     rules = parse_headers_file(REPO_ROOT / "_headers")
     check(bool(rules), "_headers parsed no rules")
 
@@ -165,25 +155,27 @@ def _run_checks(base: str, site: Path) -> None:
     check("unsafe-inline" not in csp, "CSP contains unsafe-inline")
     check("unsafe-eval" not in csp, "CSP contains unsafe-eval")
 
-    # --- index content ------------------------------------------------------
-    check("what your city government is doing" in index.lower(), "index missing its heading")
-    check(index.count('href="/district/') >= 51, "index does not link all 51 districts")
+    check("<h1>Districts and boards</h1>" in index, "index missing its heading")
+    check(
+        index.count('href="/district/') >= DISTRICT_COUNT,
+        f"index does not link all {DISTRICT_COUNT} districts",
+    )
     check("<select" in index, "index has no dropdown")
 
-    # --- every district page, checked for real ------------------------------
     sampled = [1, 3, 25, 35, 51]
     for number in sampled:
         url = f"{base}/district/{number}/"
         status, page_headers, page = fetch(url)
         check(status == 200, f"{url} returned {status}")
         check(f"Council District {number}" in page, f"{url} missing its heading")
-        check("How to be heard" in page, f"{url} missing the participation block")
+        check("Testimony and attendance" in page, f"{url} missing the participation block")
         check(
             "IN-PERSON" in page.upper() or "In person: no pre-registration" in page,
             f"{url} does not state the no-pre-registration fact",
         )
         check("hearings@council.nyc.gov" in page, f"{url} missing the hearings contact")
         check("Community Board" in page, f"{url} missing the community board block")
+        check('href="/references/"' in page, f"{url} does not link its sources")
         check(
             "community board" in page.lower() and "council district" in page.lower(),
             f"{url} does not distinguish council district from community board",
@@ -200,7 +192,6 @@ def _run_checks(base: str, site: Path) -> None:
         _check_links(url, page, site)
         print(f"GET /district/{number}/  {status}  {len(page)} bytes")
 
-    # --- the board view, the second of the two views -------------------------
     for code in ("101", "302", "503"):
         url = f"{base}/board/{code}/"
         status, board_headers, page = fetch(url)
@@ -208,38 +199,52 @@ def _run_checks(base: str, site: Path) -> None:
         check(status == 200, f"{url} returned {status}")
         check("Community Board" in page, f"{url} missing its heading")
         check("Content-Security-Policy" in board_headers, f"{url} served without CSP")
-        # The route that justifies this view existing at all.
         check("non-Board (public) members" in flat, f"{url} missing the public-member route")
         check("up to 50 unsalaried members" in flat, f"{url} missing the appointment facts")
-        # Refusals, not guesses.
         check(
-            "could not find an official source" in flat,
-            f"{url} does not refuse the unpublished facts (term length, age, cadence)",
+            "The City's dataset records the board office, not the meeting venue" in flat,
+            f"{url} presents the board office as the meeting venue",
         )
+        check('href="/references/"' in page, f"{url} does not link its sources")
         check(
             'href="/district/' in page,
             f"{url} does not link the council districts covering it",
         )
         check("of this board" in flat, f"{url} share is not labelled as of-the-board")
+        check("Fiscal Year Requests" in flat, f"{url} missing the budget requests")
+        check(
+            page.count("<details>") == page.count("<summary>") == 5,
+            f"{url} does not carry five collapsible request cards",
+        )
+        for field in ("Requestee", "Request", "Response"):
+            check(f"<dt>{field}</dt>" in page, f"{url} request cards have no {field} field")
+        check("/d/vn4m-mk4t" in page, f"{url} does not link the register it quotes")
+        check(
+            "top priority" not in flat.lower(),
+            f"{url} presents one request as the board's top priority",
+        )
         _check_markup_safety(url, page)
         _check_links(url, page, site)
         print(f"GET /board/{code}/  {status}  {len(page)} bytes")
 
     board_dirs = [p for p in (site / "board").iterdir() if p.is_dir()]
-    check(len(board_dirs) == 59, f"expected 59 board pages, found {len(board_dirs)}")
+    check(
+        len(board_dirs) == BOARD_COUNT,
+        f"expected {BOARD_COUNT} board pages, found {len(board_dirs)}",
+    )
 
-    # Both views must be reachable from the front page.
     check('id="district-select"' in index, "index has no council district picker")
     check('id="board-select"' in index, "index has no community board picker")
-    check(index.count('href="/board/') >= 59, "index does not link all 59 boards")
+    check(
+        index.count('href="/board/') >= BOARD_COUNT,
+        f"index does not link all {BOARD_COUNT} boards",
+    )
 
-    # --- the built 404 path -------------------------------------------------
     status, _, missing = fetch(base + "/district/99/")
     check(status == 404, f"/district/99/ returned {status}, expected 404")
     check("not found" in missing.lower(), "404 page has no not-found message")
     print(f"GET /district/99/  {status}  (expected 404)")
 
-    # --- the address box and the data it needs --------------------------------
     check('id="address-input"' in index, "index has no address box")
     check(
         'id="address-section"' in index and "hidden" in index,
@@ -249,12 +254,9 @@ def _run_checks(base: str, site: Path) -> None:
 
     status, _, address_js = fetch(base + "/assets/address.js")
     check(status == 200, f"address.js returned {status}")
-    # Strip comments once: the file documents the rules it follows, so a raw grep
-    # matches its own prose. This already produced two false failures.
     address_code = _strip_comments(address_js)
     # R33: the geocoder must be asked not to log the query.
     check("private=true" in address_code, "address.js omits private=true")
-    # The typed address must not be able to reach a URL, storage or a cookie.
     for banned in ("localStorage", "sessionStorage", "pushState", "document.cookie"):
         check(banned not in address_code, f"address.js touches {banned}")
     check("innerHTML" not in address_code, "address.js uses innerHTML")
@@ -263,8 +265,9 @@ def _run_checks(base: str, site: Path) -> None:
     check(status == 200, f"districts.geo.json returned {status}")
     geo_json = json.loads(geo)
     check(
-        len(geo_json.get("features", [])) == 51,
-        f"district geometry has {len(geo_json.get('features', []))} features, expected 51",
+        len(geo_json.get("features", [])) == DISTRICT_COUNT,
+        f"district geometry has {len(geo_json.get('features', []))} features, "
+        f"expected {DISTRICT_COUNT}",
     )
     gz = len(gzip.compress(geo.encode(), 9))
     # §6A.3 budget: geometry must stay under 300 KB gzipped.
@@ -274,15 +277,14 @@ def _run_checks(base: str, site: Path) -> None:
     status, _, lookup = fetch(base + "/data/lookup.json")
     check(status == 200, f"lookup.json returned {status}")
     lookup_json = json.loads(lookup)
-    check(len(lookup_json.get("districts", [])) == 51, "lookup is missing districts")
-    check(len(lookup_json.get("boards", [])) == 59, "lookup is missing boards")
+    check(len(lookup_json.get("districts", [])) == DISTRICT_COUNT, "lookup is missing districts")
+    check(len(lookup_json.get("boards", [])) == BOARD_COUNT, "lookup is missing boards")
     check(len(lookup_json.get("zips", {})) > 150, "lookup has suspiciously few ZIP codes")
     print(
         f"GET /data/lookup.json  {status}  "
         f"{len(lookup_json['zips'])} ZIPs resolvable without the network"
     )
 
-    # --- manifest -----------------------------------------------------------
     status, _, manifest = fetch(base + "/manifest.json")
     check(status == 200, f"manifest.json returned {status}")
     check('"fetched_at"' in manifest, "manifest has no fetched_at")
@@ -293,9 +295,49 @@ def _run_checks(base: str, site: Path) -> None:
     )
     print(f"GET /manifest.json  {status}")
 
-    # --- the privacy line: no community board chair or district manager --------
-    # The committed fixture, not the gitignored cache, so this check works on a
-    # fresh clone and in CI.
+    # Provenance may be relocated and must never be lost, so every identifier and caveat
+    # moved off a page is asserted to have landed here.
+    url = base + "/references/"
+    status, reference_headers, references = fetch(url)
+    flat = " ".join(references.split())
+    check(status == 200, f"{url} returned {status}")
+    check("Content-Security-Policy" in reference_headers, f"{url} served without CSP")
+    check("<h1>Sources</h1>" in references, f"{url} missing its heading")
+    for clause, why in (
+        ("ranks within a budget category", "why priority numbers repeat"),
+        ("not a commitment and not a funded outcome", "that a request is not an outcome"),
+    ):
+        check(clause in flat, f"{url} no longer states {why}")
+    for dataset in (
+        "Calendar.aspx",
+        "uvw5-9znb",
+        "ruf7-3wgc",
+        "vn4m-mk4t",
+        "872g-cjhh",
+        "5crt-au7u",
+        "pri4-ifjk",
+        "dg92-zbpx",
+    ):
+        check(dataset in flat, f"{url} does not name the source {dataset}")
+    for relocated in (
+        "a few dozen land-use hearing notices a year across all 59 community boards",
+        "no City dataset publishes a dated board calendar",
+        "disagree with what boards publish on their own sites",
+        "records the board office address, not the meeting venue",
+        "rounded to a whole number and approximate",
+        "nominate half of the board's members",
+    ):
+        check(relocated in flat, f"{url} lost the relocated provenance {relocated!r}")
+    check(flat.count("<dt>Fetched</dt>") >= 6, f"{url} does not date every fetched source")
+    check(
+        flat.count("<dt>Freshness window</dt>") >= 8,
+        f"{url} does not state a freshness window per source",
+    )
+    _check_markup_safety(url, references)
+    _check_links(url, references, site)
+    print(f"GET /references/  {status}  {len(references)} bytes")
+
+    # The committed fixture, not the gitignored cache, so this runs on a fresh clone.
     boards = json.loads((REPO_ROOT / "tests" / "fixtures" / "community_boards.json").read_text())
     names = {
         (row.get(field) or "").strip()
@@ -303,10 +345,8 @@ def _run_checks(base: str, site: Path) -> None:
         for field in ("cb_chair", "cb_district_manager")
         if len((row.get(field) or "").strip()) > 4
     }
-    # Scoped to the boards section, not the whole page. A person can hold both
-    # roles: Frank Morano is the Council Member for District 51 *and* chair of
-    # Staten Island CB 3, so his name legitimately appears in the member block.
-    # An unscoped check flags that as a leak, which is a bug in the check.
+    # Scoped to the boards section: Frank Morano is the Council Member for District 51
+    # and chair of Staten Island CB 3, so an unscoped check calls his name a leak.
     boards_section = re.compile(
         r'<section class="boards">(.*?)</section>', re.IGNORECASE | re.DOTALL
     )
@@ -320,7 +360,10 @@ def _run_checks(base: str, site: Path) -> None:
         leaked += [
             f"{name} in district/{page.parent.name}" for name in names if name in match.group(1)
         ]
-    check(checked_pages >= 51, f"only {checked_pages} district pages had a boards section")
+    check(
+        checked_pages >= DISTRICT_COUNT,
+        f"only {checked_pages} district pages had a boards section",
+    )
 
     # Board pages are entirely about one board, so the whole page is in scope.
     board_pages = 0
@@ -328,7 +371,7 @@ def _run_checks(base: str, site: Path) -> None:
         board_pages += 1
         html = page.read_text()
         leaked += [f"{name} in board/{page.parent.name}" for name in names if name in html]
-    check(board_pages >= 59, f"only {board_pages} board pages checked")
+    check(board_pages >= BOARD_COUNT, f"only {board_pages} board pages checked")
     check(not leaked, f"board chair/district-manager names leaked: {leaked[:3]}")
     print(
         f"privacy: {len(names)} board officer names checked against the boards "
@@ -357,16 +400,15 @@ def _check_links(url: str, page: str, site: Path) -> None:
             )
             host = (parts.hostname or "").lower()
             check(
-                host in ALLOWED_LINK_HOSTS,
+                host_allowed(host),
                 f"{url} links to non-allowlisted host {host!r} ({href})",
             )
             continue
-        # Internal link: it must exist on disk.
         target = urljoin("/", href).split("?")[0].split("#")[0]
-        candidate = site / target.lstrip("/")
-        if target.endswith("/"):
-            candidate = candidate / "index.html"
-        check(candidate.exists(), f"{url} links to missing internal path {target}")
+        check(
+            document_file(site, target).exists(),
+            f"{url} links to missing internal path {target}",
+        )
 
 
 if __name__ == "__main__":

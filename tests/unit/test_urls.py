@@ -36,13 +36,12 @@ class TestRejected:
         assert safe_url(url) is None
 
     def test_control_characters_cannot_smuggle_a_scheme(self):
-        # A browser ignores control characters inside a scheme, so
-        # "java\nscript:" is live to a browser. Ours must not disagree with it.
+        # A browser ignores control characters inside a scheme, so "java\nscript:" is live.
         assert safe_url("java\nscript:alert(1)") is None
         assert safe_url("\x01javascript:alert(1)") is None
 
     def test_http_is_rejected_not_upgraded(self):
-        # Silently upgrading would mean rendering a link we never verified works.
+        # Upgrading would render a link we never verified works.
         assert safe_url("http://council.nyc.gov/") is None
 
     def test_unknown_host_rejected(self):

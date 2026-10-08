@@ -1,10 +1,7 @@
 """The defensive branches: malformed input that reaches a guard rather than a parser.
 
-100% coverage is the project floor (see CLAUDE.md), and these are the lines that get
-there — but each one is here because the branch is genuinely reachable from real
-upstream data, not to touch a line. Where a branch is *not* reachable it is deleted
-rather than tested: `unescape_once`, `Meeting.is_past`, `urls.is_internal` and a
-`Paths` dataclass were all removed as dead code while writing this file.
+Each is here because the branch is genuinely reachable from real upstream data, not to
+touch a line for the 100% floor. An unreachable branch is deleted instead.
 """
 
 from __future__ import annotations
@@ -12,7 +9,7 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from showup.sources.boards import _loose_url, load_boards
+from showup.sources.boards import _board_website, _board_website_hostname, load_boards
 from showup.sources.calendar import parse_calendar
 from showup.sources.members import current_by_district, load_members
 from showup.urls import absolutize, safe_url
@@ -25,13 +22,10 @@ class TestUrlGuards:
         assert absolutize("   ", "https://nyc.legistar.com/") is None
 
     def test_safe_url_rejects_a_value_that_is_only_control_characters(self):
-        # Real scrapes contain stray control bytes; after stripping them nothing is
-        # left, which must read as "no link" rather than as an empty href.
         assert safe_url("\x00\x01\x02") is None
 
     def test_safe_url_survives_a_string_urlsplit_rejects(self):
-        # An IPv6-looking bracket that never closes makes urlsplit raise; a parser
-        # error on untrusted input must not propagate as a crash.
+        # An unclosed IPv6-looking bracket makes urlsplit raise.
         assert safe_url("https://[oops") is None
 
     def test_relative_href_with_a_base_that_strips_to_nothing(self):
@@ -39,26 +33,65 @@ class TestUrlGuards:
 
 
 class TestBoardWebsiteGuards:
-    def test_loose_url_rejects_empty_and_non_https(self):
-        assert _loose_url(None) is None
-        assert _loose_url("") is None
-        assert _loose_url("http://example.org") is None
+    """`cb_website` is a nested `{"url": ...}`, and only City-operated hosts are linked."""
 
-    def test_loose_url_rejects_credentials(self):
-        assert _loose_url("https://user:pass@example.org") is None
+    def test_the_nested_socrata_shape_is_unwrapped(self):
+        # Read as a string this becomes "{'url': ...}" and every board loses its link.
+        assert (
+            _board_website({"url": "https://www.nyc.gov/site/queenscb9/index.page"})
+            == "https://www.nyc.gov/site/queenscb9/index.page"
+        )
 
-    def test_loose_url_rejects_a_hostless_url(self):
-        assert _loose_url("https:///path") is None
+    def test_the_old_www1_hostname_is_normalised(self):
+        assert (
+            _board_website({"url": "https://www1.nyc.gov/site/manhattancb1/index.page"})
+            == "https://www.nyc.gov/site/manhattancb1/index.page"
+        )
 
-    def test_loose_url_survives_an_unparseable_value(self):
-        assert _loose_url("https://[oops") is None
+    def test_a_city_url_published_as_http_is_upgraded(self):
+        assert (
+            _board_website({"url": "http://www.nyc.gov/manhattancb3"})
+            == "https://www.nyc.gov/manhattancb3"
+        )
 
-    def test_loose_url_accepts_a_board_domain(self):
-        assert _loose_url("https://brooklyncb6.org/") == "https://brooklyncb6.org/"
+    def test_the_city_wordpress_network_is_linked(self):
+        assert (
+            _board_website({"url": "https://cbmanhattan.cityofnewyork.us/cb4/"})
+            == "https://cbmanhattan.cityofnewyork.us/cb4/"
+        )
+
+    def test_an_independent_board_domain_is_not_linked(self):
+        """Brooklyn CB5's listed domain lapsed and now redirects to an unrelated site.
+        The City's dataset still points at it, so the host is the only usable signal."""
+        assert _board_website({"url": "https://www.brooklyncb5.org/"}) is None
+        assert _board_website({"url": "https://www.cb14brooklyn.com"}) is None
+
+    def test_rejects_empty_missing_and_malformed(self):
+        assert _board_website(None) is None
+        assert _board_website({}) is None
+        assert _board_website({"url": ""}) is None
+        assert _board_website({"url": "https://[oops"}) is None
+
+    def test_rejects_credentials_on_a_city_host(self):
+        assert _board_website({"url": "https://user:pass@www.nyc.gov/x"}) is None
+
+    def test_rejects_a_dangerous_scheme(self):
+        assert _board_website({"url": "javascript:alert(1)"}) is None
+
+    def test_an_unlinked_hostname_is_offered_as_text(self):
+        assert _board_website_hostname({"url": "https://www.brooklyncb5.org/"}) == (
+            "www.brooklyncb5.org"
+        )
+
+    def test_a_linked_board_has_no_text_only_hostname(self):
+        """The two are mutually exclusive, or the page would print both."""
+        assert _board_website_hostname({"url": "https://www.nyc.gov/site/queenscb9"}) is None
+
+    def test_an_unparseable_url_yields_no_hostname(self):
+        assert _board_website_hostname({"url": "https://[oops"}) is None
 
     def test_a_row_without_a_usable_code_is_skipped(self, tmp_path):
-        # Real exports carry blank and short codes; they cannot be joined to
-        # geometry, so they are dropped rather than guessed at.
+        # Real exports carry blank and short codes, which cannot be joined to geometry.
         path = tmp_path / "boards.json"
         path.write_text(
             json.dumps(
@@ -74,8 +107,7 @@ class TestBoardWebsiteGuards:
 
 class TestMemberGuards:
     def test_a_row_with_a_non_numeric_district_is_skipped(self, tmp_path):
-        # The dataset carries the Public Advocate and other citywide seats, which
-        # have no district number.
+        # The dataset carries the Public Advocate and other citywide seats.
         path = tmp_path / "members.json"
         path.write_text(
             json.dumps(

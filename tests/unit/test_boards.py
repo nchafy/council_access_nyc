@@ -1,9 +1,7 @@
 """Community board loading and the email policy.
 
-The email policy is a product decision with a privacy dimension, so the tests
-state the decision explicitly rather than just locking in current behaviour. If
-someone reverses the decision, these tests should fail loudly and be rewritten
-deliberately.
+The policy is a product decision (R30), so these state the decision rather than lock in
+current behaviour: a reversal should fail here and be rewritten deliberately.
 """
 
 from __future__ import annotations
@@ -65,22 +63,17 @@ class TestEmailPolicy:
         assert email_policy("bk02@cb.nyc.gov") == ("bk02@cb.nyc.gov", None)
 
     def test_publishes_a_board_domain_address(self):
-        # R30's strict cb.nyc.gov regex would have withheld this; it is the
-        # board's own institutional mailbox.
+        # R30's original strict cb.nyc.gov regex would have withheld this.
         assert email_policy("info@brooklyncb6.org")[0] == "info@brooklyncb6.org"
 
     def test_publishes_a_consumer_mailbox(self):
-        # Unprofessional, but it is the contact the board actually published and a
-        # resident needs a working route.
         assert email_policy("brooklyncb8@gmail.com")[0] == "brooklyncb8@gmail.com"
 
     def test_publishes_a_district_manager_work_address(self):
         """The decision: a public employee's published work email is published.
 
-        11 boards publish only this shape, all on cb.nyc.gov. Withholding them
-        removes the sole contact route for a fifth of the city's boards to hide an
-        address the City itself publishes for exactly this purpose. The harm worth
-        avoiding is pairing a name to a mailbox, and we never render the names.
+        11 boards publish only this shape, all on cb.nyc.gov, so withholding it would
+        leave a fifth of the city's boards uncontactable. The harm is the pairing.
         """
         assert email_policy("eprince@cb.nyc.gov")[0] == "eprince@cb.nyc.gov"
 
@@ -96,9 +89,8 @@ class TestEmailPolicy:
 
 
 class TestLooksPersonNamed:
-    """Kept and tested although the policy no longer uses it — it is the
-    mechanism a future reversal would need, and the count it produces is the
-    evidence the decision rests on."""
+    """Kept and tested although the policy no longer uses it: it is the mechanism a
+    reversal would need, and it produced the count R30 rests on."""
 
     def test_detects_initial_plus_surname(self):
         assert looks_person_named("eprince@cb.nyc.gov", "Victor Edwards", "Eutha Prince")
@@ -110,7 +102,7 @@ class TestLooksPersonNamed:
         assert not looks_person_named("info@brooklyncb6.org", "Jane Doe", "John Smith")
 
     def test_short_tokens_are_ignored(self):
-        # Matching 3-letter names would suppress "college@", "info@" and friends.
+        # Matching 3-letter names would suppress "college@" and "info@".
         assert not looks_person_named("info@cb.nyc.gov", "Amy Ng", "Bob Lee")
 
 
@@ -120,8 +112,7 @@ class TestLoadBoards:
         assert set(boards) == {"302", "109", "211"}
 
     def test_label_disambiguates_boroughs(self, boards_file):
-        # Four boroughs each have a "Community Board 9", so the label must carry
-        # the borough or the page is ambiguous.
+        # Four boroughs each have a Community Board 9.
         assert load_boards(boards_file)["109"].label == "Manhattan Community Board 9"
         assert load_boards(boards_file)["302"].label == "Brooklyn Community Board 2"
 
@@ -137,8 +128,7 @@ class TestLoadBoards:
         assert load_boards(boards_file)["109"].website is None
 
     def test_https_website_on_any_host_is_allowed(self, boards_file):
-        # Board sites live on their own domains, so the project allowlist cannot
-        # cover them; https-only is the guard.
+        # Board sites are on their own domains, which the allowlist cannot cover.
         assert load_boards(boards_file)["302"].website.startswith("https://")
 
     def test_missing_email_records_the_reason(self, boards_file):
@@ -154,9 +144,8 @@ def test_joint_interest_areas_are_the_twelve_non_boards():
 
 
 class TestComposeAddress:
-    """`cb_office_address` runs street and city together with no separator, and
-    the floor lives in a second field, so a naive join strands it after the ZIP.
-    16 of 59 boards have a second line."""
+    """`cb_office_address` runs street and city together with no separator and the floor
+    lives in a second field, so a naive join strands it after the ZIP."""
 
     def test_line_two_lands_before_the_city(self):
         assert (
@@ -177,8 +166,7 @@ class TestComposeAddress:
         )
 
     def test_no_city_tail_falls_back_to_appending(self):
-        # Readable and correct, just not postal order — better than a regex tuned
-        # until it starts guessing.
+        # Readable and correct, just not postal order.
         assert (
             _compose_address("30-50 Whitestone Expressway Flushing/Whitestone", "Suite 205")
             == "30-50 Whitestone Expressway Flushing/Whitestone, Suite 205"

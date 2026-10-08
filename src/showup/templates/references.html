@@ -1,0 +1,95 @@
+{% extends "layout.html" %}
+{% import "macros.html" as m %}
+{% block body %}
+<section class="intro">
+  <h1>Sources</h1>
+  <p class="why">
+    Every dataset this site reads, the identifier it is published under, the date it was
+    last fetched, and the window after which it is treated as stale. Every finding on a
+    district or board page comes from these rows.
+  </p>
+</section>
+
+<section class="references">
+  <h2>Datasets read by the build</h2>
+{% for source in sources %}
+{% set rows = [] %}
+{% do rows.append(("Identifier", m.link(source.url, source.dataset))) %}
+{% do rows.append(("Used for", source.why)) %}
+{% if source.fetched_at %}{% do rows.append(("Fetched", source.fetched_at.strftime("%-d %B %Y, %H:%M"))) %}{% endif %}
+{% do rows.append(("Freshness window", source.window)) %}
+{% if source.rows %}{% do rows.append(("Rows in this build", source.rows)) %}{% endif %}
+  <article class="dataset">
+    <h3>{{ source.label }}</h3>
+{{ m.dl(rows) }}
+  </article>
+
+{% endfor %}
+</section>
+
+<section class="references">
+  <h2>Derived from those datasets</h2>
+  <dl>
+    <dt>Council district to community board crosswalk</dt>
+    <dd>Areal overlap between the council district boundaries (872g-cjhh) and the
+      community district boundaries (5crt-au7u), regenerated when either boundary file
+      changes and committed as <span class="nolink">crosswalks/council_to_boards.json</span>.
+      The percentages are rounded to a whole number and approximate. On a board page the
+      denominator is that board; on a district page it is that district. The boards
+      dataset also carries a <span class="nolink">council_district</span> column, which
+      holds 44 distinct values across 59 rows and omits 7 council districts, so it
+      records the board office's district rather than the districts a board covers and
+      is not used for this join.</dd>
+    <dt>Written-testimony safe-until timestamp</dt>
+    <dd>Hearing start plus 72 hours. Adjournment times are not published and adjournment
+      is at or after the start, so the stamp is a provable lower bound on the real
+      deadline rather than the deadline.</dd>
+    <dt>Accommodation request-by date</dt>
+    <dd>Three business days before the hearing, against a committed holiday table.</dd>
+  </dl>
+</section>
+
+<section class="references">
+  <h2>Cited, not fetched</h2>
+  <dl>
+    <dt>The City Record</dt>
+    <dd>{{ m.link(city_record_url, "dg92-zbpx") }} — a few dozen land-use hearing notices
+      a year across all 59 community boards. It is the only City dataset carrying dated
+      board notices, and no City dataset publishes a dated board calendar.</dd>
+    <dt>Each board's own website</dt>
+    <dd>Agendas, minutes and the meeting location are published there and nowhere in the
+      City's data. A board on its own domain rather than a City one is given as text
+      rather than a link, because the host cannot be verified at build time.</dd>
+  </dl>
+</section>
+
+<section class="references">
+  <h2>Caveats</h2>
+  <ul>
+    <li>Community board meeting cadence is quoted exactly as ruf7-3wgc records it. That is
+      the City's record of the cadence, and it has been observed to disagree with what
+      boards publish on their own sites.</li>
+    <li>ruf7-3wgc records the board office address, not the meeting venue. Committees
+      often sit at the office and the full board often does not.</li>
+    <li>Unlike Council committees, which are called by their chair, a community board
+      meets on a standing monthly cadence.</li>
+    <li>Budget requests are an annual filing rather than current activity: the register
+      appears a few times a year, so an entry can be months old. A board page shows the
+      newest edition {{ m.link(register_url, "the register (vn4m-mk4t)") }} published on
+      or before the build date, capped at five requests with the total stated beside it.
+      Priority numbers repeat because each one ranks within a budget category — capital,
+      capital support, expense.</li>
+    <li>Agency replies are quoted rather than sorted into yes and no: the phrasing changes
+      between editions of the same row, and it records a position rather than an outcome.
+      A request is not a commitment and not a funded outcome.</li>
+    <li>The Council Members listed against a board can introduce legislation for that
+      area, and nominate half of the board's members.</li>
+    <li>Council district geometry ships simplified — 132 KB gzipped against 3.8 MB raw,
+      measured to assign the same district as full precision on 99.99% of a citywide
+      lattice.</li>
+    <li>No figure here compares one board or district with another.</li>
+  </ul>
+</section>
+
+<p class="back"><a href="/">All districts and boards</a></p>
+{% endblock %}

@@ -1,15 +1,8 @@
 """Collapsing Legistar's free-text location column onto real places.
 
-`meeting_location` is typed by clerks and has accumulated 30-plus spellings of
-about five rooms across 25 years — en-dash and double-space variants, "HYBRID
-HEARING - " prefixes, "REMOTE HEARING (VIRTUAL ROOM 3)". Attendance mode is kept
-separate from place, because "remote" is not a room, and a hybrid hearing has
-both.
-
-Unrecognised strings become `offsite` carrying the raw label rather than being
-forced into the nearest match. The Council really does sit in borough halls,
-schools and libraries occasionally, and inventing a City Hall address for one of
-those would send someone to the wrong building.
+`meeting_location` is typed by clerks and carries 30-plus spellings of about five rooms.
+Attendance mode is kept separate from place, and an unrecognised string becomes `offsite`
+carrying its raw label rather than being forced to the nearest match.
 """
 
 from __future__ import annotations
@@ -23,14 +16,16 @@ __all__ = ["VENUES", "normalize_location"]
 _CITY_HALL = "New York City Hall, City Hall Park, New York, NY 10007"
 _250 = "250 Broadway, New York, NY 10007"
 
+#: Procedural facts, stated rather than instructed (docs/voice.md).
 _CITY_HALL_ENTRY = (
-    "Enter through NYPD security and metal detectors. Tell the officers which hearing you are "
-    'attending. No food, beverage containers, or signs larger than 8.5" x 11" in hearing rooms.'
+    "Entry is through NYPD security and metal detectors, and the officers ask which hearing "
+    'each visitor is attending. No food, beverage containers, or signs larger than 8.5" x 11" '
+    "in hearing rooms."
 )
 _250_ENTRY = (
-    "Bring photo ID and pass through security and metal detectors. Every floor has a "
-    "Sergeant-at-Arms who can direct you. No food, beverage containers, or signs larger than "
-    '8.5" x 11" in hearing rooms.'
+    "Photo ID is required, and entry is through security and metal detectors. Every floor has "
+    "a Sergeant-at-Arms, who gives directions. No food, beverage containers, or signs larger "
+    'than 8.5" x 11" in hearing rooms.'
 )
 
 VENUES: dict[str, Venue] = {
@@ -76,22 +71,22 @@ VENUES: dict[str, Venue] = {
         "emigrant",
         "Emigrant Savings Bank Building",
         "49-51 Chambers Street, New York, NY 10007",
-        "Bring photo ID and pass through building security.",
+        "Photo ID is required, and entry is through building security.",
         "Overflow hearing space across from City Hall.",
     ),
     "remote": Venue(
         "remote",
         "Remote hearing (Zoom)",
         None,
-        "To speak, register in advance on the Council's Register to Testify form. To watch "
-        "only, no registration is needed — use the Council livestream.",
+        "Speaking requires advance registration on the Council's Register to Testify form. "
+        "Watching requires no registration and runs on the Council livestream.",
         "Remote participants are subject to the Council's Remote Attendance Policy.",
     ),
     "offsite": Venue(
         "offsite",
         "Off-site hearing",
         None,
-        "Check the agenda PDF for the exact address and entry instructions.",
+        "The exact address and entry instructions are in the agenda PDF.",
         "Occasionally the Council sits closer to affected residents — a borough hall, school, "
         "library or state office building.",
     ),
@@ -103,18 +98,14 @@ _JOINTLY = re.compile(r"\bjointly with the committee on\b.*$", re.IGNORECASE)
 
 def _clean(raw: str) -> str:
     text = _DASHES.sub("-", raw)
-    # "Council Chambers - City Hall Jointly with the Committee on Education." —
-    # the joint-hearing note rides along in the location cell and must come off
-    # before matching, or every joint hearing looks like an unknown venue.
+    # The joint-hearing note rides along in the location cell, so every joint hearing
+    # would otherwise match no venue.
     text = _JOINTLY.sub("", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
 def normalize_location(raw: str | None) -> tuple[Venue, str]:
-    """Map a raw location string to (venue, attendance_mode).
-
-    attendance_mode is one of "in_person", "hybrid", "remote".
-    """
+    """Map a raw location string to (venue, attendance_mode)."""
     label = (raw or "").strip()
     if not label:
         return VENUES["offsite"], "in_person"
@@ -142,8 +133,7 @@ def normalize_location(raw: str | None) -> tuple[Venue, str]:
         return VENUES["emigrant"], mode
 
     if re.search(r"city hall", text, re.IGNORECASE):
-        # "Council Committee Room - City Hall" is the committee room, not the
-        # Chambers, so "committee" has to win over "chamber".
+        # "Council Committee Room - City Hall" names both, so "committee" wins.
         if re.search(r"committee", text, re.IGNORECASE):
             return VENUES["city-hall-committee"], mode
         if re.search(r"chamber", text, re.IGNORECASE):

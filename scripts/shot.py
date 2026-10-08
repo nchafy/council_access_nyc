@@ -12,21 +12,15 @@ because `docs/dependencies.md` refuses a dependency that installs its own browse
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from cdp import find_chrome
 
-CHROME_CANDIDATES = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    shutil.which("google-chrome") or "",
-    shutil.which("chromium") or "",
-]
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: 500 and not a true phone width, because macOS clamps a Chrome window below ~500 px and
 #: a narrower request silently crops (docs/OBSERVATIONS.md, 2026-09-23). Still under the
@@ -42,10 +36,6 @@ PAGES = {
     "board-302": "/board/302/",
     "references": "/references/",
 }
-
-
-def find_chrome() -> str | None:
-    return next((path for path in CHROME_CANDIDATES if path and Path(path).exists()), None)
 
 
 def main(argv: list[str] | None = None) -> int:

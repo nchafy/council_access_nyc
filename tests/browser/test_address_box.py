@@ -19,22 +19,12 @@ from typing import ClassVar
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from cdp import find_chrome
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HARNESS = Path(__file__).parent / "harness.html"
 
-CHROME_CANDIDATES = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    shutil.which("google-chrome") or "",
-    shutil.which("chromium") or "",
-]
-
 pytestmark = pytest.mark.browser
-
-
-def _chrome() -> str | None:
-    return next((path for path in CHROME_CANDIDATES if path and Path(path).exists()), None)
 
 
 class _Recorder(SimpleHTTPRequestHandler):
@@ -61,7 +51,7 @@ class _Recorder(SimpleHTTPRequestHandler):
 @pytest.fixture(scope="module")
 def harness_output():
     """Run the harness in real Chrome and return (verdict, detail)."""
-    chrome = _chrome()
+    chrome = find_chrome()
     if not chrome:
         pytest.skip("no local Chrome")
 

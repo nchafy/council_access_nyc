@@ -402,3 +402,16 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   and JS every time. `/references/` is 2,822 gzipped, 11% of the 60 KB budget. | so what: on a site
   this small the shared assets dominate a page-weight diff, so "the page got lighter" and "the
   critical path got lighter" are different claims and the second one is the gated number.
+- 2026-10-08 | three commit bodies on this branch that misstate what they contain | **`8da7d2d`**
+  claims an `address.js` change and a docs figure sweep that are in `dca9d85`, not in it — and it
+  shipped `test_our_own_broken_data_is_reported_as_our_fault`, which asserts a string `address.js`
+  did not yet contain, so it left a browser gate red with no `(RED)` marker and a body written as
+  though green. **`be7fbf7`** and **`a3480a1`** carry a pasted shell transcript: `be7fbf7`'s body is
+  100,938 bytes, 153 lines of it terminal output, and it truncates two sentences mid-clause.
+  Cause: the message was passed with `-m "…"` in double quotes containing backticks around
+  `make verify`, so the shell ran it as command substitution and spliced the output in.
+  **`1e808a4`** has an empty body; its measurement is in the diff instead. | so what: this repo
+  strips comments from code, so the body is the only record — a body that names a file the diff does
+  not touch is not untidy, it is false. Not rewritten: `be7fbf7` is three commits deep, the branch
+  is pushed with a PR open, and a rebase would collide with concurrent work. Use a quoted heredoc
+  (`<<'MSG'`) for any message containing backticks, and read `git log -1` before pushing.

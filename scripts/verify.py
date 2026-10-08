@@ -27,6 +27,7 @@ from urllib.parse import urljoin, urlsplit
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from pageset import document_file  # noqa: E402
 from serve import parse_headers_file  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -404,10 +405,10 @@ def _check_links(url: str, page: str, site: Path) -> None:
             )
             continue
         target = urljoin("/", href).split("?")[0].split("#")[0]
-        candidate = site / target.lstrip("/")
-        if target.endswith("/"):
-            candidate = candidate / "index.html"
-        check(candidate.exists(), f"{url} links to missing internal path {target}")
+        check(
+            document_file(site, target).exists(),
+            f"{url} links to missing internal path {target}",
+        )
 
 
 if __name__ == "__main__":

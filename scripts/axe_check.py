@@ -22,7 +22,7 @@ from typing import Any
 
 from cdp import Browser, CDPError, find_chrome
 from fetch_axe import AXE_SOURCE, AxeFetchError, ensure_axe
-from pageset import REPRESENTATIVE, every_page
+from pageset import REPRESENTATIVE, document_file, every_page
 from serve import background_server
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = (REPO_ROOT / args.root).resolve()
-    if not (root / "index.html").exists():
+    if not document_file(root, "/").exists():
         print(f"error: no built site at {root} — run `make build` first", file=sys.stderr)
         return 2
     try:

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from cdp import Browser, CDPError, find_chrome
-from pageset import REPRESENTATIVE
+from pageset import REPRESENTATIVE, document_file
 from serve import background_server
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -63,10 +63,7 @@ class Weight:
 
 def page_weight(root: Path, path: str) -> Weight:
     """Gzipped bytes of the document plus every subresource it blocks on."""
-    document_file = root / (path.lstrip("/") or "index.html")
-    if document_file.is_dir() or path.endswith("/"):
-        document_file = root / path.strip("/") / "index.html"
-    html_bytes = document_file.read_bytes()
+    html_bytes = document_file(root, path).read_bytes()
 
     weight = Weight(path, {"(document)": gzipped_size(html_bytes)})
     html_text = html_bytes.decode("utf-8", errors="replace")
@@ -167,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = (REPO_ROOT / args.root).resolve()
-    if not (root / "index.html").exists():
+    if not document_file(root, "/").exists():
         print(f"error: no built site at {root} — run `make build` first", file=sys.stderr)
         return 2
 

@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+#: The document the build writes for a directory, and what `serve.py` resolves `/x/` to.
+INDEX_FILE = "index.html"
+
 #: Path -> why this page is in the list; when one fails, the reason names the promise broken.
 REPRESENTATIVE: dict[str, str] = {
     "/": "the front page: both dropdowns, both plain-link lists, and the address box",
@@ -32,6 +35,18 @@ REPRESENTATIVE: dict[str, str] = {
 }
 
 
+def document_file(root: Path, path: str) -> Path:
+    """The file in a built site that a server path resolves to — `every_page` inverted.
+
+    `/` and `/district/35/` become `index.html` and `district/35/index.html`; a path that
+    already names a file, like `/404.html`, comes back unchanged.
+    """
+    candidate = root / path.strip("/")
+    if path.endswith("/") or candidate.is_dir():
+        return candidate / INDEX_FILE
+    return candidate
+
+
 def every_page(root: Path) -> list[str]:
     """Every pre-rendered page in a built site, as server paths, front page first.
 
@@ -41,7 +56,7 @@ def every_page(root: Path) -> list[str]:
     server_paths: list[str] = []
     for html_file in sorted(root.rglob("*.html")):
         relative = html_file.relative_to(root)
-        if html_file.name == "index.html":
+        if html_file.name == INDEX_FILE:
             parent = relative.parent.as_posix()
             server_paths.append("/" if parent == "." else f"/{parent}/")
         else:

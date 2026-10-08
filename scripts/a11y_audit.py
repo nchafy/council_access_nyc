@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from cdp import Browser, CDPError, Session, find_chrome
-from pageset import REPRESENTATIVE
+from pageset import REPRESENTATIVE, document_file
 from serve import background_server
 
 from showup.model import BOARD_COUNT, DISTRICT_COUNT
@@ -427,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = (REPO_ROOT / args.root).resolve()
-    if not (root / "index.html").exists():
+    if not document_file(root, "/").exists():
         print(f"error: no built site at {root} — run `make build` first", file=sys.stderr)
         return 2
     if not find_chrome():

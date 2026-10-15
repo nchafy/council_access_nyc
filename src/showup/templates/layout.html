@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} — Show Up NYC</title>
+<meta name="description" content="City Council hearings and deadlines, council districts, and community boards.">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <p class="wordmark"><a href="/">Show Up NYC</a></p>
+  <p class="tagline">City Council hearings and deadlines, council districts, and community boards.</p>
+</header>
+<main id="main">
+{% block body %}{% endblock +%}
+</main>
+<footer class="site">
+  <p class="freshness" data-built-at="{{ built_at.isoformat(timespec="seconds") }}">
+    Data fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}. {% if window_end %}Meetings scheduled through {{ window_end.strftime("%-d %B %Y") }}.{% else %}No forward window could be determined from the calendar.{% endif +%}
+  </p>
+  <p class="caveat">Hearings are deferred or moved without notice.</p>
+  <p class="caveat"><a href="/references/">Sources and freshness windows</a>.</p>
+</footer>
+<script src="/assets/site.js" defer></script>
+{% block extra_script %}{% endblock +%}
+</body>
+</html>

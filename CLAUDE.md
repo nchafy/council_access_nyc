@@ -9,11 +9,19 @@ registering, and how many hours are left to file written testimony.
 
 ```bash
 make fetch    # refresh the upstream cache (~9 min cold; skips anything fresh)
-make verify   # build + lint + ~9,000 tests + 357 live-response assertions. The gate.
+make verify   # build + lint + ~9,200 tests + 482 live-response assertions. The gate.
 make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
 make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
-make browser  # drive the address box in real headless Chrome
+make browser  # every browser gate in one pytest run (~100 s)
+make gates    # the same four gates as operator tools, with readable output
 ```
+
+`make gates` is `axe` (WCAG 2.2 AA over all 115 pages), `a11y` (real `Tab` keypresses and
+the accessibility tree), `console` (any console error or CSP violation) and `perf` (page
+weight, and cold-load p95 on throttled 3G). They are deliberately **not** part of `make
+verify`: together they are about two minutes of real browser time, and the fast gate has to
+stay fast to keep being used. CI runs them as a separate job, and fails loudly rather than
+skipping if the runner has no Chrome.
 
 Fetch and build are separate stages on purpose: the build never touches the
 network, so it is reproducible and a flaky download cannot half-write a site. A
@@ -29,13 +37,52 @@ would surface for the first time at deploy. `scripts/serve.py` applies the real
 source-conflict notice, missing committees, designed empty states. Check it after
 any renderer change.
 
-**State of play (2026-09-22).** Phase 1 is **built and runs locally**: 110 pages
-(51 district, 59 board), seven fetchers, 100% enforced coverage, CI green. Not
-deployed — no domain, no hosting, no scheduled refresh, all deferred together.
-The one open Phase 1 item is the accessibility and performance pass (axe, a
-keyboard and screen-reader run, the 60 KB / 3 s gate in CI). `README.md` has the
-done/not-done list; `docs/phase-1-scope.md` §6 has the exit criteria ticked
-individually.
+**State of play (2026-10-07).** Phase 1 is **built and runs locally**: 115 pages
+(51 district, 59 board, two indexes, `/references/`, 404), eight fetchers, 9,233 tests at
+100% enforced coverage, 481 live checks, 77 browser gates, axe clean at WCAG 2.2 AA on
+every page. Heaviest page 14.0 KB gzipped of the 60 KB budget; cold-load p95 869 ms
+against the 3 s promise. Not deployed — no domain, no hosting, no scheduled refresh, all
+deferred together.
+
+**The one open Phase 1 item is a real screen-reader pass.** No gate substitutes for it;
+`docs/accessibility-pass.md` §3 is the procedure and §4 is the record, which says NOT RUN.
+Everything else in `docs/phase-1-scope.md` §6 is ticked.
+
+### Where to pick up
+
+| Open | Where |
+|---|---|
+| Screen-reader pass — the last Phase 1 criterion | `docs/accessibility-pass.md` §3.2, steps 5-11 |
+| Scheduled refresh; one source has a 12-hour window and nothing refreshes it | `docs/refresh.md` |
+| Hosting, domain, deploy — deferred together, and they gate the refresh | `docs/phase-1-scope.md` §7 |
+| Owner decisions still open (favicon/identity, public vs private repo) | `docs/phase-1-scope.md` §7 |
+| Board meeting venues: 39 of 59 obtainable, refused for now with the evidence | `docs/board-meeting-sources.json`, `docs/OBSERVATIONS.md` |
+
+### The binding documents
+
+Read these before changing anything they cover; each is a decision with evidence, not a
+preference.
+
+| Document | Governs |
+|---|---|
+| `docs/voice.md` | every user-facing string: no imperatives, no second person, no advice, headings name a thing, provenance lives on `/references/` |
+| `docs/commits.md` | commit size and message; one commit, one claim |
+| `docs/pull-requests.md` | the review loop; distrust the description and re-derive the number |
+| `docs/dependencies.md` | open-source dependencies allowed; no install-time code execution, no browser dependency |
+| `.claude/skills/validate/SKILL.md` | the nine gates, and the baseline-diff protocol for a refactor |
+| `docs/phase-1-scope.md` | scope, the §4 threat model, the §6 exit criteria |
+| `docs/OBSERVATIONS.md` | the dated evidence log. Append to it; never rewrite an entry |
+
+`make verify` passing is **necessary and not sufficient** — it excludes the four browser
+gates. `make gates` runs those.
+
+Building a gate? **Serve behind the real `_headers`, always.** `scripts/serve.py` has
+`background_server()` for this. The CSP already broke a shipped feature silently once:
+`connect-src` omitted `'self'`, so the address box's local index could not be fetched
+and every query fell through to the geocoder — the opposite of what the privacy design
+promises. It was invisible because the only browser test used a bare file server that
+sent no policy. Testing a feature and testing it under the policy shipped with it are
+different tests, and only the second one is true.
 
 **On a fresh clone, run `make fetch` first.** `etl/raw/` is gitignored, so there is
 no data until you do; `make build` exits 2 and says so. Roughly 9 minutes cold,
@@ -51,6 +98,14 @@ it — architecture, data contracts, and the 57 constraints that deliver those
 requirements. The brief governs *what*, the outline governs *how*, and the phase
 doc governs *what now*. This file carries the working conventions and the settled
 calls.
+
+**Voice: state the data, never direct the reader.** `docs/voice.md` is binding on every
+user-facing string. No imperatives, no second person, no advice, no catalogue of what the
+City does not publish; headings name a thing rather than asking a question; provenance
+lives on `/references/`. Both are owner decisions, measured and recorded — a voice pass
+took imperatives 16 to 0 and second-person uses 38 to 0, and the next one should find
+zero. Freshness is `docs/refresh.md`: one source has a 12-hour window and no scheduled
+refresh yet, so the footer states the fetch time rather than judging it.
 
 **Security is the owner's stated top priority.** The threat model is in
 `docs/phase-1-scope.md` §4. The short version, because it is easy to get wrong:
@@ -145,7 +200,13 @@ get re-argued.
 - **Python 3.12 + uv + ruff + pytest for ETL; vanilla ES modules for the
   frontend.** Mirrors `~/personal/timemap_nyc`. The only logic shared between
   ETL and browser is ~25 lines of ray-casting, so the one-language argument for
-  Node is empty. One pinned npm devDependency: `mapshaper`.
+  Node is empty.
+- **Open-source dependencies are allowed** (owner, 2026-09-30). This reverses the
+  earlier stdlib-only posture, which was never about licences. `docs/dependencies.md`
+  carries the checklist. Two things still hold: **no install-time code execution**
+  (Playwright downloads and runs its own browser build — that, not dependency
+  aversion, is why `scripts/cdp.py` exists), and **no browser dependency**, because
+  "zero third parties" is a promise to readers that the CSP enforces.
 - **MapLibre GL JS + OpenFreeMap, self-hosted vendor bundle.** No Google Maps,
   no Mapbox, no analytics, no tag manager, no third-party fonts. The model site
   `spatialequity.nyc` ships gtag and Mapbox; we borrow its metric-registry
@@ -239,6 +300,11 @@ get re-argued.
   committed fixture.
 - **TDD, with commit markers.** `test: … (RED)` then `feat(scope): … (GREEN)`,
   matching `~/personal/timemap_nyc`. Conventional commits throughout.
+- **`docs/commits.md` and `docs/pull-requests.md` are binding.** One commit, one claim;
+  the body carries the reasoning, because this repo strips comments from code and the
+  "why" has to live somewhere. Commit a guard *before* the thing it guards, and give a
+  correction its own commit. For review: re-derive the headline number yourself — three
+  confidently-reported claims on PR #1 were false, each with plausible evidence attached.
 - Never commit fetched upstream payloads (`etl/raw/`, PDFs, the 3.8 MB district
   GeoJSON) — scripts download and derive them. Committed fixtures under
   `tests/fixtures/` are the deliberate exception and are stored byte-exact.

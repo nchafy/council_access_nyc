@@ -46,7 +46,6 @@ class TestParseClock:
         assert parse_clock(raw) == expected
 
     def test_deferred_is_not_a_time(self):
-        # Never guess a start time — "Deferred" must not become 00:00.
         assert parse_clock("Deferred") is None
 
     @pytest.mark.parametrize("value", ["", "TBD", "25:00 PM", "noon"])
@@ -60,8 +59,7 @@ class TestParseCalendar:
         assert len(meetings) == 60
 
     def test_rejects_a_document_that_is_not_the_calendar(self):
-        # Legistar serves error bodies with HTTP 200, so a status check is not
-        # enough; this must be a loud failure, not an empty list.
+        # Legistar serves error bodies with HTTP 200, so this must raise, not return [].
         with pytest.raises(CalendarParseError):
             parse_calendar("<html><body>Invalid feed</body></html>")
 

@@ -1,14 +1,7 @@
-"""Assemble the static site.
+"""Assemble `site/` from the cached payloads `showup fetch` wrote. Never touches the network.
 
-Reads cached upstream payloads, produces `site/`. Nothing here talks to the
-network: fetching is a separate stage (`showup fetch` writes `etl/raw/`), so
-the build is reproducible and testable offline, and a network failure can never
-half-write a site.
-
-Failure posture is **fail closed** (outline §2.13). A source that parses to fewer
-rows than its floor raises, the build stops, and whatever was previously in
-`site/` is left untouched — a stale site that says how old it is beats a fresh
-site that is missing half its meetings.
+Fails closed (outline §2.13): a source below its floor raises, and the previous `site/`
+is left in place.
 """
 
 from __future__ import annotations
@@ -20,26 +13,34 @@ from pathlib import Path
 
 from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
 from .crosswalk import load as load_crosswalk
+from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
-from .model import District, DistrictBoard, Manifest, Member
-from .render import render_board, render_district, render_index, render_not_found
+from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
+from .render import (
+    render_board,
+    render_district,
+    render_index,
+    render_not_found,
+    render_references,
+)
 from .sources.boards import load_boards
+from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
 from .sources.members import current_by_district, load_members
 
 __all__ = ["SHORTLIST_SIZE", "BuildError", "build_site"]
 
-#: Owner's decision: five items. In Phase 1 the shortlist is purely
-#: chronological — the next five meetings — so it needs no ranking at all.
+#: Owner's decision: five. Phase 1 orders the shortlist chronologically, so it ranks nothing.
 SHORTLIST_SIZE = 5
 
-DISTRICT_COUNT = 51
-
-#: Below these, the parse is treated as broken rather than as "not much data".
-#: A floor is the difference between noticing a silent upstream change and
-#: publishing an empty site with a confident tone.
-FLOORS = {"calendar": 40, "district_pages": DISTRICT_COUNT, "members": 300, "boards": 59}
+#: Below these the parse is broken rather than thin, and `_check_floor` refuses the build.
+FLOORS = {
+    "calendar": 40,
+    "district_pages": DISTRICT_COUNT,
+    "members": MEMBER_ROW_FLOOR,
+    "boards": BOARD_COUNT,
+}
 
 
 class BuildError(RuntimeError):
@@ -61,12 +62,11 @@ def _load_boards_by_district(
 ) -> tuple[dict[int, tuple[DistrictBoard, ...]], dict[str, DistrictBoard]]:
     """Join the committed geometry crosswalk to the boards' contact details.
 
-    The crosswalk decides *which* boards cover a district (geometry); this dataset
-    supplies *how to reach* them. Neither alone is enough: `ruf7-3wgc` also carries
-    a `council_district` column, and using it would leave seven districts with no
-    board at all.
+    Geometry decides which boards cover a district; `ruf7-3wgc.council_district` would
+    leave seven with none (CLAUDE.md, "Community boards are joined by geometry").
     """
-    boards = load_boards(raw / "community_boards.json")
+    boards_file = cache_path(raw, "boards")
+    boards = load_boards(boards_file)
     _check_floor("boards", len(boards))
 
     try:
@@ -83,7 +83,7 @@ def _load_boards_by_district(
             if board is None:
                 raise BuildError(
                     f"crosswalk references community district {code}, which is not in "
-                    "community_boards.json — the two sources have drifted apart"
+                    f"{boards_file.name} — the two sources have drifted apart"
                 )
             entry = DistrictBoard(
                 code=code,
@@ -96,6 +96,7 @@ def _load_boards_by_district(
                 email=board.email,
                 email_suppressed=board.email_suppressed,
                 website=board.website,
+                website_unlinked=board.website_unlinked,
                 board_meeting=board.board_meeting,
                 cabinet_meeting=board.cabinet_meeting,
             )
@@ -108,8 +109,8 @@ def _load_boards_by_district(
 def _load_districts(
     raw: Path, today: date
 ) -> tuple[list[District], dict[int, dict], dict[str, DistrictBoard]]:
-    pages = json.loads((raw / "district_pages.json").read_text(encoding="utf-8"))
-    members = load_members(raw / "members.json")
+    pages = json.loads(cache_path(raw, "districts").read_text(encoding="utf-8"))
+    members = load_members(cache_path(raw, "members"))
     _check_floor("members", len(members))
     current = current_by_district(members, today)
 
@@ -131,15 +132,6 @@ def _load_districts(
         page = parsed_pages[number]
         seat = current.get(number)
 
-        # The two sources can genuinely disagree, and District 3 shows how:
-        # `uvw5-9znb` records Erik Bottcher's term ending 2026-02-03 with no
-        # successor row, while council.nyc.gov already names Carl Wilson. The
-        # scraped page is the fresher of the two — a special election lands there
-        # weeks before it lands in the open dataset.
-        #
-        # So a seat counts as filled when *either* source says someone holds it.
-        # Getting this backwards would tell a district with a sitting member that
-        # it has no representation, which is worse than a slightly stale name.
         name = page["member_name"] or (seat["name"] if seat else None)
         seat_conflict = bool(name) and seat is None
         member = (
@@ -175,23 +167,52 @@ def _load_districts(
     return districts, current, boards_by_code
 
 
-def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> dict:
-    """Build into a temporary directory, then swap it in.
+def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
+    """Every fetched source as `/references/` shows it: the `fetch.py` registry joined to
+    the manifest's fetch dates and row counts. Nothing here is typed into a template."""
+    rows: list[dict] = []
+    for source in SOURCES:
+        recorded = manifest_sources.get(manifest_key(source.name), {})
+        cached = raw / source.filename
+        fetched_at = recorded.get("fetched_at") or (_mtime(cached) if cached.exists() else None)
+        rows.append(
+            {
+                "label": source.label,
+                "dataset": source.dataset,
+                "url": source.url,
+                "why": source.why,
+                "fetched_at": datetime.fromisoformat(str(fetched_at)) if fetched_at else None,
+                "max_age_hours": recorded.get("max_age_hours", source.max_age_hours),
+                "rows": recorded.get("rows"),
+            }
+        )
+    return rows
 
-    Building in place would leave a broken site visible if rendering failed
-    halfway; building aside and swapping makes the publish atomic enough that a
-    reader never sees a partial site.
-    """
+
+def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> dict:
+    """Build into a temporary directory, then swap it in, so a half-rendered site is
+    never visible."""
     raw = Path(raw_dir)
     out = Path(out_dir)
     day = today or date.today()
     now = datetime.now()
 
-    calendar_html = (raw / "legistar_calendar.html").read_text(encoding="utf-8", errors="replace")
+    calendar_file = cache_path(raw, "calendar")
+    calendar_html = calendar_file.read_text(encoding="utf-8", errors="replace")
     meetings = parse_calendar(calendar_html)
     _check_floor("calendar", len(meetings))
 
     districts, _, boards_by_code = _load_districts(raw, day)
+
+    budget_requests_file = cache_path(raw, "budget-requests")
+    try:
+        budget_requests = load_budget_requests(budget_requests_file, today=day)
+    except BudgetRequestError as error:
+        raise BuildError(str(error)) from error
+    budget_request_rows = sum(len(entry.requests) for entry in budget_requests.values())
+    budget_publication = next(
+        (entry.publication.isoformat() for entry in budget_requests.values()), None
+    )
 
     ahead = upcoming(meetings, day, SHORTLIST_SIZE)
     window_end = max((m.date for m in meetings), default=None)
@@ -214,8 +235,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         render_not_found(built_at=now, window_end=window_end), encoding="utf-8"
     )
 
-    # /district/ exists so that a no-JavaScript form submit lands somewhere
-    # useful instead of a 404.
+    # /district/ is where a no-JavaScript form submit lands, instead of a 404.
     district_root = staging / "district"
     district_root.mkdir()
     (district_root / "index.html").write_text(
@@ -238,9 +258,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             encoding="utf-8",
         )
 
-    # The 59 community board pages. A board is a different view, not a variant of
-    # a district: it has a standing monthly cadence, a zoning review role, and it
-    # seats members of the public on committees.
     repo_root = Path(__file__).resolve().parents[2]
     boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
     board_root = staging / "board"
@@ -255,12 +272,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
                 boards_to_districts.get(code, []),
                 built_at=now,
                 window_end=window_end,
+                budget_requests=budget_requests.get(code),
             ),
             encoding="utf-8",
         )
         boards_written += 1
-    if boards_written != 59:
-        raise BuildError(f"wrote {boards_written} board pages, expected 59")
+    if boards_written != BOARD_COUNT:
+        raise BuildError(f"wrote {boards_written} board pages, expected {BOARD_COUNT}")
     (board_root / "index.html").write_text(
         render_index(
             districts,
@@ -271,14 +289,11 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         encoding="utf-8",
     )
 
-    # Geometry for the address box. The city geocoder returns a coordinate but
-    # NOT a council district, so the browser has to do the point-in-polygon itself.
-    # Shipped simplified: 132 KB gzipped against 3.8 MB raw, measured to assign the
-    # same district as full precision on 99.99% of a citywide lattice
-    # (tests/unit/test_geo.py::TestSimplifiedGeometryAgrees).
+    # The city geocoder returns a coordinate but no council district, so the browser
+    # does the point-in-polygon against this.
     data_dir = staging / "data"
     data_dir.mkdir()
-    council_polygons = load_features(raw / "districts.geojson", "coundist")
+    council_polygons = load_features(cache_path(raw, "council-geometry"), "coundist")
     if len(council_polygons) != DISTRICT_COUNT:
         raise BuildError(
             f"district geometry has {len(council_polygons)} features, expected {DISTRICT_COUNT}"
@@ -288,9 +303,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         encoding="utf-8",
     )
 
-    # Everything resolvable without the network: a district number, a neighbourhood
-    # name, a board name, or a ZIP. Typing one of these must never reach the
-    # geocoder — it is faster and it keeps the input on the machine.
+    # A district number, neighbourhood, board name or ZIP resolves from this, so typing
+    # one never reaches the geocoder.
     zips = load_zips(repo_root / CROSSWALK_PATH)
     lookup = {
         "districts": [{"n": d.number, "hoods": d.neighborhoods or ""} for d in districts],
@@ -311,32 +325,45 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     if headers.exists():
         shutil.copy2(headers, staging / "_headers")
 
-    manifest = Manifest(
-        sources={
-            "legistar_calendar": {
-                "fetched_at": _mtime(raw / "legistar_calendar.html"),
-                "max_age_hours": 12,
-                "rows": len(meetings),
-            },
-            "district_pages": {
-                "fetched_at": _mtime(raw / "district_pages.json"),
-                "max_age_hours": 24 * 40,
-                "rows": DISTRICT_COUNT,
-            },
-            "members": {
-                "fetched_at": _mtime(raw / "members.json"),
-                "max_age_hours": 24 * 40,
-                "rows": DISTRICT_COUNT,
-            },
-            "community_boards": {
-                "fetched_at": _mtime(raw / "community_boards.json"),
-                "max_age_hours": 24 * 90,
-                "rows": 59,
-            },
+    manifest_sources: dict[str, dict[str, str | int]] = {
+        manifest_key("calendar"): {
+            "fetched_at": _mtime(calendar_file),
+            "max_age_hours": 12,
+            "rows": len(meetings),
         },
-        built_at=now,
-        calendar_window_end=window_end,
+        manifest_key("districts"): {
+            "fetched_at": _mtime(cache_path(raw, "districts")),
+            "max_age_hours": 24 * 40,
+            "rows": DISTRICT_COUNT,
+        },
+        manifest_key("members"): {
+            "fetched_at": _mtime(cache_path(raw, "members")),
+            "max_age_hours": 24 * 40,
+            "rows": DISTRICT_COUNT,
+        },
+        manifest_key("boards"): {
+            "fetched_at": _mtime(cache_path(raw, "boards")),
+            "max_age_hours": 24 * 90,
+            "rows": BOARD_COUNT,
+        },
+    }
+    if budget_requests_file.exists():
+        manifest_sources[manifest_key("budget-requests")] = {
+            "fetched_at": _mtime(budget_requests_file),
+            "max_age_hours": 24 * 30,
+            "rows": budget_request_rows,
+        }
+
+    references_root = staging / "references"
+    references_root.mkdir()
+    (references_root / "index.html").write_text(
+        render_references(
+            _reference_rows(raw, manifest_sources), built_at=now, window_end=window_end
+        ),
+        encoding="utf-8",
     )
+
+    manifest = Manifest(sources=manifest_sources, built_at=now, calendar_window_end=window_end)
     (staging / "manifest.json").write_text(
         json.dumps(
             {
@@ -361,6 +388,9 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "districts_with_gaps": sum(1 for d in districts if d.missing),
         "boards_linked": sum(len(d.boards) for d in districts),
         "board_pages": len(boards_by_code),
+        "boards_with_budget_requests": len(budget_requests),
+        "budget_requests": budget_request_rows,
+        "budget_publication": budget_publication,
         "zip_codes": len(zips),
         "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [

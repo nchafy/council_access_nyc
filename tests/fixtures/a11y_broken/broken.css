@@ -1,0 +1,7 @@
+/* color-contrast (WCAG 1.4.3): #999999 on #ffffff is 2.85:1; AA wants 4.5:1 for body text.
+ * External rather than an inline <style> block, which `style-src 'self'` would block. */
+.faint {
+  color: #999999;
+  background: #ffffff;
+  font-size: 16px;
+}

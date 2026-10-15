@@ -1,0 +1,134 @@
+{% extends "layout.html" %}
+{% import "macros.html" as m %}
+{% macro website(url, label) %}{{ m.link(url, label) }}<br><small>The board's own site publishes its agendas, minutes and meeting location. No City dataset carries a board meeting calendar.</small>{% endmacro %}
+{% macro website_as_text(host) %}<span class="nolink">{{ host }}</span><br><small>Given as text, not a link: this board uses its own domain rather than a City one, unverifiable at build time.</small>{% endmacro %}
+{% macro office(address) %}{{ address }}<br><small>The City's dataset records the board office, not the meeting venue.</small>{% endmacro %}
+{% block body %}
+{% set rows = [] %}
+{% if board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
+{% if board.address %}{% do rows.append(("Office", office(board.address))) %}{% endif %}
+{% if board.phone %}{% do rows.append(("Phone", board.phone)) %}{% endif %}
+{% if board.email %}{% do rows.append(("Email", board.email)) %}
+{% elif board.email_suppressed %}{% do rows.append(("Email", m.email_suppressed(board.email_suppressed))) %}{% endif %}
+{% if board.website %}{% do rows.append(("Website", website(board.website, board.website.replace("https://", "").rstrip("/")))) %}
+{% elif board.website_unlinked %}{% do rows.append(("Website", website_as_text(board.website_unlinked))) %}{% endif %}
+{% set cadence_rows = [] %}
+{% if board.board_meeting %}{% do cadence_rows.append(("Full board meets", board.board_meeting)) %}{% endif %}
+{% if board.cabinet_meeting %}{% do cadence_rows.append(("Cabinet meets", board.cabinet_meeting)) %}{% endif %}
+<section class="where">
+  <h1>{{ board.label }}</h1>
+  <p class="distinction">
+    A <strong>community board</strong> is the most local unit of City government,
+    advising on zoning, budget priorities and local services for one community
+    district. It is <em>not</em> a council district.
+  </p>
+{{ m.dl(rows) }}
+</section>
+
+{% if cadence_rows %}
+<section class="meetings">
+  <h2>Meeting times</h2>
+{{ m.dl(cadence_rows) }}
+{{ m.source("Quoted from the City's community boards dataset") }}
+</section>
+{% else %}
+<section class="meetings">
+  <h2>Meeting times</h2>
+  <p class="designed-state">
+    This board does not publish a meeting cadence in the City's dataset.
+  </p>
+</section>
+{% endif %}
+
+{% if budget is none %}
+<section class="budget-requests">
+  <h2>Fiscal Year Requests</h2>
+  <p class="designed-state">
+    We hold no budget requests on file for this board. Every board files them with the
+    Mayor's Office of Management and Budget each year, as the City Charter requires, so
+    an absence here is our gap rather than the board's. The filings are in {{ m.link(register_url, "the OMB register (vn4m-mk4t)") }}.
+  </p>
+</section>
+{% else %}
+<section class="budget-requests">
+  <h2>Fiscal Year Requests</h2>
+  <p class="why">
+    {%+ if budget.fiscal_year %}Fiscal Year {{ budget.fiscal_year }}{% else %}An unstated fiscal year{% endif %} requests, from the edition OMB published on
+    {{ budget.published }} — the newest one not dated in the
+    future. Showing {{ budget.requests|length }} of {{ budget.total }} for this board, lowest
+    priority number first; all of them, for all 59 boards, are in {{ m.link(register_url, "the OMB register (vn4m-mk4t)") }}.
+    Explanations and replies are quoted from it and cut short here.
+  </p>
+{% for request in budget.requests %}
+{% set request_rows = [] %}
+{% if request.agency %}{% do request_rows.append(("Requestee", request.agency)) %}{% endif %}
+{% if request.explanation %}{% do request_rows.append(("Request", request.explanation)) %}{% endif %}
+{% if request.response %}{% do request_rows.append(("Response", request.response)) %}{% endif %}
+{% do request_rows.append(("Register reference", request.tracking_code)) %}
+  <article class="request">
+    <details>
+      <summary><h3>{{ request.title }}</h3> <span class="priority">{{ request.priority }}</span></summary>
+{{ m.dl(request_rows) }}
+    </details>
+  </article>
+
+{% endfor %}
+</section>
+{% endif %}
+
+<section class="committees">
+  <h2>Council districts</h2>
+  <ul class="district-list">
+{% for number, share in districts %}
+    <li><a href="/district/{{ number }}/">Council District {{ number }}</a> <span class="share">{{ share|percent }} of this board</span></li>
+{% endfor %}
+  </ul>
+{{ m.source("Shares are approximate") }}
+</section>
+
+<section class="participate">
+  <h2>Attending</h2>
+  <p class="lead-truth">
+    <strong>Board committees admit non-board members of the public.</strong>
+  </p>
+
+  <h3>Public members on board committees</h3>
+  <ul>
+    <li>Committees are "composed of Board members, and non-Board (public) members".</li>
+    <li>Public members take part in discussion and offer recommendations, but are
+      "not allowed to vote".</li>
+    <li>Most boards require an application and a current resume.</li>
+    <li>Committees are open to the public and, under the New York State Open Meetings Law,
+      must keep full and accurate minutes.</li>
+    <li><strong>Committees often meet at the board office listed above, and the full board
+      often does not.</strong> Several boards publish that split — one lists "Board Office"
+      against every committee and "varies" against the full board; others meet elsewhere
+      or on video.</li>
+  </ul>
+
+  <h3>Board membership</h3>
+  <ul>
+    <li>Each board has <strong>up to 50 unsalaried members</strong>, and <strong>half are
+      nominated by the City Council members</strong> whose districts cover it.</li>
+    <li>Members are appointed by the <strong>Borough President</strong>, whose office processes
+      applications at various times of the year.</li>
+    <li>Members must "reside, work, or have some other significant interest in the community".</li>
+    <li>Applications go to the {{ board.borough_name }} Borough President: {% if bp_url %}{{ m.link(bp_url, bp_url.replace("https://", "").rstrip("/")) }}{% else %}<span class="nolink">nyc.gov/communityboards</span>{% endif %}</li>
+  </ul>
+
+  <h3>What this board can and cannot do</h3>
+  <ul>
+    <li>Zoning: "Applications for a change in or variance from the zoning resolution must come
+      before the board for review." Boards must also be consulted on the siting of most
+      municipal facilities.</li>
+    <li>Budget: boards assess local needs and meet with City agencies to make recommendations
+      in the City's budget process.</li>
+    <li>The limit, stated by the City: boards "do not have the ability to order any City
+      agency or official to perform any task".</li>
+    <li>Boards are "autonomous City agencies and members are City officers" — not a
+      neighbourhood association.</li>
+  </ul>
+</section>
+
+<p class="back"><a href="/">All districts and boards</a></p>
+{% endblock %}

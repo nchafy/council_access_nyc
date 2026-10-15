@@ -1,9 +1,5 @@
-"""The XSS boundary. These are the highest-value tests in the project.
-
-Every case here is an input shape an attacker or a broken scrape actually
-produces. If `strip_tags` or `esc` regresses, a hostile committee name reaches a
-page, so these assert behaviour rather than implementation.
-"""
+"""The XSS boundary. Every case is a shape an attacker or a broken scrape produces, and
+asserts behaviour rather than implementation."""
 
 from __future__ import annotations
 
@@ -20,8 +16,6 @@ class TestStripTags:
         assert strip_tags("<b>Committee</b> on <i>Aging</i>") == "Committee on Aging"
 
     def test_script_contents_are_dropped_entirely(self):
-        # Echoing the body of a script tag would reintroduce exactly what we are
-        # defending against, so it must vanish rather than be escaped.
         assert "alert" not in strip_tags("<script>alert('x')</script>Finance")
         assert strip_tags("<script>alert('x')</script>Finance") == "Finance"
 
@@ -29,20 +23,16 @@ class TestStripTags:
         assert strip_tags("<style>body{}</style>Parks") == "Parks"
 
     def test_nested_broken_script_tag(self):
-        # The classic filter bypass: a naive tag-stripping regex turns
-        # "<scr<script>ipt>" into "<script>". A real parser does not.
-        #
-        # Residual text like "ipt>alert(1)" DOES survive here, and that is
-        # correct: it is inert text, and `esc` escapes it at render. What must
-        # never survive is a usable tag, so that is what this asserts.
+        # The classic bypass: a naive regex turns "<scr<script>ipt>" into "<script>".
+        # Residual inert text like "ipt>alert(1)" does survive, and `esc` handles it; what
+        # must never survive is a usable tag.
         result = strip_tags("<scr<script>ipt>alert(1)</script>Housing")
         assert "<script" not in result
         assert "<" not in result.replace("ipt>", "")
         assert esc(result).count("<") == 0
 
     def test_entities_decoded_exactly_once(self):
-        # Double-decoding would turn this into live markup. Once keeps it as the
-        # literal text the source actually contained.
+        # Double-decoding would make this live markup; once keeps the source's own text.
         assert strip_tags("&amp;lt;script&amp;gt;") == "&lt;script&gt;"
 
     def test_single_decode_of_plain_entity(self):
@@ -53,7 +43,6 @@ class TestStripTags:
         assert strip_tags("<td>Aging</td><td>Finance</td>") == "Aging Finance"
 
     def test_truncated_document_does_not_raise(self):
-        # A scrape cut off mid-tag must degrade, not crash the build.
         assert strip_tags('<td class="x') == ""
         assert strip_tags("<div>Health") == "Health"
 
@@ -70,8 +59,6 @@ class TestStripTags:
         assert strip_tags("Committee   on\n\n  Aging") == "Committee on Aging"
 
     def test_unicode_is_preserved(self):
-        # Member names include accents; mangling them is a correctness bug about
-        # a real person's name.
         assert strip_tags("<b>Avilés</b>") == "Avilés"
         assert strip_tags("Ossé") == "Ossé"
 
@@ -81,8 +68,6 @@ class TestEsc:
         assert esc("<script>") == "&lt;script&gt;"
 
     def test_escapes_quotes_for_attribute_context(self):
-        # One escaper has to be correct in both text and attribute position, or
-        # a call site can pick the wrong one.
         result = esc('" onmouseover="alert(1)')
         assert '"' not in result
         assert "&quot;" in result

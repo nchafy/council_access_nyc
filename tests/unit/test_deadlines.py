@@ -1,9 +1,7 @@
 """The two computed dates.
 
-A wrong deadline is the worst output this product has, so these tests assert the
-*direction* of every approximation as well as its value: an error must always make
-a deadline earlier (telling someone to hurry unnecessarily), never later (telling
-them they have time they do not have).
+A wrong deadline is this product's worst output, so these assert the *direction* of every
+approximation as well as its value: an error must move a deadline earlier, never later.
 """
 
 from __future__ import annotations
@@ -25,16 +23,13 @@ class TestWrittenSafeUntil:
         assert result == datetime(2026, 10, 23, 13, 30)
 
     def test_unknown_time_falls_back_to_midnight_which_is_earlier(self):
-        # Conservative direction: the bound must not drift later than the real
-        # window when we know less.
         known = written_safe_until(date(2026, 10, 20), time(13, 30))
         unknown = written_safe_until(date(2026, 10, 20), None)
         assert unknown < known
         assert unknown == datetime(2026, 10, 23, 0, 0)
 
     def test_bound_is_inside_the_real_window(self):
-        # The real deadline is 72h after adjournment, and adjournment >= start.
-        # So our bound is always <= the real deadline: filing before it is safe.
+        # Adjournment is always at or after the start, so start + 72h is never later.
         hearing = date(2026, 10, 20)
         start = time(10, 0)
         ours = written_safe_until(hearing, start)
@@ -79,10 +74,8 @@ class TestAccommodationDeadline:
         assert accommodation_deadline(date(2026, 10, 20)) == date(2026, 10, 15)
 
     def test_skips_thanksgiving_week(self):
-        # Monday 30 Nov, counting back over business days only:
-        #   Sun 29 and Sat 28 are weekend, Fri 27 and Thu 26 are holidays,
-        #   Wed 25 = 1, Tue 24 = 2, Mon 23 = 3.
-        # A naive `date - 3 days` would land on Friday 27, a holiday.
+        # Mon 30 Nov back over business days: 29/28 weekend, 27/26 holidays, 25/24/23 count.
+        # A naive `date - 3` would land on Friday 27, a holiday.
         result = accommodation_deadline(date(2026, 11, 30))
         assert result == date(2026, 11, 23)
         assert is_business_day(result)

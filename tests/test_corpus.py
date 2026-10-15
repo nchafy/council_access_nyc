@@ -1,16 +1,9 @@
-"""Run the committed corpus: input -> expected output, one test per case.
+"""Run the committed corpus: input -> expected output, one parameterised test per case,
+so a failure names the input rather than the file.
 
-`tests/corpus/*.jsonl` is the project's durable record of what these functions do.
-Each line carries an input, its expected output, and a note saying why the case
-exists — because a case without a reason gets deleted by the next person who finds
-it inconvenient.
-
-The corpus is the artifact; `test_fuzz.py` is how it grows. When the fuzzer finds an
-input that behaves interestingly, it goes in here with its expected result and gets
-committed, which turns a one-off discovery into a permanent regression test.
-
-Every case is its own parameterised test, so a failure names the input rather than
-just the file.
+`tests/corpus/*.jsonl` is the durable record of what these functions do; each line
+carries its input, its expected output, and a note saying why the case exists.
+`test_fuzz.py` is how it grows.
 """
 
 from __future__ import annotations
@@ -50,11 +43,6 @@ def cases(name: str):
     )
 
 
-# --------------------------------------------------------------------------- #
-# The XSS boundary
-# --------------------------------------------------------------------------- #
-
-
 @cases("strip_tags")
 def test_strip_tags(given, expected):
     assert strip_tags(given) == expected
@@ -68,11 +56,6 @@ def test_esc(given, expected):
 @cases("safe_url")
 def test_safe_url(given, expected):
     assert safe_url(given) == expected
-
-
-# --------------------------------------------------------------------------- #
-# Parsing upstream free text
-# --------------------------------------------------------------------------- #
 
 
 @cases("normalize_location")
@@ -107,10 +90,6 @@ def test_email_policy(given, expected):
 def test_accommodation_deadline(given, expected):
     assert accommodation_deadline(date.fromisoformat(given)).isoformat() == expected
 
-
-# --------------------------------------------------------------------------- #
-# The corpus itself
-# --------------------------------------------------------------------------- #
 
 EXPECTED_FILES = {
     "strip_tags",

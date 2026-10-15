@@ -1,11 +1,8 @@
 """The refusal paths: every guard that stops a bad build, and the states behind them.
 
-These are the branches that only run when something is already wrong, which makes
-them the least likely to be exercised by accident and the most damaging when broken.
-A floor that does not raise is worse than no floor, because it reads as protection.
-
-Grouped by the module whose guard is under test rather than by scenario, so a
-failure points at one file.
+These branches only run when something is already wrong, so they are the least likely to
+be exercised by accident. A floor that does not raise reads as protection and is not.
+Grouped by the module under test, so a failure points at one file.
 """
 
 from __future__ import annotations
@@ -33,9 +30,7 @@ from showup.urls import safe_url
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
-#: Lattice spacing for these tests. The production value is 0.001 (~110 m) and a
-#: citywide sweep at that resolution takes ~35 s; none of the guards under test
-#: depend on resolution, so they run coarse.
+#: Coarse on purpose: no guard here depends on resolution, and 0.001 costs ~35 s.
 COARSE = 0.004
 
 
@@ -87,9 +82,8 @@ class TestCrosswalkGeneration:
     def test_refuses_a_crosswalk_that_leaves_a_district_boardless(self, tmp_path):
         """The guard that would have caught the naive `council_district` join.
 
-        51 council squares and 59 community squares that do not overlap: every
-        district resolves to nothing, which must be a loud failure rather than a
-        site with empty board sections.
+        51 council squares and 59 community squares that do not overlap, so every district
+        resolves to nothing — a loud failure, not a site with empty board sections.
         """
         council = tmp_path / "c.geojson"
         council.write_text(json.dumps(_squares("coundist", range(1, 52), y0=40.6)))
@@ -105,8 +99,7 @@ class TestCrosswalkGeneration:
         """Both directions, and they are not transposes of each other."""
         council = tmp_path / "c.geojson"
         community = tmp_path / "cd.geojson"
-        # Council squares and community squares on the same footprint, so each
-        # district maps to exactly one board and vice versa.
+        # Same footprint, so each district maps to exactly one board and vice versa.
         council.write_text(json.dumps(_squares("coundist", range(1, 52))))
         community.write_text(json.dumps(_squares("boro_cd", [f"1{n:02d}" for n in range(1, 60)])))
         data = generate(council, community, spacing=COARSE)
@@ -120,8 +113,7 @@ class TestCrosswalkGeneration:
         zips = tmp_path / "z.geojson"
         council.write_text(json.dumps(_squares("coundist", range(1, 52))))
         community.write_text(json.dumps(_squares("boro_cd", [f"1{n:02d}" for n in range(1, 60)])))
-        # One modified ZCTA standing in for three real ZIPs, which is how the City
-        # publishes 10001 (covering 10001, 10119, 10199).
+        # One modified ZCTA standing in for three real ZIPs, as the City publishes 10001.
         payload = _squares("modzcta", ["10001"])
         payload["features"][0]["properties"]["zcta"] = "10001, 10119, 10199"
         zips.write_text(json.dumps(payload))
@@ -181,8 +173,6 @@ class TestGeoGuards:
                 }
             )
         )
-        # A Point cannot be hit-tested, so the feature is dropped rather than
-        # loaded as a degenerate polygon.
         assert load_features(path, "coundist") == []
 
     def test_a_feature_with_no_key_is_dropped(self, tmp_path):
@@ -200,8 +190,6 @@ class TestGeoGuards:
         assert set(result) == {"a"}
 
     def test_a_polygon_the_lattice_never_hits_gets_an_empty_list(self):
-        # A sliver thinner than the lattice spacing collects no sample points, so
-        # its share list is empty rather than a fabricated value.
         wide = Polygon("wide", [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]])
         sliver = Polygon(
             "sliver",
@@ -233,12 +221,9 @@ class TestBuildGuards:
     def test_a_crosswalk_referencing_an_unknown_board_is_a_build_error(
         self, raw_dir, tmp_path, monkeypatch
     ):
-        """The two sources drifting apart must be loud.
-
-        The crosswalk comes from geometry and the contact details from a different
-        dataset; if one names a board the other has never heard of, the page would
-        silently lose a board rather than say so.
-        """
+        """The two sources drifting apart must be loud: the crosswalk comes from geometry
+        and the contact details from another dataset, so a page could silently lose a
+        board."""
         path = tmp_path / "c.json"
         districts = {str(n): [["999", 1.0]] for n in range(1, 52)}
         boards = {f"1{n:02d}": [[1, 1.0]] for n in range(1, 60)}
@@ -291,7 +276,6 @@ class TestRenderFallbacks:
         assert 'href="None"' not in html
 
     def test_an_empty_definition_list_renders_nothing(self):
-        # A member with no contactable details at all still produces a valid page.
         district = District(
             number=9,
             neighborhoods=None,
@@ -304,7 +288,7 @@ class TestRenderFallbacks:
             window_end=None,
             today=date(2026, 9, 22),
         )
-        assert "Your Council Member" in html
+        assert "<h2>Council Member</h2>" in html
 
     def test_a_window_end_of_none_says_so_rather_than_implying_completeness(self):
         district = District(number=9, neighborhoods=None, member=None)
@@ -354,8 +338,6 @@ class TestRenderFallbacks:
         assert "does not publish a meeting cadence" in html
 
     def test_a_board_in_an_unknown_borough_still_renders(self):
-        # The borough-president link table is keyed on borough name; an unexpected
-        # value must degrade to a pointer, not a crash or a dead link.
         html = render_board(
             self._board(borough_name="Atlantis"),
             [(35, 0.44)],
@@ -415,8 +397,6 @@ class TestRenderHelpers:
     def test_link_with_no_url_renders_inert_text(self):
         from showup.render import _link
 
-        # Defensive by design: a caller that forgets to check for None gets inert
-        # text rather than href="None".
         assert _link(None, "Agenda") == '<span class="nolink">Agenda</span>'
         assert "href" not in _link(None, "Agenda")
 
@@ -430,14 +410,11 @@ class TestRenderHelpers:
     def test_an_internal_link_gets_no_noopener(self):
         from showup.render import _link
 
-        # rel="noopener noreferrer" is for outbound links; adding it to our own is
-        # noise that makes the real ones harder to audit.
         assert "noopener" not in _link("/district/35/", "District 35")
 
     def test_an_empty_definition_list_is_omitted_entirely(self):
         from showup.render import _dl
 
-        # Returning "<dl></dl>" would render an empty bordered block.
         assert _dl([]) == ""
 
     def test_a_definition_list_drops_rows_with_no_value(self):
@@ -536,7 +513,6 @@ class TestFetchInvariantMessages:
         messages: list[str] = []
         body = fetch_module._fetch_calendar(messages.append)
         assert b"gridCalendar" in body
-        # The operator must see WHY the primary was abandoned.
         assert any("refused the connection" in m for m in messages)
 
 
@@ -546,18 +522,15 @@ class TestBuildBoardPageFloor:
     ):
         """59 board pages or none.
 
-        `load_crosswalk` checks that every district has a board but not that all 59
-        boards are reachable, so a districts section referencing only 58 codes would
-        silently publish 58 board pages. This is the floor that catches it.
+        `load_crosswalk` checks every district has a board, not that all 59 boards are
+        reachable, so 58 referenced codes would quietly publish 58 pages.
         """
-        # Real board codes, because the build first checks that every code the
-        # crosswalk names actually exists in the contact dataset.
+        # Real codes, because the build checks every crosswalk code against the dataset.
         from showup.sources.boards import load_boards
 
         codes = sorted(load_boards(FIXTURES / "community_boards.json"))
         assert len(codes) == 59
-        # Districts reference only the first 40 codes, leaving 19 boards with no
-        # page — which must be refused, not quietly published.
+        # Only the first 40 codes, so 19 boards would have no page.
         districts = {str(n): [[codes[n % 40], 1.0]] for n in range(1, 52)}
         boards = {code: [[1, 1.0]] for code in codes}
         path = tmp_path / "c.json"
@@ -569,12 +542,8 @@ class TestBuildBoardPageFloor:
 
 class TestOverlapSharesEmptyTally:
     def test_a_polygon_the_lattice_misses_entirely_reports_no_shares(self):
-        """A polygon smaller than the lattice spacing collects zero samples.
-
-        Its share list must be empty rather than a division by zero or an invented
-        value — which is exactly the case the crosswalk's coverage floor then
-        catches.
-        """
+        """A polygon smaller than the lattice spacing collects zero samples, so its share
+        list is empty rather than a division by zero or an invented value."""
         big = Polygon("big", [[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0), (0.0, 0.0)]])
         missed = Polygon(
             "missed",
@@ -589,7 +558,6 @@ class TestShortHelper:
     def test_short_returns_empty_for_no_value(self):
         from showup.render import _short
 
-        # Districts with no published neighbourhood list render without a dash.
         assert _short(None) == ""
         assert _short("") == ""
 
@@ -608,11 +576,8 @@ class TestShortHelper:
 
 class TestZipCrosswalkSkips:
     def test_a_zcta_overlapping_nothing_is_omitted(self, tmp_path):
-        """A ZIP area outside every council district yields no entry.
-
-        Rather than mapping it to an empty list, which the address box would then
-        have to special-case at runtime.
-        """
+        """A ZIP area outside every council district yields no entry, rather than an empty
+        list the address box would have to special-case at runtime."""
         council = tmp_path / "c.geojson"
         community = tmp_path / "cd.geojson"
         zips = tmp_path / "z.geojson"

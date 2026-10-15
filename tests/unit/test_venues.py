@@ -6,9 +6,11 @@ hypothetical: `meeting_location` is clerk-typed free text with 25 years of drift
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
-from showup.venues import normalize_location
+from showup.venues import VENUES, normalize_location
 
 
 class TestCityHall:
@@ -32,8 +34,7 @@ class TestCityHall:
         assert venue.id == "city-hall-committee"
 
     def test_council_committee_room_prefers_committee(self):
-        # "Council Committee Room - City Hall" contains neither word exclusively;
-        # committee has to win or it is filed as the Chambers.
+        # The string names both rooms, so committee has to win.
         venue, _ = normalize_location("Council Committee Room - City Hall")
         assert venue.id == "city-hall-committee"
 
@@ -67,8 +68,6 @@ class TestAttendanceMode:
         assert venue.address is None
 
     def test_hybrid_keeps_its_physical_room(self):
-        # A hybrid hearing has a real address; treating it as remote would tell
-        # someone there is nowhere to go.
         venue, mode = normalize_location("HYBRID HEARING - Council Chambers - City Hall")
         assert mode == "hybrid"
         assert venue.id == "city-hall-chambers"
@@ -81,8 +80,7 @@ class TestAttendanceMode:
 
 class TestJointHearings:
     def test_jointly_clause_is_stripped_before_matching(self):
-        # This clause rides along in the location cell. Left in, every joint
-        # hearing looks like an unknown venue.
+        # Left in, every joint hearing matches no venue.
         venue, _ = normalize_location(
             "Council Chambers - City Hall Jointly with the Committee on Education."
         )
@@ -93,8 +91,7 @@ class TestOffsite:
     def test_unknown_venue_is_offsite_not_guessed(self):
         venue, _ = normalize_location("Marine Park Intermediate School 278, 1925 Stuart Street")
         assert venue.id == "offsite"
-        # Inventing a City Hall address here would send someone to Manhattan
-        # instead of Brooklyn.
+        # A City Hall address here would send someone to Manhattan, not Brooklyn.
         assert venue.address is None
 
     def test_emigrant_building(self):
@@ -107,3 +104,61 @@ class TestOffsite:
         venue, mode = normalize_location(raw)
         assert venue.id == "offsite"
         assert mode == "in_person"
+
+
+class TestVenueCopyStatesRatherThanInstructs:
+    """docs/voice.md, guarding the mood of the strings inside every meeting card, five
+    times per district page. Every procedural fact is kept; only the mood is asserted."""
+
+    SECOND_PERSON = re.compile(r"\b(you|your|yours|yourself|you're)\b", re.IGNORECASE)
+
+    #: Hand-enumerated, so a reintroduced one fails here rather than in a copy review.
+    IMPERATIVE_OPENERS = (
+        "bring ",
+        "check ",
+        "enter ",
+        "tell ",
+        "use ",
+        "register ",
+        "pass ",
+        "contact ",
+        "visit ",
+        "arrive ",
+        "to speak,",
+        "to watch",
+    )
+
+    @pytest.mark.parametrize("venue_id", sorted(VENUES))
+    def test_no_second_person(self, venue_id):
+        venue = VENUES[venue_id]
+        for field in (venue.entry, venue.note):
+            assert field is None or not self.SECOND_PERSON.search(field), field
+
+    @pytest.mark.parametrize("venue_id", sorted(VENUES))
+    def test_no_sentence_opens_with_an_instruction(self, venue_id):
+        venue = VENUES[venue_id]
+        for field in (venue.entry, venue.note):
+            for sentence in (field or "").split(". "):
+                opener = sentence.strip().lower()
+                assert not opener.startswith(self.IMPERATIVE_OPENERS), sentence
+
+    def test_the_facts_survived_the_rewrite(self):
+        """The rewrite is a voice change, not a content cut, so the facts are pinned."""
+        city_hall = VENUES["city-hall-chambers"].entry
+        assert "NYPD security and metal detectors" in city_hall
+        assert "which hearing" in city_hall
+        assert '8.5" x 11"' in city_hall
+
+        broadway = VENUES["250-broadway-8"].entry
+        assert "Photo ID is required" in broadway
+        assert "Sergeant-at-Arms" in broadway
+
+        assert "Photo ID is required" in VENUES["emigrant"].entry
+
+        remote = VENUES["remote"].entry
+        assert "Register to Testify" in remote
+        assert "advance registration" in remote
+        assert "no registration" in remote
+        assert "livestream" in remote
+
+        assert "agenda PDF" in VENUES["offsite"].entry

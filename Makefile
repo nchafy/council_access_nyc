@@ -8,7 +8,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open \
-	axe axe-fetch a11y console perf gates
+	axe axe-fetch a11y console perf reflow gates
 
 PORT ?= 8000
 ROOT ?= site
@@ -70,7 +70,7 @@ verify: build ## the real gate: build, lint, test, then assert against a live se
 shot: build ## screenshot the built site with headless Chrome
 	uv run python scripts/shot.py
 
-# The four M5 gates. Each runs against the real site/ here and against a
+# The five M5 gates. Each runs against the real site/ here and against a
 # fixture-built site in CI, using the same code either way — see tests/browser/.
 # `make verify` deliberately does not call them: together they are about two
 # minutes of real browser time, and the fast gate has to stay fast to stay used.
@@ -90,10 +90,14 @@ console: build ## fail on any console error or CSP violation (add ALL=1 for all 
 perf: build ## page weight, and cold load p95 on throttled 3G (slow: ~2 min)
 	uv run python scripts/perf.py
 
+reflow: build ## WCAG 1.4.10 at 320 px and 390 px, over every page type (add ALL=1 for all 114)
+	uv run python scripts/reflow_check.py $(if $(ALL),--all,)
+
 gates: ## every M5 gate, in the order a failure is cheapest to read
 	@$(MAKE) --no-print-directory axe
 	@$(MAKE) --no-print-directory a11y
 	@$(MAKE) --no-print-directory console
+	@$(MAKE) --no-print-directory reflow
 	@$(MAKE) --no-print-directory perf
 
 clean: ## remove build output

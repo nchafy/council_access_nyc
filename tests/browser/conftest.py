@@ -46,3 +46,12 @@ def broken_site(tmp_path_factory) -> Path:
     out = tmp_path_factory.mktemp("broken-site")
     shutil.copytree(FIXTURES / "a11y_broken", out, dirs_exist_ok=True)
     return out
+
+
+@pytest.fixture(scope="session")
+def unreflowable_site(tmp_path_factory) -> Path:
+    """The fixture that cannot reflow to 320 px, copied so its `/reflow.css` resolves at the
+    server root. It carries its own stylesheet, so fixing `site.css` cannot turn it green."""
+    out = tmp_path_factory.mktemp("reflow-site")
+    shutil.copytree(FIXTURES / "reflow_broken", out, dirs_exist_ok=True)
+    return out

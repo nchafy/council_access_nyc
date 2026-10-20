@@ -7,18 +7,25 @@ Run this before any release, and after any change to `render.py`, `site.css`, `s
 
 ## 1. The automated gates
 
-All four run in CI on every commit.
+All five run in CI on every commit.
 
 | Gate | Command | What it proves |
 |---|---|---|
 | axe, WCAG 2.2 AA | `make axe` | 0 violations, all 115 pre-rendered pages |
-| Keyboard + accessibility tree | `make a11y` | 135 checks over 10 page types, 0 failures |
+| Keyboard + accessibility tree | `make a11y` | 148 checks over 11 page types, 0 failures |
 | Console and CSP | `make console` | 0 complaints — no page logs an error or trips its own policy |
-| Weight and cold load | `make perf` | 13.9 KB heaviest page vs 60 KB; 906 ms p95 vs 3000 ms |
+| Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 115 |
+| Weight and cold load | `make perf` | 12.8 KB heaviest page vs 60 KB; 865 ms p95 vs 3000 ms |
 
 `make a11y` presses real `Tab` keys in a real browser and reads Chrome's accessibility tree: skip
 link, focus into `<main>`, DOM order, reachability, ≥2px ring, `Shift+Tab`; landmarks, accessible
 names, one h1, no skipped heading levels. It also runs the front page with script execution disabled.
+
+`make reflow` sets the viewport over CDP rather than sizing a window, which is the only way to
+reach a phone width on macOS (§6). The measurement is the layout viewport, not an element rect:
+content that cannot fit widens the initial containing block, and once it has widened every element
+fits inside the widened value, so a per-element overflow check reports clean. A `window.innerWidth`
+above the requested width is the violation.
 
 axe covers roughly a third to a half of WCAG issues (Deque's own figure). Everything in §3 is outside
 that. A green build is the floor, not the pass.
@@ -31,6 +38,7 @@ make verify    # must be green first
 make axe       # expect 0 violations
 make a11y      # expect 0 failures
 make console   # expect 0 complaints
+make reflow    # expect 0 violations at both widths
 make perf      # both budgets
 make serve     # then work against http://127.0.0.1:8000
 ```
@@ -91,7 +99,22 @@ today.
 
 ## 5. What the gates caught
 
-Both 2026-09-23, recorded in full in `docs/OBSERVATIONS.md`:
+Recorded in full in `docs/OBSERVATIONS.md`.
+
+2026-10-20, the first time any page was rendered narrower than 500 px:
+
+- Two upstream strings have no break opportunity in them, and each forced the layout viewport
+  wider than the phone it was asked for: a board website URL
+  (`www.nyc.gov/site/statenislandcb2/index.page`, 345 px) and a board email
+  (`communityboard@queenscb3.cityofnewyork.us`, 363 px). Four pages failed at 320 px and three
+  more at 390 px. Fixed in `site.css`; gated by `scripts/reflow_check.py`.
+- The §6 claim that `scripts/cdp.py` "can now do device emulation" was not true — it had network
+  and CPU throttling only. The emulation was written as part of the gate.
+- The representative page set did not contain the worst case. The email overflows a 390 px
+  viewport, and the three pages carrying it were only reached by `ALL=1`. `/district/21/` is now
+  in the set.
+
+Both 2026-09-23:
 
 - `connect-src` omitted `'self'`, so `/data/lookup.json`, `/data/districts.geo.json` and
   `/manifest.json` were refused: local ZIP/neighbourhood/district-number resolution fell through to
@@ -105,7 +128,8 @@ Both 2026-09-23, recorded in full in `docs/OBSERVATIONS.md`:
 | Gap | State |
 |---|---|
 | No real screen-reader pass (§4) | The largest gap, and the one open Phase 1 item |
-| No true 390px layout check | `make shot` clamps at 500px (macOS minimum Chrome window width); `scripts/cdp.py` can now do device emulation, so fixable |
+| `make shot` still clamps at 500px | macOS minimum Chrome window width. No longer a gap in coverage — `make reflow` measures 320px and 390px over CDP, which the window size cannot reach — but the screenshots are still not phone-width |
+| `make gates` dies partway, roughly one run in two | A different gate each time, always `CDPError: lost the channel to Chrome: [Errno 54] Connection reset by peer`. Every gate passes run on its own, and CI is unaffected because it runs them as one pytest session (`make browser`, 85 passed). Observed 2026-10-20; not diagnosed |
 | Slow 3G measures 4.3–5.1 s, over 3 s | Reported, not gated — dominated by that profile's 2000 ms round trip, not our bytes. Reasoning in `perf-budget.json` |
 | No accessibility statement page (R41, a SHOULD) | Deferred with publishing; needs a working feedback address |
 | No readability gate on procedural copy (R41) | Deferred with publishing |

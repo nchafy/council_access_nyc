@@ -415,3 +415,27 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   not touch is not untidy, it is false. Not rewritten: `be7fbf7` is three commits deep, the branch
   is pushed with a PR open, and a rebase would collide with concurrent work. Use a quoted heredoc
   (`<<'MSG'`) for any message containing backticks, and read `git log -1` before pushing.
+- 2026-10-20 | `scripts/reflow_check.py`, `site.css` (`overflow-wrap: anywhere`) | First render of
+  any page below 500 px. Two upstream strings carry no break opportunity, and each forces the
+  layout viewport wider than the width asked for: a board website URL rendered as link text
+  (`www.nyc.gov/site/statenislandcb2/index.page`, 345 px) and a board email
+  (`communityboard@queenscb3.cityofnewyork.us`, 363 px). 4 pages failed at 320 px, 3 more at 390 px
+  — a WCAG 1.4.10 failure that had been live in every build. The fix is `overflow-wrap: anywhere`
+  and not `break-word`: only `anywhere` lowers the min-content width, and min-content is what
+  widens the initial containing block. | A publisher does not control the length of a string a
+  city hands it. Any site rendering an upstream URL, email or ID needs this rule at the point the
+  value lands, and needs it gated below 390 px, because no desktop window can be made that narrow.
+- 2026-10-20 | `scripts/cdp.py` (`emulate_device`), `docs/accessibility-pass.md` §6 | The recorded
+  gap said `cdp.py` "can now do device emulation, so fixable". It could not: it had
+  `Network.emulateNetworkConditions` and `setCPUThrottlingRate` and no
+  `Emulation.setDeviceMetricsOverride`. The claim had sat unchallenged since 2026-09-23. | A known
+  gap that names its own fix is still a claim, and a plausible one is the kind nobody re-derives.
+  The repo's own review rule 1 applies to its gap list, not only to PR descriptions.
+- 2026-10-20 | `scripts/reflow_check.py` (`_violates`), `scripts/pageset.py` | The signal had to be
+  `window.innerWidth` exceeding the requested width. A per-element overflow check reported **0
+  offenders on every failing page**: once the layout viewport widens to 369 px, every element fits
+  inside 369 px. The widest offender was also a bare text node on one page, owned by no element.
+  Separately, the representative set missed the worse of the two defects — the 390 px one — so the
+  cheap gate was green while `ALL=1` was red. | measuring the container tells you nothing when the
+  container is what moved; and a representative set is only representative of the failures someone
+  already thought of.

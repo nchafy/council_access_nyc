@@ -34,14 +34,15 @@ Cheapest and most specific first, so a failure names itself before you spend two
 | 4 | `uv run python scripts/verify.py` | 482 assertions against live responses | ~15 s |
 | 5 | `make perf` | 60 KB gzipped page budget; 3 s cold on throttled 3G | ~2 min |
 | 6 | `make axe` | 0 WCAG 2.2 AA violations, all 115 pages | ~25 s |
-| 7 | `make a11y` | 135 keyboard + accessibility-tree checks | ~40 s |
+| 7 | `make a11y` | 148 keyboard + accessibility-tree checks | ~40 s |
 | 8 | `make console` | no console error or CSP violation | ~20 s |
-| 9 | `make shot` | layout damage a human must see | ~20 s |
+| 9 | `make reflow` | WCAG 1.4.10 at 320 px and 390 px, the widths a window cannot reach | ~20 s |
+| 10 | `make shot` | layout damage a human must see | ~20 s |
 
-`make browser` runs 6–8 as one pytest run. Add `ALL=1` to `make axe` / `make console` for all
-115 pages instead of one of each type.
+`make browser` runs 5–9 as one pytest run. Add `ALL=1` to `make axe` / `make console` /
+`make reflow` for all 115 pages instead of one of each type.
 
-**A change is validated when 1–8 pass and you have looked at 9.** Not before.
+**A change is validated when 1–9 pass and you have looked at 10.** Not before.
 
 ## What each gate catches that the others do not
 
@@ -56,6 +57,11 @@ Do not treat these as interchangeable — each has already caught something no o
   CSP, which is how a negative-control fixture was caught testing nothing: its contrast defect
   sat in a `<style>` block that `style-src 'self'` blocked.
 - **`make a11y`** presses real `Tab` keys. Reading `tabindex` out of the markup proves nothing.
+- **`make reflow`** is the only gate that renders below 500 px, the floor `make shot` cannot go
+  under on macOS. It found two upstream strings — a board URL and a board email — that had no
+  break opportunity and forced the viewport wider than the phone, on every build ever made.
+  It measures the layout viewport, because once that has widened every element fits inside the
+  widened value and a per-element overflow check reports clean.
 - **`make perf`** has an arithmetic half (byte budget, hermetic, in CI) and a measured half
   (throttled cold load). Only the first is enforceable on every commit.
 - **`make shot`** is the only gate a human reads. An unstyled page passes every HTTP check.

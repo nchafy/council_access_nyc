@@ -232,6 +232,29 @@ class Session:
         )
         self.call("Emulation.setCPUThrottlingRate", rate=cpu)
 
+    def emulate_device(
+        self, *, width: int, height: int, scale_factor: float = 2.0, mobile: bool = True
+    ) -> None:
+        """Override the viewport, independent of the OS window.
+
+        `--window-size` cannot go below ~500 px on macOS and crops silently instead of
+        reporting it (docs/OBSERVATIONS.md, 2026-09-23), so a phone width can only be
+        measured this way. Sets the initial containing block, which is what a reflow check
+        needs: content that cannot fit widens the layout viewport past `width`, and
+        `window.innerWidth` then reports the widened value rather than this one.
+        """
+        self.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=width,
+            height=height,
+            deviceScaleFactor=scale_factor,
+            mobile=mobile,
+        )
+
+    def clear_device_emulation(self) -> None:
+        """Hand the viewport back to the window, so one session can mix widths."""
+        self.call("Emulation.clearDeviceMetricsOverride")
+
     def clear_cache(self) -> None:
         """Make the next load genuinely cold."""
         self.call("Network.enable")

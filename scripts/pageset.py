@@ -22,6 +22,10 @@ REPRESENTATIVE: dict[str, str] = {
         "the deliberate degraded state: no committees published, a source-conflict "
         "notice, and a seat with no current term on record"
     ),
+    "/district/21/": (
+        "the longest unbreakable token the city data produces, a 41-character board "
+        "email, which overflowed a 390 px viewport and not only a 320 px one"
+    ),
     "/district/35/": "a district page with no Office Hours line",
     "/district/51/": "no Office Hours, and a suite number with no 'Suite'",
     "/district/": "the district index — the no-JavaScript path to all 51",

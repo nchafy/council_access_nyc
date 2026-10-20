@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deliberately unable to reflow</title>
+<!-- An external sheet, not a <style> block: `style-src 'self'` blocks inline styles, and
+     a negative control the CSP neutralises tests nothing (docs/accessibility-pass.md §5). -->
+<link rel="stylesheet" href="/reflow.css">
+</head>
+<body>
+<main>
+<h1>Reflow negative control</h1>
+<!-- One unbreakable token, wider than 320 px, with nowhere to break. This is the shape of
+     the real defect the gate was written for: a board website URL as link text.
+     No hyphens anywhere in it: Chrome breaks a line after a hyphen even under
+     `overflow-wrap: normal`, so a hyphenated token wraps and the control passes. -->
+<p class="unbreakable">
+<a href="https://example.gov/">https://example.gov/site/averylongunbreakablepathsegment/index.page</a>
+</p>
+</main>
+</body>
+</html>

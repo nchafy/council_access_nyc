@@ -35,9 +35,9 @@ will be skipped.
 
 | | |
 |---|---|
-| Tests | **~9,000**, of which ~8,500 are generated fuzz cases |
+| Tests | **~9,300**, of which ~8,500 are generated fuzz cases |
 | Coverage | **100%**, enforced (`--cov-fail-under=100`) |
-| Live checks | **~350** against a running server (`make verify`) |
+| Live checks | **471** against a running server (`make verify`) |
 | Runtime dependencies | **two** — jinja2, beautifulsoup4; both build-time only |
 
 ## What it answers today
@@ -147,14 +147,18 @@ measurement on a reference profile, and the gate's own output says so in those w
   invariant
 - The community board view — a second page type, not a variant of the first
 - 100% coverage, a committed fuzz corpus, and the testing rules in `CLAUDE.md`
-- **M5, nearly all of it** — axe clean on all 115 pages at WCAG 2.2 AA; 135 keyboard and
-  accessibility-tree checks over 9 page types driven with real `Tab` keypresses; a gate
-  that fails on any console error or CSP violation; the 60 KB and 3 s budgets enforced.
-  All four run in CI, and all four fail loudly rather than skipping if Chrome is absent.
+- **M5, nearly all of it** — axe clean on all 115 pages at WCAG 2.2 AA; 148 keyboard and
+  accessibility-tree checks over 11 page types driven with real `Tab` keypresses; a gate
+  that fails on any console error or CSP violation; WCAG 1.4.10 reflow enforced at 320 px
+  and 390 px; the 60 KB and 3 s budgets enforced.
+  All five run in CI, and all five fail loudly rather than skipping if Chrome is absent.
   The gates immediately found a real one: the CSP's `connect-src` omitted `'self'`, so the
   address box's local index could not be fetched and every query fell through to the
   geocoder — the opposite of what the privacy design promises. Fixed, and now covered from
-  both the policy side and the browser side
+  both the policy side and the browser side. The reflow gate then found a second: a board
+  website URL and a board email, each one unbreakable token, forced the layout viewport
+  wider than the phone asking for it — on every build ever made, because nothing had ever
+  been rendered narrower than 500 px
 
 **Not done**
 

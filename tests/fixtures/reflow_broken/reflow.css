@@ -1,0 +1,6 @@
+/* The defect, stated rather than inherited: the token has nowhere to break, so the layout
+   viewport must widen past the requested width. `overflow-wrap: normal` is the browser
+   default; it is written out because it is the whole point of the fixture. */
+body { margin: 0; font: 1rem/1.5 system-ui, sans-serif; }
+main { padding: 1rem; }
+.unbreakable { overflow-wrap: normal; word-break: normal; }

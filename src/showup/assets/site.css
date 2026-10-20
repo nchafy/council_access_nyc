@@ -58,6 +58,17 @@ a:focus-visible, select:focus-visible, button:focus-visible {
   outline-offset: 2px;
 }
 
+/* A URL or an email address arrives from upstream as one token with nowhere to break:
+   `www.nyc.gov/site/statenislandcb2/index.page` is 345 px wide and
+   `communityboard@queenscb3.cityofnewyork.us` is 363 px, so each forces the initial
+   containing block past a 320 px viewport — the second past 390 px too (WCAG 1.4.10,
+   tests/browser/test_reflow.py).
+   `anywhere` and not `break-word`: only `anywhere` lowers the min-content width, and it is
+   the min-content width that widens the block. Scoped to `dd`, the column every upstream
+   value lands in, plus links and `.nolink` for the ones that appear outside it — so no
+   prose is ever broken mid-word. */
+dd, a, .nolink { overflow-wrap: anywhere; }
+
 .nolink { color: var(--muted); }
 
 .neighborhoods { color: var(--muted); margin: 0 0 .8rem; }

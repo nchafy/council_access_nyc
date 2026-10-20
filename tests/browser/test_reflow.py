@@ -29,9 +29,7 @@ def unreflowable_report(chrome, unreflowable_site):
 class TestReflow:
     def test_every_page_reflows_at_every_width(self, reflow_report):
         failed = {key: result for key, result in reflow_report["pages"].items() if result["failed"]}
-        assert not failed, "\n" + format_report(
-            {**reflow_report, "pages": failed}
-        )
+        assert not failed, "\n" + format_report({**reflow_report, "pages": failed})
 
     def test_it_really_checked_every_page_at_every_width(self, reflow_report, built_site):
         # 115 pages x 2 widths.

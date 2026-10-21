@@ -73,6 +73,7 @@
 
 <section class="all-districts">
   <h2>All 51 council districts</h2>
+  <p class="why"><a href="/map/">See the 51 districts on a map</a>. The map is on its own page because it downloads a map library; no other page pays for it.</p>
   <ul class="district-list">
 {% for d in districts %}
     <li><a href="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</a></li>

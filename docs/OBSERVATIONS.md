@@ -439,3 +439,44 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   cheap gate was green while `ALL=1` was red. | measuring the container tells you nothing when the
   container is what moved; and a representative set is only representative of the failures someone
   already thought of.
+- 2026-10-21 | `scripts/cdp.py` (`--use-angle=swiftshader`) | Every browser gate launched Chrome
+  with `--disable-gpu`, which gives no WebGL2, and MapLibre refuses to initialise without it:
+  `WebGL2 is required to display this map`. The map drew nothing and axe, a11y, console and
+  reflow all reported the page clean. Fixed by adding `--enable-unsafe-swiftshader`,
+  `--use-gl=angle` and `--use-angle=swiftshader`; all 85 browser tests still pass, because a
+  page that creates no GL context is unaffected. | A gate that renders a feature differently
+  from the reader is not testing the feature. Headless defaults are chosen for speed, and the
+  first WebGL or canvas feature in any project silently falls outside every existing gate.
+- 2026-10-21 | `site/vendor/maplibre-gl.css`, `_headers` (`img-src 'self'`) | MapLibre's control
+  icons are **39 `url("data:image/svg+xml...")` background-images**, all refused by
+  `img-src 'self'`. The zoom buttons rendered as blank boxes and **Chrome logged nothing** —
+  `console_check.py` reported 0 complaints on the page. Replaced with two of our own
+  `<button>` elements, which are also in the tab order, which MapLibre's control is not. |
+  A blocked CSS background-image is the quietest CSP failure there is: no console error, no
+  network error, just missing pixels. `img-src` is the directive to re-read before trusting any
+  third-party stylesheet, and "0 console complaints" does not mean "nothing was blocked".
+- 2026-10-21 | `scripts/a11y_audit.py` (`_settled_focusables`) | The audit snapshotted the
+  focusable list once, then pressed Tab that many times. The map's zoom buttons ship `hidden`
+  and are revealed when MapLibre finishes drawing, seconds after `load`, so the list grew
+  mid-run: 2 of 54 elements reported unreachable and `Shift+Tab` appeared to retrace the wrong
+  order. Neither was a page defect. Fixed by reading the list until two consecutive reads
+  agree. | The address box has had the same shape since M3 and never tripped it, because its
+  reveal lands within milliseconds. A race that only a slow async reveal exposes was latent in
+  the gate from the start, and it failed by inventing defects rather than by missing them.
+- 2026-10-21 | `maplibre-gl` 6.15.0 from `registry.npmjs.org` | What a reader actually
+  downloads is **449 KB gzipped**, not the ~200 KB assumed: `maplibre-gl.mjs` 292 KB,
+  a separate `maplibre-gl-worker.mjs` 147 KB, `maplibre-gl.css` 10 KB (1.69 MB raw). v6 ships
+  **ESM only** — no UMD build — so it needs `<script type="module">`, and the worker is a
+  second file rather than an inlined blob. | The published "bundle size" of a map library is
+  the main chunk. The worker is the half nobody quotes. Against a 12 KB script ceiling this is
+  the difference between a budget and a rounding error, so it is gated separately in
+  `perf-budget.json` rather than inside the page budget it would hide in.
+- 2026-10-21 | the probe behind `_headers`, before `src/showup/templates/map.html` existed |
+  A first measurement concluded MapLibre required `style-src 'unsafe-inline'`, with a
+  reproducible CSP violation to show for it. **Wrong**: the inline `style` attribute was on the
+  probe page's own `<div id="map" style="height:400px">`. MapLibre contains no `cssText` and no
+  `setAttribute('style')` — zero occurrences in 1.1 MB. Against the real policy, unchanged, it
+  paints with no console output at all. | The violation was real, the attribution was not. A
+  measurement that indicts a dependency must be run with the dependency as the only variable,
+  or it indicts the harness. Had this gone unchecked, the site's CSP would have been
+  permanently loosened for a defect in a throwaway file.

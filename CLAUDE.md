@@ -16,7 +16,7 @@ make browser  # every browser gate in one pytest run (~100 s)
 make gates    # the same five gates as operator tools, with readable output
 ```
 
-`make gates` is `axe` (WCAG 2.2 AA over all 115 pages), `a11y` (real `Tab` keypresses and
+`make gates` is `axe` (WCAG 2.2 AA over all 116 pages), `a11y` (real `Tab` keypresses and
 the accessibility tree), `console` (any console error or CSP violation), `reflow`
 (WCAG 1.4.10 at 320 px and 390 px) and `perf` (page weight, and cold-load p95 on
 throttled 3G). They are deliberately **not** part of `make verify`:

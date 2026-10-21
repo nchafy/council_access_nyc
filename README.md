@@ -71,7 +71,7 @@ Where an answer is a proxy, the site says which proxy and why. Where a fact is p
 nowhere official — the testimony registration cut-off and the per-speaker time limit both
 are — it says so and gives you the number to call instead of a guess.
 
-## Two views, because they answer different questions
+## Two views and a map, because they answer different questions
 
 - **`/district/{1-51}`** — who legislates for you, their committees, the next five Council
   meetings, and how to testify.
@@ -80,6 +80,10 @@ are — it says so and gives you the number to call instead of a guess.
 
 Both are reachable from the front page by dropdown, by a plain link list, or by typing an
 address, a ZIP, a neighbourhood, or just a district number.
+
+There is also **`/map/`** — the 51 districts drawn and clickable, every one the same
+colour. It is a separate route rather than part of the front page because it downloads a
+map library, and a page that shows no map should not pay for one.
 
 ## Speed
 
@@ -127,10 +131,16 @@ measurement on a reference profile, and the gate's own output says so in those w
   `site/` and read scraped HTML, and neither reaches a reader
   ([docs/dependencies.md](docs/dependencies.md))
 - **Third parties in the browser: none, and this one is a rule.** No analytics, no tag
-  manager, no hosted fonts, no map tiles — it is a CSP-enforced promise to readers.
+  manager, no hosted fonts, no map tiles — it is a CSP-enforced promise to readers. The
+  map library is vendored and served by us, so it is not a third party either; MapLibre runs
+  behind the unchanged CSP with no directive added.
   The address you type goes to the NYC geocoder and nowhere else, and never enters a URL,
   cookie, storage or log
-- **Planned, not present:** MapLibre GL JS + OpenFreeMap for the interactive map, and
+- **Present since 2026-10-21:** MapLibre GL JS 6.15.0, vendored and served from our own
+  origin, on the `/map/` route only — the one dependency that reaches a reader, loaded on
+  demand so no other page pays its 449 KB. **OpenFreeMap tiles are still refused:** a tile
+  request would tell a third party which neighbourhood you are looking at
+- **Planned, not present:**
   Cloudflare Pages for hosting. Both deliberately out of Phase 1
 
 ## What is done and what is not
@@ -139,9 +149,12 @@ measurement on a reference profile, and the gate's own output says so in those w
 
 - **M0–M2** — the skeleton, the live calendar with fail-closed refresh, and the deadline
   ledger (the 72-hour written-testimony bound and accommodation deadlines in business days)
-- **M3, partly** — address / ZIP / neighbourhood / district-number lookup and
-  keyboard-navigable lists. The interactive **map is deliberately cut** from Phase 1;
-  geometry ships for *resolution only*, never for display
+- **M3, mostly** — address / ZIP / neighbourhood / district-number lookup and
+  keyboard-navigable lists, plus the **district map** at `/map/`: all 51 districts drawn in
+  one uniform fill, clickable, with the plain list beside it as the keyboard path. No
+  basemap and no choropleth — the site ranks nothing. Geometry is still the file built for
+  *resolution*; at phone width one pixel is about 100 m, so 2.2 m detail needs no second
+  artifact to look right
 - **M4** — district pages, members, and community boards joined by geometry
 - The fetch stage: eight sources, each with a freshness window, a size floor and a body
   invariant

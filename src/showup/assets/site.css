@@ -71,6 +71,47 @@ dd, a, .nolink { overflow-wrap: anywhere; }
 
 .nolink { color: var(--muted); }
 
+/* The map's size is set here and never as a style attribute: `style-src 'self'` refuses an
+   inline one, and the container collapses to zero height without it. `aspect-ratio` rather
+   than a fixed height, so it still reflows at 320 px (tests/browser/test_reflow.py). */
+.map-section { margin: 1.2rem 0; }
+.map {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: 70vh;
+  background: #f6f7f9;
+  border: 1px solid var(--rule);
+  /* MapLibre positions its controls absolutely. Without a positioned ancestor here they
+     anchor to the page and land on top of the status line. */
+  position: relative;
+}
+@media (min-width: 34rem) {
+  .map { aspect-ratio: 3 / 2; }
+}
+/* MapLibre puts `tabindex="0"` on its canvas, so a keyboard user lands on the map and can
+   pan it with the arrow keys. Without this they land on it and see nothing. The offset is
+   negative because the ring would otherwise be clipped by the container's own edge. */
+.maplibregl-canvas:focus,
+.maplibregl-canvas:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.map-zoom { display: flex; gap: .4rem; margin: .5rem 0 0; }
+.map-zoom-button {
+  font: inherit;
+  font-size: .92rem;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  /* 44px tall: a target a thumb can hit, and past the 24px SC 2.5.8 minimum. */
+  min-height: 44px;
+  padding: 0 .9rem;
+  cursor: pointer;
+}
+.map-status { color: var(--muted); font-size: .92rem; margin: .4rem 0 0; }
+
 .neighborhoods { color: var(--muted); margin: 0 0 .8rem; }
 
 .why, .hint, .distinction, .gap {

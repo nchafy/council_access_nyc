@@ -13,7 +13,13 @@ from . import templates
 from .deadlines import accommodation_state, written_state
 from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
 
-__all__ = ["render_district", "render_index", "render_not_found", "render_references"]
+__all__ = [
+    "render_district",
+    "render_index",
+    "render_map",
+    "render_not_found",
+    "render_references",
+]
 
 
 def _link(url: str | None, label: str, *, extra: str = "") -> str:
@@ -215,6 +221,20 @@ def render_board(
 def render_not_found(*, built_at: datetime, window_end: date | None) -> str:
     return templates.render(
         "not_found.html", title="Not found", built_at=built_at, window_end=window_end
+    )
+
+
+def render_map(districts: list[District], *, built_at: datetime, window_end: date | None) -> str:
+    """The map page. Its own route, so MapLibre never loads on a page that does not use it."""
+    return templates.render(
+        "map.html",
+        title="Map of the 51 council districts",
+        districts=[
+            {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
+            for d in districts
+        ],
+        built_at=built_at,
+        window_end=window_end,
     )
 
 

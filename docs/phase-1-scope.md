@@ -65,7 +65,9 @@ literally.
 
 ## 3. Explicitly not in Phase 1
 
-Cut for now, each recoverable later: the map (no MapLibre, tiles, choropleth or rendered geometry);
+Cut for now, each recoverable later: tiles and any choropleth (the **map itself landed
+2026-10-21** on its own `/map/` route — MapLibre vendored and self-hosted, uniform fill, no
+basemap, no third-party request);
 all analysis (no shortlist ranking, salience, vote parsing, dissent figures, `bloc_concentration`,
 agenda-item classification or PDF parsing); transcripts and participation data (all of J4's measured
 half); per-committee and per-hearing pages; `.ics` files; search by subject and the citywide browse

@@ -199,6 +199,22 @@ def main(argv: list[str] | None = None) -> int:
             f"{geometry_size / 1024:.0f} KB of the {geometry_limit / 1024:.0f} KB budget"
         )
 
+    # The map library is dynamically imported, so it appears in no page's HTML and
+    # `page_weight` cannot see it. Weighed from the files instead, like the geometry above:
+    # a budget that silently excludes 449 KB the reader downloads is not a budget.
+    vendor_dir = root / "vendor"
+    vendor_files = sorted(vendor_dir.glob("maplibre-gl*")) if vendor_dir.is_dir() else []
+    if vendor_files:
+        library_size = sum(gzipped_size(path.read_bytes()) for path in vendor_files)
+        library_limit = settings["map_library_gzip_bytes"]
+        within_library_budget = library_size <= library_limit
+        failed = failed or not within_library_budget
+        print(
+            f"{'ok  ' if within_library_budget else 'FAIL'} map library (/map/ only, after "
+            f"first paint) {library_size / 1024:.0f} KB of the "
+            f"{library_limit / 1024:.0f} KB budget"
+        )
+
     if args.weight_only:
         return 1 if failed else 0
     if not find_chrome():

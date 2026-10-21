@@ -40,9 +40,7 @@ MAPLIBRE_SHA256 = {
     "package/dist/maplibre-gl.css": (
         "a90798a1953017790e590f7e1bd35ff103a8a4263972cb47290b78adf86f8c20"
     ),
-    "package/LICENSE.txt": (
-        "ee5fc05a0677eaf69601d2c7db0d9ecd6cc27c3abc1d0733bc9ed34707cf8ef2"
-    ),
+    "package/LICENSE.txt": ("ee5fc05a0677eaf69601d2c7db0d9ecd6cc27c3abc1d0733bc9ed34707cf8ef2"),
 }
 
 #: BSD-3-Clause asks that the licence text travel with the code, so the cache carries it.
@@ -152,9 +150,7 @@ def ensure_maplibre(*, force: bool = False) -> bool:
     try:
         payload = download()
     except OSError as error:
-        raise MapLibreFetchError(
-            f"could not download {MAPLIBRE_TARBALL_URL}: {error}"
-        ) from error
+        raise MapLibreFetchError(f"could not download {MAPLIBRE_TARBALL_URL}: {error}") from error
     try:
         members = read_verified_members(payload)
     except (tarfile.TarError, KeyError) as error:

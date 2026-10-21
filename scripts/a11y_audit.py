@@ -144,10 +144,28 @@ def _focus_after_each_tab(page: Session, presses: int) -> list[dict[str, Any]]:
     return focus_states
 
 
+def _settled_focusables(page: Session, attempts: int = 20, pause: float = 0.25) -> list[Any]:
+    """The focusable list, once two consecutive reads agree.
+
+    A control revealed by script enters the tab order after `load`: the address box does it
+    within milliseconds, the map's zoom buttons only once MapLibre has drawn. Snapshotting
+    once would measure a list that then changes under the Tab presses, and every index after
+    the new element would look unreachable.
+    """
+    previous = page.evaluate(TAG_FOCUSABLE_JS)
+    for _ in range(attempts):
+        time.sleep(pause)
+        current = page.evaluate(TAG_FOCUSABLE_JS)
+        if len(current) == len(previous):
+            return current
+        previous = current
+    return previous
+
+
 def audit_keyboard(page: Session, path: str) -> list[Check]:
     """Drive the keyboard through one already-loaded page."""
     checks: list[Check] = []
-    focusable = page.evaluate(TAG_FOCUSABLE_JS)
+    focusable = _settled_focusables(page)
 
     def record(name: str, ok: bool, detail: str = "") -> None:
         checks.append(Check(path, name, ok, detail))

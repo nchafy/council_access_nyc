@@ -24,6 +24,7 @@ TEMPLATES = {
     "index.html",
     "layout.html",
     "macros.html",
+    "map.html",
     "not_found.html",
     "references.html",
 }

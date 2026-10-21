@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+{# MapLibre's own stylesheet, from our origin. Without it the zoom control has no
+   positioning and drops into document flow underneath the map. 10 KB gzipped, and it
+   loads only on this route. #}
+{% block extra_head %}<link rel="stylesheet" href="/vendor/maplibre-gl.css">{% endblock %}
+{% block body %}
+<section class="intro">
+  <h1>The 51 council districts</h1>
+  <p class="why">
+    Every district is drawn the same. The map shows where the lines fall, not how any
+    district compares to another — no district on this site is scored or ranked against
+    its neighbours.
+  </p>
+</section>
+
+<section class="map-section">
+  <!-- Empty, and styled only by site.css: `style-src 'self'` refuses a style attribute,
+       and a map that needs the policy loosened is refused by docs/dependencies.md. The
+       status line is replaced by the module, or stays as written if the module never runs. -->
+  <div id="map" class="map" data-geometry="/data/districts.geo.json"></div>
+  <!-- Our own zoom buttons, not MapLibre's NavigationControl: every icon in
+       maplibre-gl.css is a `data:image/svg+xml` background-image, and `img-src 'self'`
+       blocks all 39 of them without logging anything, so its buttons render blank.
+       Real buttons with real labels are also in the tab order, which that control is not.
+       Hidden until the module enables them, so they never promise a map that is not there. -->
+  <div class="map-zoom" hidden id="map-zoom">
+    <button type="button" id="map-zoom-in" class="map-zoom-button">Zoom in</button>
+    <button type="button" id="map-zoom-out" class="map-zoom-button">Zoom out</button>
+  </div>
+  <p id="map-status" class="map-status">
+    The map needs JavaScript and WebGL. Every district is listed below either way.
+  </p>
+</section>
+
+<section class="all-districts">
+  <h2>All 51 council districts</h2>
+  <p class="why">
+    This list is the keyboard and screen-reader path, and it does not depend on the map
+    loading.
+  </p>
+  <ul class="district-list">
+{% for d in districts %}
+    <li><a href="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</a></li>
+{% endfor %}
+  </ul>
+</section>
+{% endblock %}
+{% block extra_script %}<script type="module" src="/assets/map.mjs"></script>{% endblock %}

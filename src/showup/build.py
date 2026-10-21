@@ -20,6 +20,7 @@ from .render import (
     render_board,
     render_district,
     render_index,
+    render_map,
     render_not_found,
     render_references,
 )
@@ -45,6 +46,30 @@ FLOORS = {
 
 class BuildError(RuntimeError):
     """A source failed its floor or invariant. The build must not continue."""
+
+
+#: The vendored browser dependency, served from our own origin. `scripts/fetch_maplibre.py`
+#: puts these in the cache, pinned by checksum; the build only copies them.
+VENDOR_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "maplibre-gl"
+VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "maplibre-gl.css", "LICENSE.txt")
+
+
+def _copy_vendor(staging: Path) -> None:
+    """Copy the pinned MapLibre files into `site/vendor/`.
+
+    Fails the build rather than shipping a map route whose library 404s. The licence travels
+    with the code because BSD-3-Clause asks it to.
+    """
+    missing = [name for name in VENDOR_FILES if not (VENDOR_CACHE / name).is_file()]
+    if missing:
+        raise BuildError(
+            f"no vendored MapLibre in {VENDOR_CACHE} (missing {', '.join(missing)}). "
+            "Run `make maplibre-fetch` once; it is pinned by checksum and cached."
+        )
+    vendor = staging / "vendor"
+    vendor.mkdir(parents=True, exist_ok=True)
+    for name in VENDOR_FILES:
+        shutil.copy2(VENDOR_CACHE / name, vendor / name)
 
 
 def _check_floor(name: str, count: int) -> None:
@@ -321,6 +346,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     assets_src = Path(__file__).parent / "assets"
     shutil.copytree(assets_src, staging / "assets")
 
+    _copy_vendor(staging)
+
     headers = Path(__file__).resolve().parents[2] / "_headers"
     if headers.exists():
         shutil.copy2(headers, staging / "_headers")
@@ -353,6 +380,12 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "max_age_hours": 24 * 30,
             "rows": budget_request_rows,
         }
+
+    map_root = staging / "map"
+    map_root.mkdir()
+    (map_root / "index.html").write_text(
+        render_map(districts, built_at=now, window_end=window_end), encoding="utf-8"
+    )
 
     references_root = staging / "references"
     references_root.mkdir()

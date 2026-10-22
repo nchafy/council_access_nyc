@@ -124,8 +124,8 @@ want to challenge.
 - **No measure of public support or opposition.** No city dataset records who attended, who
   testified, or which side they took. Anything we showed would be invented.
 - **No ranking districts against each other.** A shaded map becomes "my district is worse"
-  regardless of the legend. The map therefore fills every district identically; the only fill
-  that ever differs is the district the reader selected.
+  regardless of the legend. The map therefore fills every district and every board
+  identically; the only fill that ever differs is the one the reader selected.
 - **No third-party bytes, still.** Owner decision, 2026-10-21: the map ships **MapLibre GL JS
   vendored and served from our own origin**. That is a browser dependency, which
   `docs/dependencies.md` refused outright until now. The policy that changed is "no browser

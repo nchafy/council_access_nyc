@@ -480,3 +480,35 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   measurement that indicts a dependency must be run with the dependency as the only variable,
   or it indicts the harness. Had this gone unchecked, the site's CSP would have been
   permanently loosened for a defect in a throwaway file.
+- 2026-10-21 | `src/showup/assets/site.css` (`.map-toggle:not([hidden])`) | A `display` rule beats
+  the `hidden` attribute. `.map-selection { display: inline-block }` overrode the UA stylesheet's
+  `display: none`, so a link that ships `hidden` and empty was visible, focusable and nameless:
+  one axe `link-name` violation and three keyboard failures, on three elements that all shipped
+  `hidden` and were all styled with `display`. | `hidden` is a UA default, not a guarantee. Any
+  element that ships hidden and is revealed by script needs `:not([hidden])` on its display rule,
+  or the attribute does nothing. The gates caught it; reading the CSS would not have.
+- 2026-10-21 | `src/showup/render.py` (`render_index(..., with_map=...)`) | `render_index` renders
+  three pages — `/`, `/district/` and `/board/` — so putting the map in that template put it on
+  all three, and each would have downloaded 449 KB. Caught by
+  `test_no_other_page_mentions_maplibre`, which exists only because `docs/dependencies.md` makes
+  load-gating a condition of allowing the dependency. | A shared template is a shared cost. The
+  rule that made this a test rather than a discovery was written before the feature, which is the
+  only reason it was cheap.
+- 2026-10-21 | `src/showup/assets/address.js` (`announce`) | With the map on the front page, a
+  resolved address could highlight instead of navigating — which is the point of a map — but
+  applying that to a typed **district number** would have broken SLA-1's ≤200 ms promise by adding
+  a click to the one path meant to be instant. It also made `test_a_district_number_resolves`
+  race: it passed only because the map had not finished loading before the submit. Resolved by
+  offering the map only a **geocoded coordinate**; a district number, ZIP or neighbourhood still
+  navigates. | A feature that changes what an existing promise means has to be scoped against that
+  promise, not bolted on. The flake was the tell: a test that passes because something else is
+  slow is already failing.
+- 2026-10-21 | `site/data/boards.geo.json` | The board layer needed geometry the site never
+  shipped: `community_districts.geojson` was in the cache for the build-time board↔district join
+  only. Simplified at the same 2.2 m tolerance it is **96 KB gzipped** for 59 features, against
+  135 KB for the 51 council districts. Both now ship, 226 KB of the 300 KB geometry budget. |
+  The board polygons are smaller than the council ones despite there being more of them, because
+  council districts are drawn to equal population and so split dense areas into many-sided
+  shapes. Also: putting the map on the front page means every visitor fetches both layers, where
+  before geometry was fetched only on the street-address path. Front-page cold load moved from
+  865 ms to 1294 ms p95 on 3G Fast, and 5.0 s to 6.5 s on Slow 3G.

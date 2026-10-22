@@ -71,7 +71,30 @@
     results.appendChild(ul);
   }
 
-  function go(district) {
+  // Offer the result to the map before navigating. The map claims the event and
+  // highlights instead, which is the point of having a map; with no map loaded nothing
+  // listens, `defaultPrevented` stays false, and this behaves exactly as it always did.
+  // The coordinate is passed when we have one, because a board cannot be derived from a
+  // district number — a district overlaps two or three boards.
+  function announce(district, lon, lat) {
+    var event;
+    var detail = { district: district, lon: lon, lat: lat };
+    // Only a geocoded street address is offered to the map. A district number, a ZIP or a
+    // neighbourhood names a place the reader already chose, and SLA-1 promises that goes
+    // straight to its page — the same as the dropdown. Highlighting instead would add a
+    // click to the one path that is meant to be instant.
+    if (typeof lon !== "number" || typeof lat !== "number") return false;
+    try {
+      event = new CustomEvent("showup:located", { detail: detail, cancelable: true });
+    } catch (error) {
+      return false;
+    }
+    document.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  function go(district, lon, lat) {
+    if (announce(district, lon, lat)) return;
     // Validated even though we produced it, so this can never become an open redirect.
     var target = "/district/" + district + "/";
     if (/^\/district\/([1-9]|[1-4]\d|5[01])\/$/.test(target)) {
@@ -358,6 +381,8 @@
             district: district,
             label: feature.properties.label || query,
             borough: feature.properties.borough || "",
+            lon: coords[0],
+            lat: coords[1],
           });
         });
 
@@ -378,7 +403,7 @@
 
         if (Object.keys(distinct).length === 1) {
           say("");
-          go(resolved[0].district);
+          go(resolved[0].district, resolved[0].lon, resolved[0].lat);
           return;
         }
 

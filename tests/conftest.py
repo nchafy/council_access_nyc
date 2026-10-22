@@ -9,6 +9,7 @@ import pytest
 
 from showup.fetch import MEMBER_ROW_FLOOR, cache_path
 from showup.model import DISTRICT_COUNT
+from showup.sources.boards import JOINT_INTEREST_AREAS
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -120,6 +121,57 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
         )
     cache_path(raw, "council-geometry").write_text(
         json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8"
+    )
+
+    # The same synthetic squares for the board layer, keyed the way 5crt-au7u keys them:
+    # borough digit then two board digits. The real codes matter, because the build
+    # excludes joint interest areas by code and the board pages key on them.
+    # The real codes, read from the committed boards fixture, because the build keys board
+    # pages and the geometry join on them.
+    board_codes = sorted(
+        {
+            str(row.get("community_board_1", "")).strip()
+            for row in json.loads((FIXTURES / "community_boards.json").read_text(encoding="utf-8"))
+        }
+        - {""}
+    )
+    board_features = []
+    for index, code in enumerate(board_codes):
+        x0 = -74.3 + index * 0.02
+        y0 = 40.6
+        board_features.append(
+            {
+                "type": "Feature",
+                "properties": {"boro_cd": str(code)},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [x0, y0],
+                            [x0 + 0.018, y0],
+                            [x0 + 0.018, y0 + 0.018],
+                            [x0, y0 + 0.018],
+                            [x0, y0],
+                        ]
+                    ],
+                },
+            }
+        )
+    # One joint interest area, so the build is shown excluding it rather than assumed to.
+    board_features.append(
+        {
+            "type": "Feature",
+            "properties": {"boro_cd": sorted(JOINT_INTEREST_AREAS)[0]},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [[-74.0, 40.9], [-73.98, 40.9], [-73.98, 40.92], [-74.0, 40.92], [-74.0, 40.9]]
+                ],
+            },
+        }
+    )
+    cache_path(raw, "community-geometry").write_text(
+        json.dumps({"type": "FeatureCollection", "features": board_features}), encoding="utf-8"
     )
     return raw
 

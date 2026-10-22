@@ -97,7 +97,49 @@ dd, a, .nolink { overflow-wrap: anywhere; }
   outline-offset: -3px;
 }
 
-.map-zoom { display: flex; gap: .4rem; margin: .5rem 0 0; }
+/* The layer toggle. Two buttons rather than a select: both states are one press away,
+   and `aria-pressed` tells a screen reader which is on without a label of its own. */
+.map-toggle:not([hidden]) { display: flex; gap: .4rem; margin: 0 0 .5rem; flex-wrap: wrap; }
+.map-toggle button {
+  font: inherit;
+  font-size: .92rem;
+  min-height: 44px;
+  padding: 0 .9rem;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.map-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Revealed only when something is selected, so it never points at the front page.
+   `:not([hidden])` is load-bearing on all three of these: a `display` rule beats the
+   `hidden` attribute's UA `display: none`, which left this link visible, focusable and
+   empty — one axe `link-name` violation and three keyboard failures. */
+.map-selection:not([hidden]) {
+  display: inline-block;
+  margin: .5rem 0 0;
+  font-weight: 600;
+}
+
+/* Visible to a screen reader, not to the eye: the map section needs a heading for
+   landmark navigation, and a visible one would repeat the h1 above it. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.map-zoom:not([hidden]) { display: flex; gap: .4rem; margin: .5rem 0 0; }
 .map-zoom-button {
   font: inherit;
   font-size: .92rem;

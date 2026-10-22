@@ -20,11 +20,10 @@ from .render import (
     render_board,
     render_district,
     render_index,
-    render_map,
     render_not_found,
     render_references,
 )
-from .sources.boards import load_boards
+from .sources.boards import JOINT_INTEREST_AREAS, load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
@@ -247,12 +246,15 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
 
+    # The only page that carries the map. The two index pages share this template and must
+    # not: see render_index's docstring.
     (staging / "index.html").write_text(
         render_index(
             districts,
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
             window_end=window_end,
+            with_map=True,
         ),
         encoding="utf-8",
     )
@@ -328,6 +330,21 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         encoding="utf-8",
     )
 
+    # The board layer of the map. Joint interest areas — parks, airports, Rikers — are
+    # community districts with no board, so they are excluded here exactly as the crosswalk
+    # excludes them; drawing them would imply there is somebody to call.
+    board_polygons = load_features(
+        cache_path(raw, "community-geometry"), "boro_cd", exclude=set(JOINT_INTEREST_AREAS)
+    )
+    if len(board_polygons) != BOARD_COUNT:
+        raise BuildError(
+            f"board geometry has {len(board_polygons)} features, expected {BOARD_COUNT}"
+        )
+    (data_dir / "boards.geo.json").write_text(
+        json.dumps(to_geojson(board_polygons, "boro_cd"), separators=(",", ":")),
+        encoding="utf-8",
+    )
+
     # A district number, neighbourhood, board name or ZIP resolves from this, so typing
     # one never reaches the geocoder.
     zips = load_zips(repo_root / CROSSWALK_PATH)
@@ -380,12 +397,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "max_age_hours": 24 * 30,
             "rows": budget_request_rows,
         }
-
-    map_root = staging / "map"
-    map_root.mkdir()
-    (map_root / "index.html").write_text(
-        render_map(districts, built_at=now, window_end=window_end), encoding="utf-8"
-    )
 
     references_root = staging / "references"
     references_root.mkdir()

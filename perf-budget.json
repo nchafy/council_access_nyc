@@ -8,10 +8,10 @@
   "_script_note": "Tighter ceiling on the JavaScript a page blocks on; measured 6.7 KB. The map library is excluded deliberately and carries its own budget below. React + ReactDOM is ~45 KB gzipped and would hide inside the 60 KB page budget, so 'vanilla ES modules, no bundler' needs its own number.",
 
   "geometry_gzip_bytes": 307200,
-  "_geometry_note": "§6A.3's 300 KB, fetched after first paint. Measured 132 KB at the pinned 2.2 m tolerance, and only on the street-address path.",
+  "_geometry_note": "§6A.3's 300 KB, fetched after first paint. Both layers: 135 KB for the 51 council districts and 96 KB for the 59 community boards, at the pinned 2.2 m tolerance. The front-page map draws both, so unlike before this is no longer fetched only on the street-address path.",
 
   "map_library_gzip_bytes": 512000,
-  "_map_library_note": "The vendored MapLibre, on the /map/ route only and imported after first paint, so it is not inside the 60 KB page budget and not inside the 12 KB script ceiling. It is gated here instead, because a dynamic import is invisible to a gate that reads the HTML. Measured 449 KB across maplibre-gl.mjs (292 KB), maplibre-gl-worker.mjs (147 KB) and maplibre-gl.css (10 KB).",
+  "_map_library_note": "The vendored MapLibre, on the front page only and imported after first paint, so it is not inside the 60 KB page budget and not inside the 12 KB script ceiling. It is gated here instead, because a dynamic import is invisible to a gate that reads the HTML. Measured 449 KB across maplibre-gl.mjs (292 KB), maplibre-gl-worker.mjs (147 KB) and maplibre-gl.css (10 KB).",
 
   "cold_load_ms_p95": 3000,
   "runs": 20,

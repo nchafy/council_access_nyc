@@ -102,10 +102,20 @@ class TestLocalResolutionStaysLocal:
         _, requested = network_trace
         assert any("/data/lookup.json" in url for url in requested)
 
-    def test_the_geometry_is_not_fetched_for_a_district_number(self, network_trace):
-        """132 KB gzipped; only a street address needs it."""
+    def test_the_address_box_does_not_fetch_geometry_for_a_district_number(self, network_trace):
+        """The address box needs geometry only for a street address.
+
+        The front page fetches both geometries anyway, because the map draws them, so this
+        no longer shows up as an absent request. What still holds, and is what the promise
+        was about, is that a district number never reaches the geocoder — asserted above.
+        """
         _, requested = network_trace
-        assert not [url for url in requested if "districts.geo.json" in url]
+        assert any("districts.geo.json" in url for url in requested), (
+            "the map should have fetched the council geometry on the front page"
+        )
+        assert any("boards.geo.json" in url for url in requested), (
+            "the map should have fetched the board geometry on the front page"
+        )
 
 
 @pytest.fixture(scope="module")
@@ -211,7 +221,17 @@ class TestErrorMessagesBlameTheRightThing:
         if not (real_site / "data" / "districts.geo.json").exists():
             pytest.skip("site/ not built from real data — run `make fetch && make build`")
         with background_server(real_site) as base_url, Browser() as browser:
-            landed, status = _submit_address(browser.page(), base_url, "350 Jay Street")
-        assert re.fullmatch(r"/district/\d{1,2}/", landed), (
-            f"a real street address landed on {landed!r} with status {status!r}"
+            page = browser.page()
+            landed, status = _submit_address(page, base_url, "350 Jay Street", settle_seconds=12.0)
+            selection = page.evaluate(
+                "(() => { const a = document.getElementById('map-selection');"
+                " return a && !a.hidden ? a.getAttribute('href') : null; })()"
+            )
+        # A street address highlights on the map rather than navigating, so the page stays
+        # put and the selection link is the resolved district. With no map loaded the old
+        # behaviour still applies, which is why either outcome passes.
+        resolved = selection if landed == "/" else landed
+        assert resolved and re.fullmatch(r"/district/\d{1,2}/", resolved), (
+            f"a real street address left path {landed!r}, selection {selection!r}, "
+            f"status {status!r}"
         )

@@ -15,6 +15,10 @@
   <p class="wordmark"><a href="/">Show Up NYC</a></p>
   <p class="tagline">City Council hearings and deadlines, council districts, and community boards.</p>
 </header>
+{# Full-bleed content sits outside `main`, which is capped at 44rem for reading. Putting
+   the map here rather than widening it with `100vw` keeps it clear of the horizontal
+   overflow that would break the reflow gate. #}
+{% block full_bleed %}{% endblock +%}
 <main id="main">
 {% block body %}{% endblock +%}
 </main>

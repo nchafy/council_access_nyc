@@ -512,3 +512,20 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   shapes. Also: putting the map on the front page means every visitor fetches both layers, where
   before geometry was fetched only on the street-address path. Front-page cold load moved from
   865 ms to 1294 ms p95 on 3G Fast, and 5.0 s to 6.5 s on Slow 3G.
+- 2026-10-22 | `src/showup/assets/site.css` (`.map` height, not `.mapshell`) | The map-first
+  layout shipped with the height on the shell and the panel in normal flow inside it, so on a
+  390 px viewport the panel overflowed the shell and **rendered on top of the `h1` and the
+  paragraph below it** — three layers of text in the same pixels. **Every gate passed**: axe 0
+  violations, a11y 148/148, console 0 complaints, reflow 0 violations, perf inside every budget.
+  It was found by looking at a screenshot. | Overlapping text is invisible to all five gates.
+  axe checks contrast against a computed background, not against whatever is painted over it; the
+  reflow gate measures the layout viewport, and an overflowing child inside a fixed-height parent
+  does not widen it. `make shot` being "the only gate a human reads" is not a nicety — it is the
+  only one that can see this class of defect at all.
+- 2026-10-22 | `/` (`.map-panel` over the map) | axe now reports one **`color-contrast`
+  incomplete** on the front page, which it did not before: the panel is
+  `rgba(255, 255, 255, .95)` over a canvas, and axe cannot compute a contrast ratio against
+  pixels it did not paint. Checked by eye at 1440 px and 390 px — the panel is effectively opaque
+  white over a light map, and the text is the site's normal ink. | "Incomplete" is axe declining
+  to decide, not a pass and not a failure. Any translucent surface over a canvas will produce
+  one, so the count is expected to stay at 1 and a change in it is worth reading.

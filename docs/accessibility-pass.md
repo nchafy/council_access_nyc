@@ -11,7 +11,7 @@ All five run in CI on every commit.
 
 | Gate | Command | What it proves |
 |---|---|---|
-| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 115 pre-rendered pages |
+| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 115 pre-rendered pages; 1 `color-contrast` incomplete on `/`, which is the translucent map panel and is checked by eye |
 | Keyboard + accessibility tree | `make a11y` | 148 checks over 11 page types, 0 failures |
 | Console and CSP | `make console` | 0 complaints — no page logs an error or trips its own policy |
 | Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 115 |
@@ -128,6 +128,7 @@ Both 2026-09-23:
 | Gap | State |
 |---|---|
 | No real screen-reader pass (§4) | The largest gap, and the one open Phase 1 item |
+| Overlapping text passes every gate | Found 2026-10-22: the map panel rendered on top of the `h1` at 390 px and axe, a11y, console, reflow and perf were all green. Only a screenshot shows it. `make shot` is load-bearing, not decorative |
 | `make shot` still clamps at 500px | macOS minimum Chrome window width. No longer a gap in coverage — `make reflow` measures 320px and 390px over CDP, which the window size cannot reach — but the screenshots are still not phone-width |
 | `make gates` dies partway, roughly one run in two | A different gate each time, always `CDPError: lost the channel to Chrome: [Errno 54] Connection reset by peer`. Every gate passes run on its own, and CI is unaffected because it runs them as one pytest session (`make browser`, 85 passed). Observed 2026-10-20; not diagnosed |
 | Slow 3G measures 4.3–5.1 s, over 3 s | Reported, not gated — dominated by that profile's 2000 ms round trip, not our bytes. Reasoning in `perf-budget.json` |

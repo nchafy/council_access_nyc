@@ -81,8 +81,11 @@ are — it says so and gives you the number to call instead of a guess.
 Both are reachable from the front page by dropdown, by a plain link list, or by typing an
 address, a ZIP, a neighbourhood, or just a district number.
 
-**The front page is a map.** The 51 council districts and the 59 community boards, one
-layer at a time behind a toggle, every polygon the same colour. Selecting one highlights it
+**The front page is a map**, full width and most of the viewport, with a floating panel
+for the layer toggle and whatever is selected — the shape those NYC Open Data map
+applications use. The 51 council districts and the 59 community boards, one layer at a time
+behind the toggle, every polygon the same colour. On a phone the panel sits under the map
+rather than over it, because at that size an overlay covers the thing it describes. Selecting one highlights it
 and offers a link to its page rather than navigating, so the toggle stays useful for
 comparing where the two sets of lines fall. Typing a street address highlights the district
 or board containing it; typing a district number, ZIP or neighbourhood still goes straight

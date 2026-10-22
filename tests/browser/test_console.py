@@ -102,20 +102,15 @@ class TestLocalResolutionStaysLocal:
         _, requested = network_trace
         assert any("/data/lookup.json" in url for url in requested)
 
-    def test_the_address_box_does_not_fetch_geometry_for_a_district_number(self, network_trace):
-        """The address box needs geometry only for a street address.
+    def test_the_geometry_is_not_fetched_for_a_district_number(self, network_trace):
+        """226 KB gzipped across both layers; only a street address needs any of it.
 
-        The front page fetches both geometries anyway, because the map draws them, so this
-        no longer shows up as an absent request. What still holds, and is what the promise
-        was about, is that a district number never reaches the geocoder — asserted above.
+        This held, then briefly did not: with the map on the landing page every visit
+        fetched both layers. Moving the map to `/map/` put the promise back, which is a
+        second reason that route exists.
         """
         _, requested = network_trace
-        assert any("districts.geo.json" in url for url in requested), (
-            "the map should have fetched the council geometry on the front page"
-        )
-        assert any("boards.geo.json" in url for url in requested), (
-            "the map should have fetched the board geometry on the front page"
-        )
+        assert not [url for url in requested if ".geo.json" in url]
 
 
 @pytest.fixture(scope="module")

@@ -11,11 +11,11 @@ All five run in CI on every commit.
 
 | Gate | Command | What it proves |
 |---|---|---|
-| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 115 pre-rendered pages; 1 `color-contrast` incomplete on `/`, which is the translucent map panel and is checked by eye |
-| Keyboard + accessibility tree | `make a11y` | 148 checks over 11 page types, 0 failures |
+| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 116 pre-rendered pages, 0 incomplete |
+| Keyboard + accessibility tree | `make a11y` | 161 checks over 12 page types, 0 failures |
 | Console and CSP | `make console` | 0 complaints — no page logs an error or trips its own policy |
-| Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 115 |
-| Weight and cold load | `make perf` | 28.6 KB heaviest page (`/`, which carries the map) vs 60 KB; 1294 ms p95 vs 3000 ms; geometry 226 KB vs 300 KB; the map library 439 KB vs its own 500 KB budget |
+| Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 116 |
+| Weight and cold load | `make perf` | 25.4 KB heaviest page (`/map/`) vs 60 KB; geometry 226 KB vs 300 KB; the map library 439 KB vs its own 500 KB budget |
 
 `make a11y` presses real `Tab` keys in a real browser and reads Chrome's accessibility tree: skip
 link, focus into `<main>`, DOM order, reachability, ≥2px ring, `Shift+Tab`; landmarks, accessible

@@ -31,16 +31,25 @@ def site(tmp_path_factory, raw_dir_session) -> Path:
     return out
 
 
-class TestTheMapIsOnTheFrontPage:
-    def test_the_front_page_carries_the_map_container(self, site):
-        html = (site / "index.html").read_text(encoding="utf-8")
-        assert 'id="map"' in html
+class TestTheMapIsItsOwnRoute:
+    def test_the_map_page_is_built(self, site):
+        assert (site / "map" / "index.html").is_file()
+        assert "/map/" in every_page(site)
 
-    def test_there_is_no_separate_map_route(self, site):
-        """The map is the main view, so a second copy of it would be a second thing to keep
-        true."""
-        assert "/map/" not in every_page(site)
-        assert not (site / "map").exists()
+    def test_the_landing_page_has_no_map(self, site):
+        """A map inside a scrolling page swallows the wheel: scrolling zooms instead. The
+        landing page is a document, so it carries no canvas."""
+        html = (site / "index.html").read_text(encoding="utf-8")
+        assert 'id="map"' not in html
+        assert "maplibre" not in html.lower()
+
+    def test_the_landing_page_sends_the_reader_to_the_map(self, site):
+        assert 'href="/map/"' in (site / "index.html").read_text(encoding="utf-8")
+
+    def test_the_map_page_locks_the_viewport(self, site):
+        """`body.app` is what stops the page scrolling, which is the whole reason this is a
+        separate route."""
+        assert '<body class="app">' in (site / "map" / "index.html").read_text(encoding="utf-8")
 
     def test_both_layers_ship_their_geometry(self, site):
         assert (site / "data" / "districts.geo.json").is_file()
@@ -55,14 +64,14 @@ class TestTheMapIsOnTheFrontPage:
         assert not codes & set(JOINT_INTEREST_AREAS)
 
     def test_the_toggle_offers_exactly_the_two_layers(self, site):
-        html = (site / "index.html").read_text(encoding="utf-8")
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
         assert 'data-layer="council"' in html
         assert 'data-layer="board"' in html
 
     def test_the_toggle_ships_hidden_with_council_preselected(self, site):
         """A toggle that switches nothing is worse than no toggle, and the map may never
         draw."""
-        html = (site / "index.html").read_text(encoding="utf-8")
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
         assert 'id="map-toggle" hidden' in html
         assert 'data-layer="council" aria-pressed="true"' in html
 
@@ -95,7 +104,7 @@ class TestOnlyTheMapPaysForTheMap:
         offenders = [
             path
             for path in every_page(site)
-            if path != "/"
+            if path != "/map/"
             and "maplibre"
             in (
                 site / path.strip("/") / "index.html"
@@ -107,10 +116,10 @@ class TestOnlyTheMapPaysForTheMap:
         ]
         assert not offenders, f"these pages would download the map library: {offenders}"
 
-    def test_the_front_page_does_not_block_on_the_library(self, site):
+    def test_the_map_page_does_not_block_on_the_library(self, site):
         """The library is imported from the module, never as a blocking script tag, so the
         document's own weight stays inside R40's page budget."""
-        html = (site / "index.html").read_text(encoding="utf-8")
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
         assert 'src="/vendor/maplibre-gl.mjs"' not in html
         assert 'src="/assets/map.mjs"' in html
 
@@ -131,19 +140,20 @@ class TestTheMapIsNeverTheOnlyWay:
 
     def test_the_status_line_says_what_is_needed_before_any_script_runs(self, site):
         """Rendered into the document, so a reader with no JavaScript still reads it."""
-        html = (site / "index.html").read_text(encoding="utf-8")
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
         assert "needs JavaScript and WebGL" in html
 
     def test_the_zoom_buttons_ship_hidden(self, site):
         """They do nothing until the map draws, and a control that lies is worse than none."""
-        html = (site / "index.html").read_text(encoding="utf-8")
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
         assert '<div class="map-zoom" hidden' in html
 
     def test_selecting_on_the_map_offers_a_link_rather_than_navigating(self, site):
         """A click that moved the page would make the toggle useless for comparing two
-        boundaries, so selection highlights and reveals this link instead."""
-        html = (site / "index.html").read_text(encoding="utf-8")
-        assert 'id="map-selection"' in html and "hidden" in html
+        boundaries, so selection highlights and reveals this card instead."""
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
+        assert 'id="map-card" hidden' in html
+        assert 'id="map-selection"' in html
 
 
 class TestTheMapRefusesToRank:

@@ -71,36 +71,95 @@ dd, a, .nolink { overflow-wrap: anywhere; }
 
 .nolink { color: var(--muted); }
 
-/* The map is the page's first and largest element, so the shell is full-bleed: it sits
-   outside `main`, which is capped at 44rem for reading. Height in `vh` with a floor, so it
-   dominates a desktop viewport without becoming unusable on a short one. No `100vw`
-   anywhere — that counts the scrollbar and would trip the reflow gate. */
-.mapshell {
-  position: relative;
+/* The map route is an app, not a document: the viewport is the page and nothing scrolls.
+   This is the whole reason it is a separate route — a map embedded in a scrolling page
+   swallows the wheel, so the reader scrolls and the map zooms instead. */
+.app,
+html:has(body.app) {
+  height: 100%;
+  overflow: hidden;
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+/* `margin: 0` is not cosmetic: the base rule centres these with `margin: 0 auto`, and an
+   auto inline margin on a column flex item makes it shrink to its content instead of
+   stretching. `main`'s children are all absolutely positioned, so that content is nothing
+   and the map collapsed to zero width. */
+.app header.site,
+.app footer.site {
+  flex: 0 0 auto;
+  max-width: none;
   width: 100%;
-  margin: 0 0 1.4rem;
-  background: #f6f7f9;
+  margin: 0;
+  padding: .5rem 1rem;
+}
+.app header.site .tagline { display: none; }
+.app footer.site {
   border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
+  font-size: .8rem;
 }
-/* The height lives on the map, not the shell: on a phone the panel sits below the map in
-   normal flow, and a fixed-height shell would let it overflow onto the heading beneath. */
-.map { width: 100%; height: clamp(320px, 56vh, 620px); }
+/* The deferred-hearings caveat is dropped on the app page for height, but the sources
+   link is not: every page links what it is built from, and hiding its paragraph left it
+   zero-sized and unfocusable — caught by the keyboard gate, not by looking. */
+.app footer.site .caveat:not(.sources) { display: none; }
+.app footer.site p { margin: 0; }
+/* `min-height: 0` so a flex child may be shorter than its content instead of pushing the
+   footer off the viewport. */
+.app main {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.app .map { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-/* On a phone the panel follows the map instead of covering it: the map is already only a
-   few hundred pixels tall, and an overlay would hide the thing it describes. */
-.map-panel {
-  padding: .7rem 1.1rem 1rem;
+/* Cards float on the map. They are the only scrollable thing on the page, and they cap
+   their own height so one can never grow over the map it describes. */
+.cards {
+  position: absolute;
+  inset: 0;
+  padding: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  /* The container is a layout box only: clicks fall through to the map except on a card. */
+  pointer-events: none;
+  overflow: hidden;
 }
-.map-status { color: var(--muted); font-size: .92rem; margin: 0; }
-.map-selection:not([hidden]) { display: inline-block; margin: .5rem 0 0; font-weight: 600; }
+.card {
+  pointer-events: auto;
+  width: min(22rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: .8rem .9rem;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgb(16 25 40 / 12%);
+}
+.card h2 { margin: 0 0 .3rem; font-size: 1rem; }
+.card dl { margin: 0 0 .4rem; }
+.card .card-search label { display: block; font-weight: 600; font-size: .9rem; }
+.card .card-search { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
+.card .card-search input { flex: 1 1 10rem; min-width: 0; min-height: 44px; font: inherit; }
+.card .card-search button { min-height: 44px; font: inherit; padding: 0 .9rem; }
+.card-selection[hidden] { display: none; }
+
+.map-status { color: var(--muted); font-size: .88rem; margin: .5rem 0 0; }
+.map-selection:not([hidden]) { display: inline-block; margin: .2rem 0 0; font-weight: 600; }
 
 /* The layer toggle. Two buttons rather than a select: both states are one press away, and
    `aria-pressed` tells a screen reader which is on without a label of its own.
-   `:not([hidden])` is load-bearing on all three of these groups — a `display` rule beats
-   the `hidden` attribute's UA `display: none`, which once left an empty link visible,
+   `:not([hidden])` is load-bearing on each of these groups — a `display` rule beats the
+   `hidden` attribute's UA `display: none`, which once left an empty link visible,
    focusable and nameless. */
-.map-toggle:not([hidden]) { display: flex; gap: .4rem; margin: 0 0 .5rem; flex-wrap: wrap; }
+.map-toggle:not([hidden]) { display: flex; gap: .4rem; flex-wrap: wrap; }
 .map-toggle button {
   font: inherit;
   font-size: .92rem;
@@ -133,26 +192,6 @@ dd, a, .nolink { overflow-wrap: anywhere; }
   cursor: pointer;
 }
 
-/* Once there is room beside the map, the panel floats on it — the layout those NYC Open
-   Data map apps use. Capped and scrollable so a long selection label cannot cover the
-   map it refers to. */
-@media (min-width: 44rem) {
-  .mapshell { margin-bottom: 1.8rem; }
-  .map { height: clamp(420px, 72vh, 860px); }
-  .map-panel {
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    width: min(21rem, calc(100% - 2rem));
-    max-height: calc(100% - 2rem);
-    overflow-y: auto;
-    padding: .9rem 1rem;
-    background: rgba(255, 255, 255, .95);
-    border: 1px solid var(--rule);
-    border-radius: 4px;
-  }
-}
-
 /* MapLibre puts `tabindex="0"` on its canvas, so a keyboard user lands on the map and can
    pan it with the arrow keys. Without this they land on it and see nothing. The offset is
    negative because the ring would otherwise be clipped by the container's own edge. */
@@ -162,8 +201,22 @@ dd, a, .nolink { overflow-wrap: anywhere; }
   outline-offset: -3px;
 }
 
-/* Visible to a screen reader, not to the eye: the map region needs a name for landmark
-   navigation, and a visible heading would compete with the h1 below it. */
+/* The landing page's one job: send the reader to the map or let them type an address. */
+.lede { font-size: 1.08rem; margin: .2rem 0 1rem; }
+.cta-row { margin: 0 0 1.2rem; }
+.cta {
+  display: inline-block;
+  min-height: 48px;
+  padding: .75rem 1.3rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 4px;
+}
+.cta:hover { text-decoration: underline; }
+
+/* Visible to a screen reader, not to the eye. */
 .visually-hidden {
   position: absolute;
   width: 1px;

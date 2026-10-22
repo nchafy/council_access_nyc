@@ -20,6 +20,7 @@ from .render import (
     render_board,
     render_district,
     render_index,
+    render_map,
     render_not_found,
     render_references,
 )
@@ -246,15 +247,12 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
 
-    # The only page that carries the map. The two index pages share this template and must
-    # not: see render_index's docstring.
     (staging / "index.html").write_text(
         render_index(
             districts,
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
             window_end=window_end,
-            with_map=True,
         ),
         encoding="utf-8",
     )
@@ -397,6 +395,12 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "max_age_hours": 24 * 30,
             "rows": budget_request_rows,
         }
+
+    map_root = staging / "map"
+    map_root.mkdir()
+    (map_root / "index.html").write_text(
+        render_map(built_at=now, window_end=window_end), encoding="utf-8"
+    )
 
     references_root = staging / "references"
     references_root.mkdir()

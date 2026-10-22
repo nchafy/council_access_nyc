@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{# MapLibre's own stylesheet, from our origin. Without it the map's controls have no
+   positioning. 10 KB gzipped, and this is the only page that loads it. #}
+{% block extra_head %}<link rel="stylesheet" href="/vendor/maplibre-gl.css">{% endblock %}
+{# The app shell: the viewport is the page, nothing scrolls, and the map takes whatever the
+   header and footer do not. A map inside a scrolling page steals the wheel: scrolling the
+   page zooms the map instead, which is why this is a route of its own. #}
+{% block body_class %}app{% endblock %}
+{% block body %}
+<h1 class="visually-hidden">Map of council districts and community boards</h1>
+
+<div id="map" class="map"></div>
+
+<!-- Cards float on the map. Each is hidden until it has something to say, so the map is
+     never covered by an empty box. -->
+<div class="cards">
+  <div class="card card-controls">
+    <div class="map-toggle" id="map-toggle" hidden role="group" aria-label="Which boundaries to show">
+      <button type="button" data-layer="council" aria-pressed="true">Council districts</button>
+      <button type="button" data-layer="board" aria-pressed="false">Community boards</button>
+    </div>
+    <!-- Shipped hidden and revealed by address.js, which is also what gates it on the
+         script having run: the box cannot work without it. The fallback below stays
+         visible either way. -->
+    <div id="address-section" hidden>
+      <form class="card-search" id="address-form" action="#" method="get" autocomplete="off">
+        <label for="address-input">Address, ZIP, neighbourhood or district number</label>
+        <input
+          id="address-input"
+          name="q"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="350 Jay Street, or 11217">
+        <button type="submit">Find</button>
+      </form>
+      <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
+      <div id="address-results"></div>
+    </div>
+    <p id="map-status" class="map-status">
+      The map needs JavaScript and WebGL.
+      <a href="/district/">All 51 districts</a> and <a href="/board/">all 59 boards</a> are
+      listed without it.
+    </p>
+    <div class="map-zoom" hidden id="map-zoom">
+      <button type="button" id="map-zoom-in" class="map-zoom-button">Zoom in</button>
+      <button type="button" id="map-zoom-out" class="map-zoom-button">Zoom out</button>
+    </div>
+  </div>
+
+  <!-- What is selected. Revealed by the module, so it never shows an empty heading. -->
+  <div class="card card-selection" id="map-card" hidden>
+    <h2 id="map-card-title"></h2>
+    <dl id="map-card-facts"></dl>
+    <a id="map-selection" class="map-selection" href="/"></a>
+  </div>
+</div>
+{% endblock %}
+{% block extra_script %}<script src="/assets/address.js" defer></script>
+<script type="module" src="/assets/map.mjs"></script>{% endblock %}

@@ -29,6 +29,10 @@ REPRESENTATIVE: dict[str, str] = {
     "/district/35/": "a district page with no Office Hours line",
     "/district/51/": "no Office Hours, and a suite number with no 'Suite'",
     "/district/": "the district index — the no-JavaScript path to all 51",
+    "/map/": (
+        "the full-screen map: the only route that loads MapLibre, the only page with a WebGL "
+        "canvas, and the only one whose body does not scroll"
+    ),
     "/board/302/": "the community board view, a different page type rather than a variant",
     "/board/": "the board index — the no-JavaScript path to all 59",
     "/references/": (

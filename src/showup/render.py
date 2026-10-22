@@ -16,6 +16,7 @@ from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, 
 __all__ = [
     "render_district",
     "render_index",
+    "render_map",
     "render_not_found",
     "render_references",
 ]
@@ -44,13 +45,11 @@ def render_index(
     *,
     built_at: datetime,
     window_end: date | None,
-    with_map: bool = False,
 ) -> str:
-    """The front page, and the two index pages, which share this template.
+    """The landing page, and the two index pages, which share this template.
 
-    `with_map` is false by default because this renders three pages and only the front one
-    carries the map: the library is 449 KB and `docs/dependencies.md` allows it on condition
-    that no page which does not need it pays for it.
+    None of them carries the map: it is a route of its own, so the 449 KB library is paid
+    for only by a reader who asks for it.
     """
     return templates.render(
         "index.html",
@@ -69,7 +68,6 @@ def render_index(
         ],
         built_at=built_at,
         window_end=window_end,
-        with_map=with_map,
     )
 
 
@@ -135,6 +133,17 @@ def _meeting_card(meeting: Meeting, *, today: date, now: datetime) -> dict:
 def _board_card(board: DistrictBoard) -> str:
     """One community board as it appears on a council district's page."""
     return templates.fragment("board_card", board)
+
+
+def render_map(*, built_at: datetime, window_end: date | None) -> str:
+    """The full-screen map. Its own route because a map inside a scrolling page steals the
+    wheel: the reader scrolls and the map zooms instead. Here nothing scrolls."""
+    return templates.render(
+        "map.html",
+        title="Map of council districts and community boards",
+        built_at=built_at,
+        window_end=window_end,
+    )
 
 
 def render_district(

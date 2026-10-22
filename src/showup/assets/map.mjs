@@ -38,6 +38,10 @@ const LAYERS = {
     noun: 'council district',
     href: (id) => `/district/${id}/`,
     label: (id) => `Council District ${id}`,
+    facts: (id) => [
+      ['Boundary', 'One of 51, drawn to equal population'],
+      ['District', String(id)],
+    ],
   },
   board: {
     url: '/data/boards.geo.json',
@@ -48,6 +52,11 @@ const LAYERS = {
     // `302` is Brooklyn's board 2: the first digit is the borough, the rest the board,
     // and the leading zero is padding rather than part of the number.
     label: (id) => `Community Board ${Number(String(id).slice(1))}, ${boroughOf(id)}`,
+    facts: (id) => [
+      ['Borough', boroughOf(id)],
+      ['Board', String(Number(String(id).slice(1)))],
+      ['Code', String(id)],
+    ],
   },
 };
 
@@ -203,22 +212,40 @@ class View {
       );
     }
     this.selected = null;
-    const link = document.getElementById('map-selection');
-    if (link) link.hidden = true;
+    const card = document.getElementById('map-card');
+    if (card) card.hidden = true;
   }
 
   select(id) {
     this.clear();
     this.selected = id;
     this.map.setFeatureState({ source: this.layer.source, id }, { selected: true });
-
-    const link = document.getElementById('map-selection');
-    if (link) {
-      link.textContent = `Open ${this.layer.label(id)}`;
-      link.href = this.layer.href(id);
-      link.hidden = false;
-    }
+    this.fillCard(id);
     say(`${this.layer.label(id)} selected.`);
+  }
+
+  /** The selection card: what was selected, and the one link that opens it. */
+  fillCard(id) {
+    const card = document.getElementById('map-card');
+    const title = document.getElementById('map-card-title');
+    const facts = document.getElementById('map-card-facts');
+    const link = document.getElementById('map-selection');
+    if (!card || !title || !facts || !link) return;
+
+    title.textContent = this.layer.label(id);
+    // Built with DOM calls and textContent, never innerHTML: these values are ours, but
+    // the rule in CLAUDE.md is that nothing reaches the page as markup.
+    facts.replaceChildren();
+    for (const [term, value] of this.layer.facts(id)) {
+      const dt = document.createElement('dt');
+      dt.textContent = term;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      facts.append(dt, dd);
+    }
+    link.textContent = `Open ${this.layer.label(id)}`;
+    link.href = this.layer.href(id);
+    card.hidden = false;
   }
 }
 

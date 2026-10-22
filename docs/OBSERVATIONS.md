@@ -529,3 +529,29 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   white over a light map, and the text is the site's normal ink. | "Incomplete" is axe declining
   to decide, not a pass and not a failure. Any translucent surface over a canvas will produce
   one, so the count is expected to stay at 1 and a change in it is worth reading.
+- 2026-10-22 | `/map/` as a route, `.app` in `site.css` | **A map inside a scrolling page steals
+  the wheel.** With the map on the landing page, scrolling down zoomed the map out instead of
+  moving the page — reported by the owner, caught by no gate. Fixed by making the map a route
+  whose body does not scroll at all (`height: 100%; overflow: hidden`, flex column, map takes
+  what the header and footer do not): `scrollHeight == clientHeight` at 390 px and 1440 px, so
+  there is no page scroll for the map to take. | Wheel capture is a property of the
+  *combination*, not of either part, which is why no page-level check sees it. An embedded map
+  and a scrolling document are mutually exclusive; one of them has to give. Moving the map off
+  the landing page also restored two things it had cost: the landing page is 5 KB again and
+  loads no library, and geometry is once more fetched only on the street-address path.
+- 2026-10-22 | `.app main` (`margin: 0`) | The app shell rendered as a blank 44rem column with
+  two thin slivers. `main` computed to **width 0** while reporting `max-width: none` and
+  `flex: 1 1 auto`: the base rule centres it with `margin: 0 auto`, and an auto inline margin on
+  a column flex item makes it shrink to its content rather than stretch — and its children are
+  all absolutely positioned, so that content is nothing. | `margin: 0 auto` is inert on a block
+  and load-bearing on a flex item. Overriding `max-width` was not enough; the margin had to go
+  too. Found by dumping computed styles, not by reading the CSS, and not by any gate: axe, a11y,
+  console and reflow all passed on a page that rendered almost nothing.
+- 2026-10-22 | `layout.html` (`.caveat.sources`), `.app footer.site` | Hiding the app footer's
+  caveats for height also hid the **sources link**, which lives in one of those paragraphs. The
+  link stayed in the DOM at 0x0 and so could not be focused: the keyboard gate reported "9 of 10
+  elements were reachable" and nothing else noticed. Every page is required to link what it is
+  built from. | The audit's visibility filter checks the element's own computed style, not its
+  ancestors', which is why a child of a `display: none` parent was still counted as focusable.
+  That strictness is a feature here — a looser filter would have passed the page and the missing
+  sources link would have shipped.

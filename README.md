@@ -81,11 +81,19 @@ are — it says so and gives you the number to call instead of a guess.
 Both are reachable from the front page by dropdown, by a plain link list, or by typing an
 address, a ZIP, a neighbourhood, or just a district number.
 
-**The front page is a map**, full width and most of the viewport, with a floating panel
-for the layer toggle and whatever is selected — the shape those NYC Open Data map
-applications use. The 51 council districts and the 59 community boards, one layer at a time
-behind the toggle, every polygon the same colour. On a phone the panel sits under the map
-rather than over it, because at that size an overlay covers the thing it describes. Selecting one highlights it
+**`/map/` is a full-screen map**, and it is a route of its own rather than part of the
+landing page for a concrete reason: a map embedded in a scrolling document swallows the
+wheel, so scrolling the page zooms the map instead. On `/map/` nothing scrolls —
+`scrollHeight` equals `clientHeight` — and the map takes every pixel the compact header and
+footer do not.
+
+Information arrives as cards floating on the map: one holding the layer toggle, the address
+box and the zoom buttons, and one naming whatever is selected, with the link that opens it.
+Each is hidden until it has something to say, so the map is never covered by an empty box.
+
+The 51 council districts and the 59 community boards are one layer at a time behind the
+toggle, every polygon in a layer the same colour. The landing page is a search box and a
+button to the map, and it loads no map library at all. Selecting one highlights it
 and offers a link to its page rather than navigating, so the toggle stays useful for
 comparing where the two sets of lines fall. Typing a street address highlights the district
 or board containing it; typing a district number, ZIP or neighbourhood still goes straight
@@ -160,13 +168,15 @@ measurement on a reference profile, and the gate's own output says so in those w
 - **M0–M2** — the skeleton, the live calendar with fail-closed refresh, and the deadline
   ledger (the 72-hour written-testimony bound and accommodation deadlines in business days)
 - **M3, mostly** — address / ZIP / neighbourhood / district-number lookup and
-  keyboard-navigable lists, plus the **map as the front page**: 51 council districts and 59
-  community boards, one layer at a time behind a toggle, each in one uniform fill. Selecting
-  highlights and offers a link; a geocoded address highlights the polygon containing it. No
-  basemap and no choropleth — the site ranks nothing. Both layers reuse the geometry built
-  for *resolution*; at phone width one pixel is about 100 m, so 2.2 m detail needs no
-  separate display artifact. The cost is real and measured: the front page went from 865 ms
-  to 1294 ms p95 on throttled 3G Fast, against a 3 s gate
+  keyboard-navigable lists, plus the **full-screen map at `/map/`**: 51 council districts and
+  59 community boards, one layer at a time behind a toggle, each in one uniform fill, with
+  the selection shown in a floating card. A geocoded address highlights the polygon
+  containing it; a district number, ZIP or neighbourhood still goes straight to its page,
+  because that path promises ≤200 ms. No basemap and no choropleth — the site ranks nothing.
+  Both layers reuse the geometry built for *resolution*; at phone width one pixel is about
+  100 m, so 2.2 m detail needs no separate display artifact. The map being its own route is
+  what keeps the landing page at 5 KB with no library, and keeps geometry on the
+  street-address path only
 - **M4** — district pages, members, and community boards joined by geometry
 - The fetch stage: eight sources, each with a freshness window, a size floor and a body
   invariant

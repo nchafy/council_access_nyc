@@ -580,3 +580,14 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   brief says so in those words. The CSP test was rewritten from "exactly one external host" to
   an explicit two-host allowlist rather than deleted, so a third host is still a decision
   somebody has to make on purpose instead of a diff nobody reads.
+- 2026-10-22 | `src/showup/assets/map.mjs` (`DROPPED_SOURCE_LAYERS`) | The basemap's roads were
+  competing with the district boundaries drawn over them, so the style is now fetched and its
+  `transportation` (20 road and pier layers) and `transportation_name` (6 road labels and
+  highway shields) source layers are dropped before MapLibre is handed the object. Water,
+  waterways, parks, landuse, buildings, administrative boundaries and place labels survive, and
+  the district boundaries become the strongest linework on the map. | Filtering the style is
+  better than hiding layers after load: nothing paints and then disappears, so there is no
+  flash of roads on a slow connection. It also deleted a silencer — the two null-filter
+  highway-shield layers live in `transportation_name`, so removing roads removed the warnings
+  they emitted, and `VENDOR_STYLE_WARNINGS` went with them. A vendor exemption that becomes
+  unnecessary should be deleted the same day, or it sits there hiding the next thing.

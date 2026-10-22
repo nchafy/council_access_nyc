@@ -20,6 +20,14 @@ const toggle = document.getElementById('map-toggle');
 //: Overridden by `data-basemap` on the container, which is where the choice actually
 //: lives; this is the fallback if the attribute is missing.
 const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';
+//: Source layers dropped from the basemap before MapLibre ever sees it. Roads at the same
+//: visual weight as a district boundary mean neither reads, and the point of a basemap under
+//: a data overlay is to recede. `transportation` is the 20 road and pier layers;
+//: `transportation_name` is the 6 road labels and highway shields. What survives is water,
+//: waterways, parks, landuse, buildings, administrative boundaries and place labels — enough
+//: to know where you are without competing with the thing being shown.
+const DROPPED_SOURCE_LAYERS = new Set(['transportation', 'transportation_name']);
+
 const FALLBACK_STYLE = {
   version: 8,
   sources: {},
@@ -104,6 +112,21 @@ function afterFirstPaint() {
   });
 }
 
+/** The basemap style with its road layers removed, or null if it could not be had. */
+async function loadBasemapStyle(url) {
+  try {
+    const style = await fetchJson(url);
+    const kept = (style.layers || []).filter(
+      (layer) => !DROPPED_SOURCE_LAYERS.has(layer['source-layer'])
+    );
+    // Filtered here rather than hidden after load, so the roads never paint at all and
+    // there is no flash of them on a slow connection.
+    return { ...style, layers: kept };
+  } catch {
+    return null;
+  }
+}
+
 function fetchJson(url) {
   return fetch(url).then((response) => {
     if (!response.ok) throw new Error(`${url} returned ${response.status}`);
@@ -123,14 +146,17 @@ async function main() {
 
   let MapLibre;
   let geometry;
+  let basemap;
   try {
-    const [library, council, board] = await Promise.all([
+    const [library, council, board, style] = await Promise.all([
       import('/vendor/maplibre-gl.mjs'),
       fetchJson(LAYERS.council.url),
       fetchJson(LAYERS.board.url),
+      loadBasemapStyle(container.dataset.basemap || BASEMAP_STYLE),
     ]);
     MapLibre = library;
     geometry = { council, board };
+    basemap = style;
   } catch (error) {
     // Named, not swallowed: a reader who sees nothing should be told whose fault it is.
     say(`The map could not load (${error.message}). Everything is listed below.`);
@@ -139,7 +165,9 @@ async function main() {
 
   const map = new MapLibre.Map({
     container,
-    style: container.dataset.basemap || BASEMAP_STYLE,
+    // The style object, already stripped of roads. Null when the host could not be
+    // reached, which is what OpenFreeMap publishing no SLA means in practice.
+    style: basemap || FALLBACK_STYLE,
     center: [-73.95, 40.7],
     zoom: 9,
     attributionControl: false,

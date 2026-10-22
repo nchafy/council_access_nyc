@@ -293,6 +293,14 @@ class Browser:
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--hide-scrollbars",
+                # Software WebGL2, which the map needs and `--disable-gpu` does not give.
+                # Chrome no longer falls back to SwiftShader on its own, so without these
+                # three MapLibre raises "WebGL2 is required" and every gate would report
+                # clean over a map that drew nothing (measured 2026-10-21). A page that
+                # creates no GL context is unaffected.
+                "--enable-unsafe-swiftshader",
+                "--use-gl=angle",
+                "--use-angle=swiftshader",
                 # Small /dev/shm on CI runners makes Chrome crash on navigation.
                 "--disable-dev-shm-usage",
                 *self._extra_args,

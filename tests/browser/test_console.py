@@ -103,9 +103,14 @@ class TestLocalResolutionStaysLocal:
         assert any("/data/lookup.json" in url for url in requested)
 
     def test_the_geometry_is_not_fetched_for_a_district_number(self, network_trace):
-        """132 KB gzipped; only a street address needs it."""
+        """226 KB gzipped across both layers; only a street address needs any of it.
+
+        This held, then briefly did not: with the map on the landing page every visit
+        fetched both layers. Moving the map to `/map/` put the promise back, which is a
+        second reason that route exists.
+        """
         _, requested = network_trace
-        assert not [url for url in requested if "districts.geo.json" in url]
+        assert not [url for url in requested if ".geo.json" in url]
 
 
 @pytest.fixture(scope="module")
@@ -211,7 +216,17 @@ class TestErrorMessagesBlameTheRightThing:
         if not (real_site / "data" / "districts.geo.json").exists():
             pytest.skip("site/ not built from real data — run `make fetch && make build`")
         with background_server(real_site) as base_url, Browser() as browser:
-            landed, status = _submit_address(browser.page(), base_url, "350 Jay Street")
-        assert re.fullmatch(r"/district/\d{1,2}/", landed), (
-            f"a real street address landed on {landed!r} with status {status!r}"
+            page = browser.page()
+            landed, status = _submit_address(page, base_url, "350 Jay Street", settle_seconds=12.0)
+            selection = page.evaluate(
+                "(() => { const a = document.getElementById('map-selection');"
+                " return a && !a.hidden ? a.getAttribute('href') : null; })()"
+            )
+        # A street address highlights on the map rather than navigating, so the page stays
+        # put and the selection link is the resolved district. With no map loaded the old
+        # behaviour still applies, which is why either outcome passes.
+        resolved = selection if landed == "/" else landed
+        assert resolved and re.fullmatch(r"/district/\d{1,2}/", resolved), (
+            f"a real street address left path {landed!r}, selection {selection!r}, "
+            f"status {status!r}"
         )

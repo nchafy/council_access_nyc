@@ -439,3 +439,171 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   cheap gate was green while `ALL=1` was red. | measuring the container tells you nothing when the
   container is what moved; and a representative set is only representative of the failures someone
   already thought of.
+- 2026-10-21 | `scripts/cdp.py` (`--use-angle=swiftshader`) | Every browser gate launched Chrome
+  with `--disable-gpu`, which gives no WebGL2, and MapLibre refuses to initialise without it:
+  `WebGL2 is required to display this map`. The map drew nothing and axe, a11y, console and
+  reflow all reported the page clean. Fixed by adding `--enable-unsafe-swiftshader`,
+  `--use-gl=angle` and `--use-angle=swiftshader`; all 85 browser tests still pass, because a
+  page that creates no GL context is unaffected. | A gate that renders a feature differently
+  from the reader is not testing the feature. Headless defaults are chosen for speed, and the
+  first WebGL or canvas feature in any project silently falls outside every existing gate.
+- 2026-10-21 | `site/vendor/maplibre-gl.css`, `_headers` (`img-src 'self'`) | MapLibre's control
+  icons are **39 `url("data:image/svg+xml...")` background-images**, all refused by
+  `img-src 'self'`. The zoom buttons rendered as blank boxes and **Chrome logged nothing** —
+  `console_check.py` reported 0 complaints on the page. Replaced with two of our own
+  `<button>` elements, which are also in the tab order, which MapLibre's control is not. |
+  A blocked CSS background-image is the quietest CSP failure there is: no console error, no
+  network error, just missing pixels. `img-src` is the directive to re-read before trusting any
+  third-party stylesheet, and "0 console complaints" does not mean "nothing was blocked".
+- 2026-10-21 | `scripts/a11y_audit.py` (`_settled_focusables`) | The audit snapshotted the
+  focusable list once, then pressed Tab that many times. The map's zoom buttons ship `hidden`
+  and are revealed when MapLibre finishes drawing, seconds after `load`, so the list grew
+  mid-run: 2 of 54 elements reported unreachable and `Shift+Tab` appeared to retrace the wrong
+  order. Neither was a page defect. Fixed by reading the list until two consecutive reads
+  agree. | The address box has had the same shape since M3 and never tripped it, because its
+  reveal lands within milliseconds. A race that only a slow async reveal exposes was latent in
+  the gate from the start, and it failed by inventing defects rather than by missing them.
+- 2026-10-21 | `maplibre-gl` 6.15.0 from `registry.npmjs.org` | What a reader actually
+  downloads is **449 KB gzipped**, not the ~200 KB assumed: `maplibre-gl.mjs` 292 KB,
+  a separate `maplibre-gl-worker.mjs` 147 KB, `maplibre-gl.css` 10 KB (1.69 MB raw). v6 ships
+  **ESM only** — no UMD build — so it needs `<script type="module">`, and the worker is a
+  second file rather than an inlined blob. | The published "bundle size" of a map library is
+  the main chunk. The worker is the half nobody quotes. Against a 12 KB script ceiling this is
+  the difference between a budget and a rounding error, so it is gated separately in
+  `perf-budget.json` rather than inside the page budget it would hide in.
+- 2026-10-21 | the probe behind `_headers`, before `src/showup/templates/map.html` existed |
+  A first measurement concluded MapLibre required `style-src 'unsafe-inline'`, with a
+  reproducible CSP violation to show for it. **Wrong**: the inline `style` attribute was on the
+  probe page's own `<div id="map" style="height:400px">`. MapLibre contains no `cssText` and no
+  `setAttribute('style')` — zero occurrences in 1.1 MB. Against the real policy, unchanged, it
+  paints with no console output at all. | The violation was real, the attribution was not. A
+  measurement that indicts a dependency must be run with the dependency as the only variable,
+  or it indicts the harness. Had this gone unchecked, the site's CSP would have been
+  permanently loosened for a defect in a throwaway file.
+- 2026-10-21 | `src/showup/assets/site.css` (`.map-toggle:not([hidden])`) | A `display` rule beats
+  the `hidden` attribute. `.map-selection { display: inline-block }` overrode the UA stylesheet's
+  `display: none`, so a link that ships `hidden` and empty was visible, focusable and nameless:
+  one axe `link-name` violation and three keyboard failures, on three elements that all shipped
+  `hidden` and were all styled with `display`. | `hidden` is a UA default, not a guarantee. Any
+  element that ships hidden and is revealed by script needs `:not([hidden])` on its display rule,
+  or the attribute does nothing. The gates caught it; reading the CSS would not have.
+- 2026-10-21 | `src/showup/render.py` (`render_index(..., with_map=...)`) | `render_index` renders
+  three pages — `/`, `/district/` and `/board/` — so putting the map in that template put it on
+  all three, and each would have downloaded 449 KB. Caught by
+  `test_no_other_page_mentions_maplibre`, which exists only because `docs/dependencies.md` makes
+  load-gating a condition of allowing the dependency. | A shared template is a shared cost. The
+  rule that made this a test rather than a discovery was written before the feature, which is the
+  only reason it was cheap.
+- 2026-10-21 | `src/showup/assets/address.js` (`announce`) | With the map on the front page, a
+  resolved address could highlight instead of navigating — which is the point of a map — but
+  applying that to a typed **district number** would have broken SLA-1's ≤200 ms promise by adding
+  a click to the one path meant to be instant. It also made `test_a_district_number_resolves`
+  race: it passed only because the map had not finished loading before the submit. Resolved by
+  offering the map only a **geocoded coordinate**; a district number, ZIP or neighbourhood still
+  navigates. | A feature that changes what an existing promise means has to be scoped against that
+  promise, not bolted on. The flake was the tell: a test that passes because something else is
+  slow is already failing.
+- 2026-10-21 | `site/data/boards.geo.json` | The board layer needed geometry the site never
+  shipped: `community_districts.geojson` was in the cache for the build-time board↔district join
+  only. Simplified at the same 2.2 m tolerance it is **96 KB gzipped** for 59 features, against
+  135 KB for the 51 council districts. Both now ship, 226 KB of the 300 KB geometry budget. |
+  The board polygons are smaller than the council ones despite there being more of them, because
+  council districts are drawn to equal population and so split dense areas into many-sided
+  shapes. Also: putting the map on the front page means every visitor fetches both layers, where
+  before geometry was fetched only on the street-address path. Front-page cold load moved from
+  865 ms to 1294 ms p95 on 3G Fast, and 5.0 s to 6.5 s on Slow 3G.
+- 2026-10-22 | `src/showup/assets/site.css` (`.map` height, not `.mapshell`) | The map-first
+  layout shipped with the height on the shell and the panel in normal flow inside it, so on a
+  390 px viewport the panel overflowed the shell and **rendered on top of the `h1` and the
+  paragraph below it** — three layers of text in the same pixels. **Every gate passed**: axe 0
+  violations, a11y 148/148, console 0 complaints, reflow 0 violations, perf inside every budget.
+  It was found by looking at a screenshot. | Overlapping text is invisible to all five gates.
+  axe checks contrast against a computed background, not against whatever is painted over it; the
+  reflow gate measures the layout viewport, and an overflowing child inside a fixed-height parent
+  does not widen it. `make shot` being "the only gate a human reads" is not a nicety — it is the
+  only one that can see this class of defect at all.
+- 2026-10-22 | `/` (`.map-panel` over the map) | axe now reports one **`color-contrast`
+  incomplete** on the front page, which it did not before: the panel is
+  `rgba(255, 255, 255, .95)` over a canvas, and axe cannot compute a contrast ratio against
+  pixels it did not paint. Checked by eye at 1440 px and 390 px — the panel is effectively opaque
+  white over a light map, and the text is the site's normal ink. | "Incomplete" is axe declining
+  to decide, not a pass and not a failure. Any translucent surface over a canvas will produce
+  one, so the count is expected to stay at 1 and a change in it is worth reading.
+- 2026-10-22 | `/map/` as a route, `.app` in `site.css` | **A map inside a scrolling page steals
+  the wheel.** With the map on the landing page, scrolling down zoomed the map out instead of
+  moving the page — reported by the owner, caught by no gate. Fixed by making the map a route
+  whose body does not scroll at all (`height: 100%; overflow: hidden`, flex column, map takes
+  what the header and footer do not): `scrollHeight == clientHeight` at 390 px and 1440 px, so
+  there is no page scroll for the map to take. | Wheel capture is a property of the
+  *combination*, not of either part, which is why no page-level check sees it. An embedded map
+  and a scrolling document are mutually exclusive; one of them has to give. Moving the map off
+  the landing page also restored two things it had cost: the landing page is 5 KB again and
+  loads no library, and geometry is once more fetched only on the street-address path.
+- 2026-10-22 | `.app main` (`margin: 0`) | The app shell rendered as a blank 44rem column with
+  two thin slivers. `main` computed to **width 0** while reporting `max-width: none` and
+  `flex: 1 1 auto`: the base rule centres it with `margin: 0 auto`, and an auto inline margin on
+  a column flex item makes it shrink to its content rather than stretch — and its children are
+  all absolutely positioned, so that content is nothing. | `margin: 0 auto` is inert on a block
+  and load-bearing on a flex item. Overriding `max-width` was not enough; the margin had to go
+  too. Found by dumping computed styles, not by reading the CSS, and not by any gate: axe, a11y,
+  console and reflow all passed on a page that rendered almost nothing.
+- 2026-10-22 | `layout.html` (`.caveat.sources`), `.app footer.site` | Hiding the app footer's
+  caveats for height also hid the **sources link**, which lives in one of those paragraphs. The
+  link stayed in the DOM at 0x0 and so could not be focused: the keyboard gate reported "9 of 10
+  elements were reachable" and nothing else noticed. Every page is required to link what it is
+  built from. | The audit's visibility filter checks the element's own computed style, not its
+  ancestors', which is why a child of a `display: none` parent was still counted as focusable.
+  That strictness is a feature here — a looser filter would have passed the page and the missing
+  sources link would have shipped.
+- 2026-10-22 | `_headers` (`connect-src https://tiles.openfreemap.org`) | The basemap needed
+  **one CSP directive and no others.** OpenFreeMap's `liberty` style pulls five kinds of thing
+  from one host — a 43 KB style JSON, vector tiles via `/planet`, raster relief PNGs at low
+  zoom, glyph `.pbf` and sprites — and all five arrive through `fetch`, so `img-src`,
+  `worker-src` and `blob:` were each measured unnecessary. | The instinct with a tile host is
+  to widen `img-src` for the tiles. MapLibre has not fetched raster tiles through `Image()` for
+  some versions, so that instinct buys a directive nobody needs. Four variants, measured, before
+  one line was added.
+- 2026-10-22 | `scripts/console_check.py` (`VENDOR_STYLE_WARNINGS`) | Taking a third party's
+  data put **their defects inside our gates**. Two layers of OpenFreeMap's own style,
+  `highway-shield-non-us` and `highway-shield-us-interstate`, carry a filter whose first operand
+  is null; MapLibre validates, warns, and falls back to false. Nothing here is wrong and nothing
+  here can fix it. Exempted by **layer name**, not by shape, so a third broken layer still fails
+  and someone has to look. | This is the part of a third-party dependency nobody prices. The
+  tiles were the decision; inheriting their style's bugs, and the judgement about which of their
+  warnings to silence, came free with it. A gate that silences a class rather than an instance
+  would have hidden the next one.
+- 2026-10-22 | `product-brief.md` §5, `tests/unit/test_csp.py` | **The "no third party sees a
+  reader's request" promise was withdrawn**, by owner decision, in exchange for a basemap: 51
+  polygons on an empty field read as floating. What a tile host can observe is the sequence of
+  tiles fetched — the area being read and roughly how closely. It cannot see a typed address,
+  which still goes only to the City geocoder. | The promise was traded, not disproved, and the
+  brief says so in those words. The CSP test was rewritten from "exactly one external host" to
+  an explicit two-host allowlist rather than deleted, so a third host is still a decision
+  somebody has to make on purpose instead of a diff nobody reads.
+- 2026-10-22 | `src/showup/assets/map.mjs` (`DROPPED_SOURCE_LAYERS`) | The basemap's roads were
+  competing with the district boundaries drawn over them, so the style is now fetched and its
+  `transportation` (20 road and pier layers) and `transportation_name` (6 road labels and
+  highway shields) source layers are dropped before MapLibre is handed the object. Water,
+  waterways, parks, landuse, buildings, administrative boundaries and place labels survive, and
+  the district boundaries become the strongest linework on the map. | Filtering the style is
+  better than hiding layers after load: nothing paints and then disappears, so there is no
+  flash of roads on a slow connection. It also deleted a silencer — the two null-filter
+  highway-shield layers live in `transportation_name`, so removing roads removed the warnings
+  they emitted, and `VENDOR_STYLE_WARNINGS` went with them. A vendor exemption that becomes
+  unnecessary should be deleted the same day, or it sits there hiding the next thing.
+- 2026-10-22 | `src/showup/assets/map.mjs` (`firstLabelLayerId`) | howfar.nyc's basemap is Esri's
+  Light Gray Canvas, loaded as **two raster layers** — `World_Light_Gray_Base` and
+  `World_Light_Gray_Reference`. The split is the design: the reference layer is drawn above the
+  data, so place names stay readable over an overlay. Copied for the vector style by inserting
+  our district layers *before* the style's first `symbol` layer, which is one argument to
+  `addLayer`. | The thing worth taking from another map is rarely its colours. Labels under a
+  translucent overlay are muddy at any palette, and no amount of style-switching fixes it.
+- 2026-10-22 | the Esri probe, `scripts/serve.py` (`background_server`) | The first attempt to
+  render Esri's tiles failed with `AJAXError: Failed to fetch (0)` and the conclusion drawn was
+  CORS. **Wrong.** Esri sends `Access-Control-Allow-Origin: *`. The probe had patched
+  `site/_headers`, but `background_server` reads the **repo root** `_headers`, so the CSP being
+  enforced was the unpatched one and it blocked the host. | A third party was almost recorded as
+  CORS-broken on the strength of a path mistake in the harness. This is the same lesson as
+  2026-09-23 in a new costume: a feature tested against the wrong headers is not tested, and
+  here the wrong headers were a file one directory away from the right ones. `curl -D -` cost
+  two seconds and settled it.

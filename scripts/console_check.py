@@ -30,6 +30,20 @@ SETTLE_SECONDS = 1.5
 #: Invented by the browser, not referenced by any page; unshipped pending phase-1-scope §7.3.
 BROWSER_PROBES = ("/favicon.ico",)
 
+#: Emitted by the test environment's renderer, not by any page. The gates run Chrome with
+#: `--use-angle=swiftshader` so the map has WebGL2 at all (scripts/cdp.py), and the software
+#: renderer narrates its own performance on a map that draws. A machine with a GPU never
+#: prints these. Matched on the renderer's own prefix and on `source == "rendering"`, so a
+#: real WebGL error — which arrives as `javascript` or as a page exception — still fails.
+SOFTWARE_RENDERER_NOISE = ("GL Driver Message",)
+
+
+def _is_software_renderer_noise(entry: dict[str, Any]) -> bool:
+    text = entry.get("text") or ""
+    return entry.get("source") == "rendering" and any(
+        marker in text for marker in SOFTWARE_RENDERER_NOISE
+    )
+
 
 def _is_complaint_worth_failing_on(entry: dict[str, Any]) -> bool:
     """Console entries worth failing on: errors, and anything the policy refused.
@@ -38,6 +52,8 @@ def _is_complaint_worth_failing_on(entry: dict[str, Any]) -> bool:
     a `security` violation or as a plain network error.
     """
     if entry.get("level") not in {"error", "warning"}:
+        return False
+    if _is_software_renderer_noise(entry):
         return False
     url = entry.get("url") or ""
     return not any(url.endswith(probe) for probe in BROWSER_PROBES)

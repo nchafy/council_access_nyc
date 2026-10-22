@@ -18,7 +18,7 @@ from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
 from showup.model import Committee, District, DistrictBoard, Member, Office
-from showup.render import render_district, render_index
+from showup.render import render_district, render_index, render_listing
 from showup.sources.calendar import parse_calendar, upcoming
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -169,24 +169,54 @@ class TestIndex:
             for code in ("301", "302")
         ]
 
-    def test_lists_every_district(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
+    def _districts(self):
+        return [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
+
+    def test_the_landing_page_is_a_map_button_and_an_address_box(self):
+        """Owner's decision 2026-10-22. The lists moved to `render_listing`."""
         html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
+        )
+        assert 'href="/map/"' in html
+        assert 'id="address-input"' in html
+        assert "<select" not in html
+        assert 'href="/district/1/"' not in html
+
+    def test_the_landing_page_still_reaches_both_lists(self):
+        """R6's location-free path: one link each, rather than 110 of them."""
+        html = render_index(
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
+        )
+        assert 'href="/district/"' in html
+        assert 'href="/board/"' in html
+
+    def test_the_listing_pages_list_every_district(self):
+        html = render_listing(
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
         )
         for n in (1, 25, 51):
             assert f'href="/district/{n}/"' in html
         assert "<select" in html
 
-    def test_offers_both_views(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
-        html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+    def test_the_listing_pages_offer_both_views(self):
+        html = render_listing(
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
         )
         assert 'id="district-select"' in html
         assert 'id="board-select"' in html
         assert 'href="/board/302/"' in html
-        assert "most local unit" in html
 
 
 class TestCrosswalk:
@@ -582,7 +612,7 @@ class TestReferencesPage:
     def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
         # Six of the eight: the two geometry files are not in this fixture's cache.
-        assert page.count("<dt>Fetched</dt>") == 6
+        assert page.count("<dt>Fetched</dt>") == 7
 
     def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
         """Deleting a disclosure paragraph may relocate a citation, never lose one."""

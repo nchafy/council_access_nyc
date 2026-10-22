@@ -13,7 +13,14 @@ from . import templates
 from .deadlines import accommodation_state, written_state
 from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
 
-__all__ = ["render_district", "render_index", "render_not_found", "render_references"]
+__all__ = [
+    "render_district",
+    "render_index",
+    "render_listing",
+    "render_map",
+    "render_not_found",
+    "render_references",
+]
 
 
 def _link(url: str | None, label: str, *, extra: str = "") -> str:
@@ -40,7 +47,11 @@ def render_index(
     built_at: datetime,
     window_end: date | None,
 ) -> str:
-    """The front page: the council district list and the board list, side by side."""
+    """The landing page, and the two index pages, which share this template.
+
+    None of them carries the map: it is a route of its own, so the 449 KB library is paid
+    for only by a reader who asks for it.
+    """
     return templates.render(
         "index.html",
         title="Council districts and community boards",
@@ -123,6 +134,49 @@ def _meeting_card(meeting: Meeting, *, today: date, now: datetime) -> dict:
 def _board_card(board: DistrictBoard) -> str:
     """One community board as it appears on a council district's page."""
     return templates.fragment("board_card", board)
+
+
+def render_listing(
+    districts: list[District],
+    boards: list[DistrictBoard],
+    *,
+    built_at: datetime,
+    window_end: date | None,
+) -> str:
+    """`/district/` and `/board/`: both lists in full, and the two dropdowns.
+
+    Separate from the landing page since 2026-10-22. The landing page is a map button and an
+    address box; these are where the no-JavaScript path actually lives.
+    """
+    return templates.render(
+        "listing.html",
+        title="All council districts and community boards",
+        districts=[
+            {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
+            for d in districts
+        ],
+        boards=[
+            {
+                "code": b.code,
+                "label": b.label,
+                "hood": _short(b.neighborhoods, 44) if b.neighborhoods else None,
+            }
+            for b in boards
+        ],
+        built_at=built_at,
+        window_end=window_end,
+    )
+
+
+def render_map(*, built_at: datetime, window_end: date | None) -> str:
+    """The full-screen map. Its own route because a map inside a scrolling page steals the
+    wheel: the reader scrolls and the map zooms instead. Here nothing scrolls."""
+    return templates.render(
+        "map.html",
+        title="Map of council districts and community boards",
+        built_at=built_at,
+        window_end=window_end,
+    )
 
 
 def render_district(

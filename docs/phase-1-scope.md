@@ -140,7 +140,7 @@ A CI grep fails the build if a geocoder call site omits `private=true`.
 
 - **Open-source dependencies are allowed** (owner, 2026-09-30) and pinned via lockfile; the checklist
   is `docs/dependencies.md`. Two rules survive: no install-time code execution (why Playwright was
-  refused, not why dependencies were), and **no browser dependency** — "zero third parties" is a
+  refused, not why dependencies were), and **no browser dependency** — a two-host CSP allowlist is a
   CSP-enforced promise to readers, not a dependency preference.
 - GitHub Actions pinned to commit SHAs, not tags; `permissions:` least privilege (`contents: read` by
   default).

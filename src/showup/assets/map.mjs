@@ -13,6 +13,17 @@ const container = document.getElementById('map');
 const status = document.getElementById('map-status');
 const toggle = document.getElementById('map-toggle');
 
+// OpenFreeMap, which publishes no SLA, so `FALLBACK_STYLE` is not decoration: when the
+// style request fails the districts must still draw and hit-test (outline §"Failure and
+// staleness behaviour"). Adding this host withdrew the no-third-party promise, recorded as
+// an owner decision in product-brief.md §5.
+const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const FALLBACK_STYLE = {
+  version: 8,
+  sources: {},
+  layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#f6f7f9' } }],
+};
+
 const FILL = '#9db8d2';
 const SELECTED = '#2b5f93';
 const HOVERED = '#7fa0c4';
@@ -39,9 +50,12 @@ const LAYERS = {
     noun: 'council district',
     href: (id) => `/district/${id}/`,
     label: (id) => `Council District ${id}`,
+    // "drawn to equal population" was asserted here and cut 2026-10-22: the criteria are in
+    // City Charter §52 and were never read, so the card states who draws the lines and when,
+    // which nyc.gov/site/districting does say.
     facts: (id) => [
-      ['Boundary', 'One of 51, drawn to equal population'],
       ['District', String(id)],
+      ['Boundaries', 'Set by the NYC Districting Commission, redrawn every 10 years'],
     ],
   },
   board: {
@@ -123,12 +137,7 @@ async function main() {
 
   const map = new MapLibre.Map({
     container,
-    // Our own style with no sources, so nothing is fetched from anyone.
-    style: {
-      version: 8,
-      sources: {},
-      layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#f6f7f9' } }],
-    },
+    style: BASEMAP_STYLE,
     center: [-73.95, 40.7],
     zoom: 9,
     attributionControl: false,
@@ -138,16 +147,27 @@ async function main() {
     touchZoomRotate: false,
   });
 
+  // A style that 404s or times out arrives here, not at `load`, so the fallback is armed
+  // before the first paint rather than after a reader has stared at nothing.
+  let usingFallback = false;
   map.on('error', (event) => {
     const message = (event && event.error && event.error.message) || 'unknown error';
-    say(`The map reported an error (${message}). Everything is listed below.`);
+    if (!usingFallback && /style|sprite|glyph|tiles\.openfreemap/i.test(message)) {
+      usingFallback = true;
+      say('The basemap did not load, so the districts are drawn on their own.');
+      map.setStyle(FALLBACK_STYLE);
+      return;
+    }
+    if (!usingFallback) {
+      say(`The map reported an error (${message}). Everything is listed below.`);
+    }
   });
 
-  map.on('load', () => {
+  const draw = () => {
     for (const name of Object.keys(LAYERS)) addLayer(map, LAYERS[name], geometry[name]);
 
     const bounds = geometryBounds(geometry.council);
-    if (bounds) map.fitBounds(bounds, { padding: 12, animate: false });
+    if (bounds) map.fitBounds(bounds, { padding: 24, animate: false });
 
     const view = new View(map);
     view.show('council');
@@ -155,6 +175,13 @@ async function main() {
     bindZoom(map);
     bindSelection(view);
     bindAddress(view);
+  };
+
+  // `styledata` rather than `load`, because `setStyle` discards every layer we added and
+  // fires it again; `load` fires once and would leave the fallback empty.
+  map.on('styledata', () => {
+    if (map.getSource('council')) return;
+    draw();
   });
 }
 
@@ -178,7 +205,7 @@ function addLayer(map, layer, data) {
         HOVERED,
         FILL,
       ],
-      'fill-opacity': 0.85,
+      'fill-opacity': 0.45,
     },
   });
   map.addLayer({

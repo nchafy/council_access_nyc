@@ -147,17 +147,21 @@ measurement on a reference profile, and the gate's own output says so in those w
 - **Runtime dependencies: jinja2 and beautifulsoup4**, both build-time only — they render
   `site/` and read scraped HTML, and neither reaches a reader
   ([docs/dependencies.md](docs/dependencies.md))
-- **Third parties in the browser: none, and this one is a rule.** No analytics, no tag
-  manager, no hosted fonts, no map tiles — it is a CSP-enforced promise to readers. The
-  map library is vendored and served by us, so it is not a third party either; MapLibre runs
-  behind the unchanged CSP with no directive added.
-  The address you type goes to the NYC geocoder and nowhere else, and never enters a URL,
-  cookie, storage or log
-- **Present since 2026-10-21:** MapLibre GL JS 6.15.0, vendored and served from our own
-  origin — the one dependency that reaches a reader. It loads on the **front page only**,
-  after first paint, so the two index pages that share the same template do not pay its
-  449 KB. **OpenFreeMap tiles are still refused:** a tile request would tell a third party
-  which neighbourhood you are looking at
+- **Third parties in the browser: exactly two, each a recorded decision.** The CSP names
+  `geosearch.planninglabs.nyc` for geocoding an address, and — since 2026-10-22 —
+  `tiles.openfreemap.org` for the basemap. Nothing else: no analytics, no tag manager, no
+  hosted fonts, no CDN-served script. `tests/unit/test_csp.py` holds that to an explicit
+  two-host allowlist, so a third is a decision somebody has to make on purpose.
+  **What changed, and it is a real loss:** the site used to promise that no third party saw
+  a reader's request. It no longer does. A tile host can observe which area is being looked
+  at and roughly how closely. It cannot see a typed address — that still goes only to the
+  City geocoder, and never enters a URL, cookie, storage or log. The trade and the refusal
+  it replaced are written down in [product-brief.md](product-brief.md) §5
+- **MapLibre GL JS 6.15.0**, vendored and served from our own origin, on the `/map/` route
+  only and imported after first paint, so no other page pays its 449 KB. OpenFreeMap
+  publishes **no SLA**, so a failed style request falls back to a self-hosted no-basemap
+  style and the districts still draw and hit-test. Self-hosted tiles remain the intended
+  end state
 - **Planned, not present:**
   Cloudflare Pages for hosting. Both deliberately out of Phase 1
 

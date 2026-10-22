@@ -555,3 +555,28 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   ancestors', which is why a child of a `display: none` parent was still counted as focusable.
   That strictness is a feature here — a looser filter would have passed the page and the missing
   sources link would have shipped.
+- 2026-10-22 | `_headers` (`connect-src https://tiles.openfreemap.org`) | The basemap needed
+  **one CSP directive and no others.** OpenFreeMap's `liberty` style pulls five kinds of thing
+  from one host — a 43 KB style JSON, vector tiles via `/planet`, raster relief PNGs at low
+  zoom, glyph `.pbf` and sprites — and all five arrive through `fetch`, so `img-src`,
+  `worker-src` and `blob:` were each measured unnecessary. | The instinct with a tile host is
+  to widen `img-src` for the tiles. MapLibre has not fetched raster tiles through `Image()` for
+  some versions, so that instinct buys a directive nobody needs. Four variants, measured, before
+  one line was added.
+- 2026-10-22 | `scripts/console_check.py` (`VENDOR_STYLE_WARNINGS`) | Taking a third party's
+  data put **their defects inside our gates**. Two layers of OpenFreeMap's own style,
+  `highway-shield-non-us` and `highway-shield-us-interstate`, carry a filter whose first operand
+  is null; MapLibre validates, warns, and falls back to false. Nothing here is wrong and nothing
+  here can fix it. Exempted by **layer name**, not by shape, so a third broken layer still fails
+  and someone has to look. | This is the part of a third-party dependency nobody prices. The
+  tiles were the decision; inheriting their style's bugs, and the judgement about which of their
+  warnings to silence, came free with it. A gate that silences a class rather than an instance
+  would have hidden the next one.
+- 2026-10-22 | `product-brief.md` §5, `tests/unit/test_csp.py` | **The "no third party sees a
+  reader's request" promise was withdrawn**, by owner decision, in exchange for a basemap: 51
+  polygons on an empty field read as floating. What a tile host can observe is the sequence of
+  tiles fetched — the area being read and roughly how closely. It cannot see a typed address,
+  which still goes only to the City geocoder. | The promise was traded, not disproved, and the
+  brief says so in those words. The CSP test was rewritten from "exactly one external host" to
+  an explicit two-host allowlist rather than deleted, so a third host is still a decision
+  somebody has to make on purpose instead of a diff nobody reads.

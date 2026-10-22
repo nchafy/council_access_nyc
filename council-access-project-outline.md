@@ -39,7 +39,7 @@ Each line is settled. If you want to reopen one, write an ADR that cites new evi
 19. **Organisation-level aggregation only; no individual private resident is ever named in any artifact.** Recorded as an ADR, enforced by a test.
 20. **The grounding line "Visible-text structure is IDENTICAL across them" (the 51 district pages) is WRONG.** Verified variance: `Office Hours` absent on D35 and D51; three phone-label conventions (`Phone: 718-260-9191`, `(718) 984-5151 phone`, `phone 1`/`phone 2`); two email conventions (`District35@council.nyc.gov`, `Morano@council.nyc.gov`); `250 Broadway, 1551` with no "Suite" on D51; committees absent for districts 3, 5, 9, 14, 25, 26. Every field is independently optional.
 21. **`council.nyc.gov`'s `wp-json` is not a substitute for scraping the rendered page.** Its `content.rendered` gives District 1's office as "101 Lafayette St, 9th Floor" while the live page says "65 East Broadway".
-22. **Cloudflare Pages, not GitHub Pages.** CSP with an explicit `connect-src` allowlist is what makes "zero third parties" browser-enforced against a future commit; GitHub Pages has no mechanism to set response headers.
+22. **Cloudflare Pages, not GitHub Pages.** CSP with an explicit `connect-src` allowlist is what makes the two permitted hosts browser-enforced against a future commit; GitHub Pages has no mechanism to set response headers.
 23. **The district is a filter, not the organising key.** Committee hearings are citywide and belong to no district. `/hearing/{id}` and `/committee/{slug}` are first-class destinations; `/district/N` exists, is pre-rendered and linkable, but the primary journey is the citywide "this week" list.
 
 ---

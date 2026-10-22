@@ -13,9 +13,15 @@
 # /manifest.json. Omitting it broke local address resolution and the staleness notice
 # (docs/OBSERVATIONS.md, 2026-09-23). tests/unit/test_csp.py now checks this list
 # against every URL the frontend fetches.
+#
+# tiles.openfreemap.org serves the basemap: the style JSON, the vector tiles, the raster
+# relief, the glyphs and the sprites all arrive through fetch, so connect-src is the only
+# directive it needs — measured 2026-10-22, with img-src, worker-src and blob: each shown
+# unnecessary. Adding it withdrew the "no third party sees a reader's request" promise, which
+# is recorded as an owner decision in product-brief.md §5 rather than implied by this line.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc https://tiles.openfreemap.org; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Strict-Transport-Security: max-age=31536000; includeSubDomains

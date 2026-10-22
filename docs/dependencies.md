@@ -9,7 +9,8 @@ surface, and that is a cost to weigh, not a reason to refuse.
 | Class | Reaches the reader? | Policy |
 |---|---|---|
 | **Build-time** (Jinja, a PDF parser, a geo library) | No | **Allowed.** Meet the checklist below. |
-| **Browser, served by a third party** (a CDN script, an analytics snippet, a hosted font, map tiles) | Yes, and they see the request | **Refused.** |
+| **Browser, served by a third party** (a CDN script, an analytics snippet, a hosted font) | Yes, and they see the request | **Refused.** |
+| **Map tiles from a third party** | Yes — the host sees which area is viewed | **Allowed since 2026-10-22**, for `tiles.openfreemap.org` only, by the owner decision in `product-brief.md` §5. No other third-party fetch is. |
 | **Browser, vendored and served from our origin** (MapLibre) | Yes, but nobody else sees it | **Allowed since 2026-10-21.** Checklist below, plus three extra rules. |
 
 The promise to the reader is that **no third party sees their request**, enforced by the CSP

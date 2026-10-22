@@ -114,7 +114,8 @@ this product has no accounts, so the primary risk is **injection through scraped
 upstream content** — committee names, meeting topics and bill titles are
 third-party text we render. Never `innerHTML`; strip tags at ingest; allowlist
 upstream URLs by host and scheme; `default-src 'none'` CSP with no
-`unsafe-inline`; zero third parties; the typed address goes only to the geocoder
+`unsafe-inline`; exactly two external hosts, each a recorded decision (the geocoder and
+the tile host); the typed address goes only to the geocoder
 with `private=true` and never into a URL, storage or log.
 
 ## The bar for starting work
@@ -207,13 +208,14 @@ get re-argued.
   carries the checklist. Two things still hold: **no install-time code execution**
   (Playwright downloads and runs its own browser build — that, not dependency
   aversion, is why `scripts/cdp.py` exists), and **no browser dependency**, because
-  "zero third parties" is a promise to readers that the CSP enforces.
+  The CSP enforces an explicit two-host allowlist. "Zero third parties" was the promise
+  until 2026-10-22, when a basemap was chosen over it (`product-brief.md` §5).
 - **MapLibre GL JS + OpenFreeMap, self-hosted vendor bundle.** No Google Maps,
   no Mapbox, no analytics, no tag manager, no third-party fonts. The model site
   `spatialequity.nyc` ships gtag and Mapbox; we borrow its metric-registry
   schema and its refusal to composite, and reject its telemetry.
 - **Cloudflare Pages, not GitHub Pages** — only a CSP with an explicit
-  `connect-src` allowlist makes "zero third parties" browser-enforced against a
+  `connect-src` allowlist makes the two-host limit browser-enforced against a
   future commit, and GitHub Pages cannot set response headers.
 - **The typed address never leaves the browser except to the geocoder**, and
   never enters a URL, storage, cookie, or log. Shareable URLs carry

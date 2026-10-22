@@ -126,14 +126,22 @@ want to challenge.
 - **No ranking districts against each other.** A shaded map becomes "my district is worse"
   regardless of the legend. The map therefore fills every district and every board
   identically; the only fill that ever differs is the one the reader selected.
-- **No third-party bytes, still.** Owner decision, 2026-10-21: the map ships **MapLibre GL JS
-  vendored and served from our own origin**. That is a browser dependency, which
-  `docs/dependencies.md` refused outright until now. The policy that changed is "no browser
-  dependency". The promise made to the reader — that no third party sees their request — is
-  unchanged, and `default-src 'none'` still enforces it; MapLibre runs behind the existing CSP
-  with no directive added, measured 2026-10-21. **Third-party map tiles stay refused**, because
-  a tile request discloses which neighbourhood is being looked at. A basemap, if one ever
-  ships, must be self-hosted.
+- ~~**No third-party bytes.**~~ **Withdrawn, deliberately, by owner decision on 2026-10-22.**
+  The map now loads a basemap from **`tiles.openfreemap.org`**, so the site no longer promises
+  that no third party sees a reader's request. What a tile host can observe is the sequence of
+  tiles fetched, which is the area being looked at and roughly how closely — it does not see
+  an address typed into the box, which still goes only to the City geocoder.
+
+  The refusal this replaces was real and is worth restating, because it was given up rather
+  than disproved: a tile request discloses which neighbourhood is being read. It was traded for
+  a map that shows streets and surrounding geography instead of 51 polygons on an empty field.
+
+  What is still refused: **analytics, tag managers, hosted fonts and any CDN-served script.**
+  MapLibre itself stays vendored and self-served. The one CSP directive this needed is
+  `connect-src https://tiles.openfreemap.org`, measured — no `img-src`, no `worker-src`, no
+  `blob:`. OpenFreeMap publishes **no SLA**, so the map falls back to the self-hosted
+  no-basemap style when the style request fails, and the districts still draw and hit-test.
+  Self-hosted tiles remain the intended end state (`outline` §"Self-hosted map tiles").
 - **No contact details we had to infer.** We link the institution or we say nothing.
 - **We do not submit anything on the user's behalf.** We tell them where the form is.
 

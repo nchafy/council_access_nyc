@@ -132,11 +132,19 @@ class TestOnlyTheMapPaysForTheMap:
 
 
 class TestTheMapIsNeverTheOnlyWay:
-    def test_all_51_districts_are_plain_links_beside_the_map(self, site):
-        """R6's location-free path. A WebGL canvas is not a navigation route."""
-        html = (site / "index.html").read_text(encoding="utf-8")
+    def test_the_map_page_links_the_lists_that_need_no_canvas(self, site):
+        """R6's location-free path. A WebGL canvas is not a navigation route, so the map
+        page names the two index pages, which carry all 110 links between them."""
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
+        assert 'href="/district/"' in html
+        assert 'href="/board/"' in html
+
+    def test_the_index_pages_carry_every_district_and_board(self, site):
+        districts = (site / "district" / "index.html").read_text(encoding="utf-8")
+        boards = (site / "board" / "index.html").read_text(encoding="utf-8")
         for number in range(1, DISTRICT_COUNT + 1):
-            assert f'href="/district/{number}/"' in html
+            assert f'href="/district/{number}/"' in districts
+        assert boards.count('href="/board/') >= BOARD_COUNT
 
     def test_the_status_line_says_what_is_needed_before_any_script_runs(self, site):
         """Rendered into the document, so a reader with no JavaScript still reads it."""
@@ -157,10 +165,14 @@ class TestTheMapIsNeverTheOnlyWay:
 
 
 class TestTheMapRefusesToRank:
-    def test_the_page_says_districts_are_not_ranked(self, site):
-        """product-brief.md §5: a shaded map reads as a ranking whatever the legend says."""
-        html = (site / "index.html").read_text(encoding="utf-8")
-        assert "scored or ranked" in html
+    def test_nothing_on_the_map_page_claims_a_ranking(self, site):
+        """product-brief.md §5 forbids ranking districts against each other. The copy that
+        said so was cut under voice.md class 4 — the uniform fill *is* the claim — so what
+        is asserted here is the absence of ranking language. The fill itself is checked by
+        `test_the_fill_does_not_vary_by_any_datum` below."""
+        html = (site / "map" / "index.html").read_text(encoding="utf-8").lower()
+        for word in ("rank", "score", "worst", "best"):
+            assert word not in html, f"the map page uses ranking language: {word!r}"
 
     def test_the_fill_does_not_vary_by_any_datum(self):
         """One fill for every district, and one more only for what the reader selected."""

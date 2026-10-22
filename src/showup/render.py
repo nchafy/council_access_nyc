@@ -16,6 +16,7 @@ from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, 
 __all__ = [
     "render_district",
     "render_index",
+    "render_listing",
     "render_map",
     "render_not_found",
     "render_references",
@@ -133,6 +134,38 @@ def _meeting_card(meeting: Meeting, *, today: date, now: datetime) -> dict:
 def _board_card(board: DistrictBoard) -> str:
     """One community board as it appears on a council district's page."""
     return templates.fragment("board_card", board)
+
+
+def render_listing(
+    districts: list[District],
+    boards: list[DistrictBoard],
+    *,
+    built_at: datetime,
+    window_end: date | None,
+) -> str:
+    """`/district/` and `/board/`: both lists in full, and the two dropdowns.
+
+    Separate from the landing page since 2026-10-22. The landing page is a map button and an
+    address box; these are where the no-JavaScript path actually lives.
+    """
+    return templates.render(
+        "listing.html",
+        title="All council districts and community boards",
+        districts=[
+            {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
+            for d in districts
+        ],
+        boards=[
+            {
+                "code": b.code,
+                "label": b.label,
+                "hood": _short(b.neighborhoods, 44) if b.neighborhoods else None,
+            }
+            for b in boards
+        ],
+        built_at=built_at,
+        window_end=window_end,
+    )
 
 
 def render_map(*, built_at: datetime, window_end: date | None) -> str:

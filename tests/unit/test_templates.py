@@ -23,6 +23,7 @@ TEMPLATES = {
     "district.html",
     "index.html",
     "layout.html",
+    "listing.html",
     "macros.html",
     "map.html",
     "not_found.html",

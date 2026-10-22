@@ -338,15 +338,22 @@ def audit_tree(page: Session, path: str) -> list[Check]:
 def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
     """R39: all procedural content must work with JavaScript disabled.
 
-    Turned off in the browser rather than inferred from the markup, on the front page,
-    where the link lists are the real no-JavaScript path.
+    Turned off in the browser rather than inferred from the markup. The full lists moved off
+    the landing page on 2026-10-22 — it is a map button and an address box now — so the
+    counts are taken on the two index pages, which is where the no-JavaScript path lives.
+    The landing page is still where the address box must stay hidden without a script.
     """
     page = browser.page()
     page.call("Emulation.setScriptExecutionDisabled", value=True)
     try:
-        page.navigate(base + "/")
+        page.navigate(base + "/district/")
         districts = page.evaluate("document.querySelectorAll('a[href^=\"/district/\"]').length")
+        page.navigate(base + "/board/")
         boards = page.evaluate("document.querySelectorAll('a[href^=\"/board/\"]').length")
+        page.navigate(base + "/")
+        reachable = page.evaluate(
+            'document.querySelectorAll(\'a[href="/district/"], a[href="/board/"]\').length'
+        )
         address_hidden = page.evaluate(
             "!!document.getElementById('address-section')"
             " && document.getElementById('address-section').hasAttribute('hidden')"
@@ -362,6 +369,12 @@ def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
             f"all {DISTRICT_COUNT} districts are reachable as plain links",
             districts >= DISTRICT_COUNT,
             f"only {districts} district links without JavaScript",
+        ),
+        Check(
+            "/",
+            "both index pages are reachable from the landing page without JavaScript",
+            reachable >= 2,
+            f"only {reachable} of the two index links are on the landing page",
         ),
         Check(
             "/",

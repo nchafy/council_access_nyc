@@ -15,6 +15,7 @@ const toggle = document.getElementById('map-toggle');
 
 const FILL = '#9db8d2';
 const SELECTED = '#2b5f93';
+const HOVERED = '#7fa0c4';
 const LINE = '#31506f';
 
 const BOROUGHS = {
@@ -167,7 +168,16 @@ function addLayer(map, layer, data) {
     source: layer.source,
     layout: { visibility: 'none' },
     paint: {
-      'fill-color': ['case', ['boolean', ['feature-state', 'selected'], false], SELECTED, FILL],
+      // Three states, most specific first: a selected polygon stays selected while the
+      // pointer is over it, so hovering cannot hide what was chosen.
+      'fill-color': [
+        'case',
+        ['boolean', ['feature-state', 'selected'], false],
+        SELECTED,
+        ['boolean', ['feature-state', 'hovered'], false],
+        HOVERED,
+        FILL,
+      ],
       'fill-opacity': 0.85,
     },
   });
@@ -273,17 +283,34 @@ function bindZoom(map) {
 
 function bindSelection(view) {
   for (const name of Object.keys(LAYERS)) {
-    const fill = `${LAYERS[name].source}-fill`;
-    view.map.on('mousemove', fill, () => {
+    const layer = LAYERS[name];
+    const fill = `${layer.source}-fill`;
+    let hovered = null;
+
+    const setHover = (id) => {
+      if (hovered === id) return;
+      if (hovered !== null) {
+        view.map.setFeatureState({ source: layer.source, id: hovered }, { hovered: false });
+      }
+      hovered = id;
+      if (id !== null) {
+        view.map.setFeatureState({ source: layer.source, id }, { hovered: true });
+      }
+    };
+
+    view.map.on('mousemove', fill, (event) => {
       view.map.getCanvas().style.cursor = 'pointer';
+      const feature = event.features && event.features[0];
+      if (feature) setHover(feature.id ?? feature.properties[layer.key]);
     });
     view.map.on('mouseleave', fill, () => {
       view.map.getCanvas().style.cursor = '';
+      setHover(null);
     });
     view.map.on('click', fill, (event) => {
       const feature = event.features && event.features[0];
       if (!feature) return;
-      const id = feature.id ?? feature.properties[LAYERS[name].key];
+      const id = feature.id ?? feature.properties[layer.key];
       if (id !== undefined && id !== null) view.select(String(id));
     });
   }

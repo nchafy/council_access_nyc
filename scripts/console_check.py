@@ -30,10 +30,12 @@ SETTLE_SECONDS = 1.5
 #: Invented by the browser, not referenced by any page; unshipped pending phase-1-scope §7.3.
 BROWSER_PROBES = ("/favicon.ico",)
 
-#: Defects in OpenFreeMap's own `liberty` style, not in anything here: both layers carry a
-#: filter whose first operand is null, so MapLibre validates, warns and falls back to false.
-#: Named individually rather than matched by shape, so a third broken layer still fails the
-#: gate and someone has to look at it. Re-check on a style change; the fix belongs upstream.
+#: Defects in OpenFreeMap's own styles, not in anything here: both layers carry a filter whose
+#: first operand is null, so MapLibre validates, warns and falls back to false. Present in
+#: positron, liberty and bright; absent from dark and fiord, which ship no highway shields —
+#: checked 2026-10-22, so this is doing work rather than sitting inert. Named individually
+#: rather than matched by shape, so a third broken layer still fails and someone has to look.
+#: The fix belongs upstream.
 VENDOR_STYLE_WARNINGS = (
     "layers[highway-shield-non-us].filter[1]",
     "layers[highway-shield-us-interstate].filter[1]",

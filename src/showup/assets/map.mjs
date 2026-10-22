@@ -17,7 +17,9 @@ const toggle = document.getElementById('map-toggle');
 // style request fails the districts must still draw and hit-test (outline §"Failure and
 // staleness behaviour"). Adding this host withdrew the no-third-party promise, recorded as
 // an owner decision in product-brief.md §5.
-const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+//: Overridden by `data-basemap` on the container, which is where the choice actually
+//: lives; this is the fallback if the attribute is missing.
+const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';
 const FALLBACK_STYLE = {
   version: 8,
   sources: {},
@@ -137,7 +139,7 @@ async function main() {
 
   const map = new MapLibre.Map({
     container,
-    style: BASEMAP_STYLE,
+    style: container.dataset.basemap || BASEMAP_STYLE,
     center: [-73.95, 40.7],
     zoom: 9,
     attributionControl: false,

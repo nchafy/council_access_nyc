@@ -9,7 +9,13 @@
 {% block body %}
 <h1 class="visually-hidden">Map of council districts and community boards</h1>
 
-<div id="map" class="map"></div>
+<!-- The basemap style, here rather than in the module so changing it is a one-line diff.
+     OpenFreeMap publishes liberty, bright, positron, dark and fiord. positron is the
+     desaturated one: the districts and their selection read on top of it, which they do
+     not on liberty's orange highways or fiord's navy. Screenshots of each are in
+     screenshots/style-*.png. -->
+<div id="map" class="map"
+     data-basemap="https://tiles.openfreemap.org/styles/positron"></div>
 
 <!-- Cards float on the map. Each is hidden until it has something to say, so the map is
      never covered by an empty box. -->

@@ -10,7 +10,7 @@ surface, and that is a cost to weigh, not a reason to refuse.
 |---|---|---|
 | **Build-time** (Jinja, a PDF parser, a geo library) | No | **Allowed.** Meet the checklist below. |
 | **Browser, served by a third party** (a CDN script, an analytics snippet, a hosted font) | Yes, and they see the request | **Refused.** |
-| **Map tiles from a third party** | Yes — the host sees which area is viewed | **Allowed since 2026-10-22**, for `tiles.openfreemap.org` only, by the owner decision in `product-brief.md` §5. No other third-party fetch is. |
+| **Map tiles from a third party** | Yes — the host sees which area is viewed | **Allowed since 2026-10-22**, for `tiles.openfreemap.org` only, by the owner decision in `product-brief.md` §5. No other third-party fetch is. `esri-light-gray` is wired but not reachable: adding `server.arcgisonline.com` to the CSP is a second, separate decision, and the licensing of Esri's keyless endpoints for this use is unconfirmed. |
 | **Browser, vendored and served from our origin** (MapLibre) | Yes, but nobody else sees it | **Allowed since 2026-10-21.** Checklist below, plus three extra rules. |
 
 The promise to the reader is that **no third party sees their request**, enforced by the CSP

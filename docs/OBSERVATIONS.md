@@ -591,3 +591,19 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   highway-shield layers live in `transportation_name`, so removing roads removed the warnings
   they emitted, and `VENDOR_STYLE_WARNINGS` went with them. A vendor exemption that becomes
   unnecessary should be deleted the same day, or it sits there hiding the next thing.
+- 2026-10-22 | `src/showup/assets/map.mjs` (`firstLabelLayerId`) | howfar.nyc's basemap is Esri's
+  Light Gray Canvas, loaded as **two raster layers** — `World_Light_Gray_Base` and
+  `World_Light_Gray_Reference`. The split is the design: the reference layer is drawn above the
+  data, so place names stay readable over an overlay. Copied for the vector style by inserting
+  our district layers *before* the style's first `symbol` layer, which is one argument to
+  `addLayer`. | The thing worth taking from another map is rarely its colours. Labels under a
+  translucent overlay are muddy at any palette, and no amount of style-switching fixes it.
+- 2026-10-22 | the Esri probe, `scripts/serve.py` (`background_server`) | The first attempt to
+  render Esri's tiles failed with `AJAXError: Failed to fetch (0)` and the conclusion drawn was
+  CORS. **Wrong.** Esri sends `Access-Control-Allow-Origin: *`. The probe had patched
+  `site/_headers`, but `background_server` reads the **repo root** `_headers`, so the CSP being
+  enforced was the unpatched one and it blocked the host. | A third party was almost recorded as
+  CORS-broken on the strength of a path mistake in the harness. This is the same lesson as
+  2026-09-23 in a new costume: a feature tested against the wrong headers is not tested, and
+  here the wrong headers were a file one directory away from the right ones. `curl -D -` cost
+  two seconds and settled it.

@@ -20,6 +20,38 @@ const toggle = document.getElementById('map-toggle');
 //: Overridden by `data-basemap` on the container, which is where the choice actually
 //: lives; this is the fallback if the attribute is missing.
 const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';
+
+//: Esri's Light Gray Canvas, as howfar.nyc uses it: a raster base plus a separate label
+//: layer, which is why its labels sit above an overlay. Selected with
+//: `data-basemap="esri-light-gray"`.
+//:
+//: NOT the default, and the reason is licensing rather than looks. `server.arcgisonline.com`
+//: is Esri's commercial ArcGIS Online service. The keyless endpoints are widely used — they
+//: ship as a Leaflet provider preset — but Esri's terms govern ArcGIS Online basemaps and
+//: generally contemplate an account for application use. Nobody here has confirmed this use
+//: is licensed. Attribution to Esri is required and is set on the source below.
+const ESRI_TILE = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
+const ESRI_LIGHT_GRAY = {
+  version: 8,
+  sources: {
+    'esri-base': {
+      type: 'raster',
+      tiles: [`${ESRI_TILE}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`],
+      tileSize: 256,
+      attribution: 'Tiles &copy; Esri — Esri, DeLorme, NAVTEQ',
+    },
+    'esri-reference': {
+      type: 'raster',
+      tiles: [`${ESRI_TILE}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`],
+      tileSize: 256,
+    },
+  },
+  // The reference layer is added after the districts in `draw`, so labels stay on top.
+  layers: [{ id: 'esri-base', type: 'raster', source: 'esri-base' }],
+};
+
+//: Styles this module knows by name rather than by URL.
+const NAMED_STYLES = { 'esri-light-gray': ESRI_LIGHT_GRAY };
 //: Source layers dropped from the basemap before MapLibre ever sees it. Roads at the same
 //: visual weight as a district boundary mean neither reads, and the point of a basemap under
 //: a data overlay is to recede. `transportation` is the 20 road and pier layers;
@@ -112,8 +144,21 @@ function afterFirstPaint() {
   });
 }
 
+/** The id of the basemap's first label layer, or undefined if it has none.
+ *
+ * Our district layers are inserted before it, so place and water names draw *on top of*
+ * the overlay instead of under it. This is the trick Esri's Light Gray Canvas gets by
+ * shipping its labels as a second tile layer; with a vector style it is one argument.
+ */
+function firstLabelLayerId(style) {
+  const label = (style.layers || []).find((layer) => layer.type === 'symbol');
+  return label && label.id;
+}
+
 /** The basemap style with its road layers removed, or null if it could not be had. */
 async function loadBasemapStyle(url) {
+  // A named style is ours already; there is nothing to fetch and no roads to strip.
+  if (NAMED_STYLES[url]) return NAMED_STYLES[url];
   try {
     const style = await fetchJson(url);
     const kept = (style.layers || []).filter(
@@ -194,7 +239,15 @@ async function main() {
   });
 
   const draw = () => {
-    for (const name of Object.keys(LAYERS)) addLayer(map, LAYERS[name], geometry[name]);
+    const beforeId = basemap ? firstLabelLayerId(map.getStyle()) : undefined;
+    for (const name of Object.keys(LAYERS)) {
+      addLayer(map, LAYERS[name], geometry[name], beforeId);
+    }
+    // Esri ships its labels as their own tile layer, so they go on last to sit above the
+    // districts. A vector style needs no equivalent: `beforeId` above does the same job.
+    if (map.getSource('esri-reference') && !map.getLayer('esri-reference')) {
+      map.addLayer({ id: 'esri-reference', type: 'raster', source: 'esri-reference' });
+    }
 
     const bounds = geometryBounds(geometry.council);
     if (bounds) map.fitBounds(bounds, { padding: 24, animate: false });
@@ -215,7 +268,7 @@ async function main() {
   });
 }
 
-function addLayer(map, layer, data) {
+function addLayer(map, layer, data, beforeId) {
   // promoteId is what makes setFeatureState addressable: these features carry no id of
   // their own, only the one key property.
   map.addSource(layer.source, { type: 'geojson', data, promoteId: layer.key });
@@ -237,14 +290,14 @@ function addLayer(map, layer, data) {
       ],
       'fill-opacity': 0.45,
     },
-  });
+  }, beforeId);
   map.addLayer({
     id: `${layer.source}-line`,
     type: 'line',
     source: layer.source,
     layout: { visibility: 'none' },
     paint: { 'line-color': LINE, 'line-width': 0.8 },
-  });
+  }, beforeId);
 }
 
 /** Which layer is showing, and which feature in it is selected. */

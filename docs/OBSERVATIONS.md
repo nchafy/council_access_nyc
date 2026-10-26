@@ -607,3 +607,29 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   2026-09-23 in a new costume: a feature tested against the wrong headers is not tested, and
   here the wrong headers were a file one directory away from the right ones. `curl -D -` cost
   two seconds and settled it.
+- 2026-10-26 | `_headers`, `src/showup/assets/map.mjs` (`esri-light-gray` now the default) |
+  The basemap moved from OpenFreeMap positron to **Esri's Light Gray Canvas**, by owner
+  preference: clearer park colours and labelling at lower zoom. `tiles.openfreemap.org` left
+  the CSP as `server.arcgisonline.com` entered it, so the two-host count is unchanged. The
+  licensing caveat stands and was accepted knowingly: these are keyless endpoints on a
+  commercial Esri service and nobody here has confirmed they are licensed for this use.
+  Attribution is set on the source. | The CSP allowlist earned its keep — swapping one tile
+  host for another touched `_headers` and `tests/unit/test_csp.py`, so the change was visible
+  in the diff instead of being a URL edit in a JS file.
+- 2026-10-26 | `src/showup/assets/map.mjs` (`fill-opacity` by state) | The overlay was washing
+  out the basemap that had just been added for its parks and water: at 0.45 flat, the thing
+  underneath stopped reading. The resting fill is now **0.12**, with hover at 0.35 and
+  selection at 0.55, and the boundary line went 0.8 → 1.1 px to carry the identification on
+  its own. | A district is identified by its boundary, not its tint. Two requests — "give me a
+  real basemap" and "the underlying map is not clear" — were the same note twice: the overlay
+  was the problem both times, not the tiles.
+- 2026-10-26 | `src/showup/assets/map.mjs` (`PAN_MARGIN_DEG`, `MAX_ZOOM`, `setMinZoom`) | The
+  zoom and pan are now bounded, as the MTA map does it. The floor is **computed per viewport**
+  — whatever zoom `fitBounds` lands on becomes `minZoom`, so the city can never be zoomed out
+  into a speck — and the pan box is the geometry's own bounds plus 0.12°. Order matters:
+  `fitBounds`, then `setMinZoom`, then `setMaxBounds`, because MapLibre re-checks bounds
+  against the current zoom. Verified by driving the controls: 10 zoom-outs leave the view
+  pixel-identical, 5 zoom-ins past the ceiling change nothing, and 14 eastward drags settle on
+  one unchanging frame. | A fixed `minZoom` constant would have been wrong at every viewport
+  but one. Deriving it from the fit is what makes "as far out as the whole city, and no
+  further" true on a phone and on a desktop.

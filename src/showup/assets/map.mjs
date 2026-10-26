@@ -66,6 +66,17 @@ const FALLBACK_STYLE = {
   layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#f6f7f9' } }],
 };
 
+//: How far outside the city the view may travel, in degrees. The pan box is the district
+//: geometry's own bounds plus this, so there is always some context at the edges without the
+//: city ever becoming a speck in an ocean of grey.
+const PAN_MARGIN_DEG = 0.12;
+
+//: The zoom window. The floor is computed per viewport — whatever zoom fits the whole city is
+//: as far out as the map goes, so it can never be zoomed out to a continent. The ceiling is
+//: fixed: past this the basemap has no more detail to give and the district boundary, which is
+//: simplified to 2.2 m, starts to look like a decision rather than a coastline.
+const MAX_ZOOM = 15;
+
 const FILL = '#9db8d2';
 const SELECTED = '#2b5f93';
 const HOVERED = '#7fa0c4';
@@ -215,6 +226,7 @@ async function main() {
     style: basemap || FALLBACK_STYLE,
     center: [-73.95, 40.7],
     zoom: 9,
+    maxZoom: MAX_ZOOM,
     attributionControl: false,
     // The boundaries are the content; tilting or spinning them helps nobody read one.
     pitchWithRotate: false,
@@ -250,7 +262,17 @@ async function main() {
     }
 
     const bounds = geometryBounds(geometry.council);
-    if (bounds) map.fitBounds(bounds, { padding: 24, animate: false });
+    if (bounds) {
+      map.fitBounds(bounds, { padding: 24, animate: false });
+      // Order matters. fitBounds first, so the zoom it lands on is "the whole city at this
+      // viewport"; that becomes the floor. Then the pan box, which MapLibre re-checks against
+      // the current zoom, so it has to come after.
+      map.setMinZoom(map.getZoom());
+      map.setMaxBounds([
+        [bounds[0][0] - PAN_MARGIN_DEG, bounds[0][1] - PAN_MARGIN_DEG],
+        [bounds[1][0] + PAN_MARGIN_DEG, bounds[1][1] + PAN_MARGIN_DEG],
+      ]);
+    }
 
     const view = new View(map);
     view.show('council');
@@ -288,7 +310,18 @@ function addLayer(map, layer, data, beforeId) {
         HOVERED,
         FILL,
       ],
-      'fill-opacity': 0.45,
+      // The resting fill is deliberately almost transparent. A district is identified by
+      // its boundary, not by its tint, and at 0.45 the overlay washed the basemap out —
+      // parks and water stopped reading, which was the whole reason for having a basemap.
+      // Hover and selection earn the opacity instead.
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'selected'], false],
+        0.55,
+        ['boolean', ['feature-state', 'hovered'], false],
+        0.35,
+        0.12,
+      ],
     },
   }, beforeId);
   map.addLayer({
@@ -296,7 +329,7 @@ function addLayer(map, layer, data, beforeId) {
     type: 'line',
     source: layer.source,
     layout: { visibility: 'none' },
-    paint: { 'line-color': LINE, 'line-width': 0.8 },
+    paint: { 'line-color': LINE, 'line-width': 1.1 },
   }, beforeId);
 }
 

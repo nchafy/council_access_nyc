@@ -19,6 +19,7 @@ from perf import budget, gzipped_size
 from showup.build import VENDOR_FILES, BuildError, build_site
 from showup.fetch import cache_path
 from showup.model import BOARD_COUNT, DISTRICT_COUNT
+from showup.render import PREVIEW_REQUESTS, preview_payload
 from showup.sources.boards import JOINT_INTEREST_AREAS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -160,8 +161,83 @@ class TestTheMapIsNeverTheOnlyWay:
         """A click that moved the page would make the toggle useless for comparing two
         boundaries, so selection highlights and reveals this card instead."""
         html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert 'id="map-card" hidden' in html
+        # Matched per attribute rather than as one string: they are on the same tag but not
+        # adjacent, and an earlier version of this assertion broke when one was inserted
+        # between them.
+        assert 'id="map-card"' in html
+        assert "hidden" in html
         assert 'id="map-selection"' in html
+        assert 'id="map-card-close"' in html
+
+
+class TestThePreviewArtifact:
+    """`/data/preview.json`: the headline facts the detail panel shows on selection."""
+
+    @pytest.fixture
+    def preview(self, site):
+        return json.loads((site / "data" / "preview.json").read_text(encoding="utf-8"))
+
+    def test_it_covers_every_district_and_board(self, preview):
+        assert len(preview["districts"]) == DISTRICT_COUNT
+        assert len(preview["boards"]) == BOARD_COUNT
+
+    def test_the_next_meeting_is_citywide_not_per_district(self, preview):
+        """Council and committee meetings belong to no district, which is why the district is
+        a filter in this project and never the organising key. One meeting, at the top."""
+        assert "next_meeting" in preview
+        for entry in preview["districts"].values():
+            assert "next_meeting" not in entry
+
+    def test_it_carries_an_as_of(self, preview):
+        """The panel summarises pages that hold the per-fact provenance, so it states when it
+        was built and links onward rather than repeating a source line per field."""
+        assert preview["as_of"]
+
+    def test_a_district_entry_has_what_the_panel_shows(self, preview):
+        entry = preview["districts"]["1"]
+        assert set(entry) == {"member", "committees", "boards"}
+
+    def test_committee_roles_travel_with_the_name(self, preview):
+        """Chair and member are different facts about the same person."""
+        roles = [c for entry in preview["districts"].values() for c in entry["committees"]]
+        assert roles, "no district in the fixture has a committee assignment"
+        for committee in roles:
+            assert set(committee) == {"name", "role"}
+
+    def test_boards_are_ordered_by_how_much_of_the_district_they_cover(self, preview):
+        for entry in preview["districts"].values():
+            shares = [b["share"] for b in entry["boards"]]
+            assert shares == sorted(shares, reverse=True)
+
+    def test_the_budget_preview_is_thinner_than_the_page(self, preview):
+        """Explanations and agency responses are on the board page, not here: carrying them
+        took this artifact to 41 KB gzipped for text the panel never shows."""
+        for entry in preview["boards"].values():
+            budget = entry["budget"]
+            if budget is None:
+                continue
+            assert len(budget["requests"]) <= PREVIEW_REQUESTS
+            for request in budget["requests"]:
+                assert set(request) == {"title", "priority"}
+
+    def test_no_officer_name_reaches_the_preview(self, preview):
+        """Chairs and district managers are never published; the office is."""
+        blob = json.dumps(preview["boards"])
+        for field in ("chair", "district_manager", "manager"):
+            assert field not in blob
+
+    def test_a_short_preview_fails_the_build(self, tmp_path, raw_dir_session, monkeypatch):
+        """A preview missing a district would leave the panel silently empty for it."""
+        import showup.build as build_module
+
+        def short(*args, **kwargs):
+            payload = preview_payload(*args, **kwargs)
+            payload["districts"].pop("1")
+            return payload
+
+        monkeypatch.setattr(build_module, "preview_payload", short)
+        with pytest.raises(BuildError, match="preview covers"):
+            build_site(raw_dir_session, tmp_path / "out", today=date(2026, 9, 22))
 
 
 class TestTheMapRefusesToRank:

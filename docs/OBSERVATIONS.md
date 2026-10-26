@@ -686,3 +686,22 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   Community Board 2" rather than a derived label. | The names were one fetch away the whole
   time, and the derived `Community Board 2, Brooklyn` was worse than the City's own string.
   Worth asking what the build already ships before adding anything.
+- 2026-10-26 | `data/preview.json`, `render.preview_payload` | Selecting a polygon now opens a
+  split view with the page's headline facts, which needed a build-time artifact: the member,
+  committees, cadence, office and filed budget requests existed only inside the rendered HTML.
+  First cut carried each request's explanation and the agency response and came to **41 KB
+  gzipped**; cut to the ask and its priority it is **8.1 KB**, and the board page still has the
+  rest. `next_meeting` is top-level and not per district, because Council and committee
+  meetings are citywide and belong to no district — the same reason the district is a filter in
+  this project and never the organising key. | A preview is a different artifact from a page,
+  not a copy of one. Shipping the page's fields verbatim cost five times the bytes for text no
+  panel renders.
+- 2026-10-26 | `scripts/reflow_check.py` (`_settled_measurement`) | The reflow gate began
+  failing inside `make browser` while passing standalone and twice in isolation: a 3 px widened
+  viewport, on **a different board page each run** — `/board/304/` then `/board/306/`.
+  `Page.loadEventFired` is not the end of layout, and under the full suite (several Chromes,
+  one throttled to a quarter speed) a pending style recalc was caught mid-flight. Now it reads
+  until two consecutive measurements agree, as the a11y audit already did. | "Different page
+  each run" is the tell for a race; a data defect picks the same page every time. This is the
+  second gate in this repo to need a settle, and both were written measuring once because a
+  single read is obviously enough right up until the suite gets heavier.

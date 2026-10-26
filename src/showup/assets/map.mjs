@@ -97,6 +97,10 @@ const LINE = '#31506f';
 //: draws; `names.district` is keyed by number, `names.board` by `boro_cd`.
 const names = { district: new Map(), board: new Map() };
 
+//: Headline facts for the detail panel, from /data/preview.json. Null until it
+//: arrives, and null forever if it does not — the panel then shows what it has.
+let preview = null;
+
 function indexNames(lookup) {
   for (const d of lookup.districts || []) names.district.set(String(d.n), d);
   for (const b of lookup.boards || []) names.board.set(String(b.code), b);
@@ -126,11 +130,36 @@ const LAYERS = {
     // "drawn to equal population" was asserted here and cut 2026-10-22: the criteria are in
     // City Charter §52 and were never read, so the card states who draws the lines and when,
     // which nyc.gov/site/districting does say.
-    facts: (id) => {
+    sections: (id) => {
       const hoods = (names.district.get(String(id)) || {}).hoods;
+      const d = (preview && preview.districts && preview.districts[String(id)]) || {};
+      const meeting = preview && preview.next_meeting;
+      const member = d.member;
       return [
-        ...(hoods ? [['Neighbourhoods', hoods]] : []),
-        ['Boundaries', 'Set by the NYC Districting Commission, redrawn every 10 years'],
+        ['Neighbourhoods', hoods ? [hoods] : []],
+        [
+          'Council Member',
+          member
+            ? [member.seat_status === 'filled' ? member.name : `${member.name} — seat ${member.seat_status}`]
+            : ['No current member is on record for this seat.'],
+        ],
+        // Citywide, and labelled as such: Council and committee meetings belong to no
+        // district, so presenting this as "this district's meeting" would be a lie.
+        [
+          'Next Council meeting (citywide)',
+          meeting
+            ? [
+                meeting.committee,
+                [meeting.day, meeting.start_time, meeting.mode].filter(Boolean).join(' · '),
+                meeting.venue_name,
+              ].filter(Boolean)
+            : [],
+        ],
+        ['Committees', (d.committees || []).slice(0, 5).map((c) => `${c.name} — ${c.role}`)],
+        [
+          'Community boards here',
+          (d.boards || []).map((b) => `${b.label} — ${Math.round(b.share * 100)}% of this district`),
+        ],
       ];
     },
   },
@@ -146,11 +175,28 @@ const LAYERS = {
     label: (id) =>
       (names.board.get(String(id)) || {}).label ||
       `Community Board ${Number(String(id).slice(1))}, ${boroughOf(id)}`,
-    facts: (id) => {
+    sections: (id) => {
       const hoods = (names.board.get(String(id)) || {}).hoods;
+      const b = (preview && preview.boards && preview.boards[String(id)]) || {};
+      const budget = b.budget;
       return [
-        ...(hoods ? [['Neighbourhoods', hoods]] : []),
-        ['Borough', boroughOf(id)],
+        ['Neighbourhoods', hoods ? [hoods] : []],
+        // Quoted as the City's dataset records it. Boards publish their own schedules and
+        // the two have been observed to differ, so this is not presented as a calendar.
+        ['Meets', b.cadence ? [b.cadence] : ['No City dataset records this board\'s cadence.']],
+        ['Board office', [b.address, b.phone].filter(Boolean)],
+        [
+          budget
+            ? `Fiscal ${budget.fiscal_year} budget requests — ${budget.total} filed`
+            : 'Budget requests',
+          budget
+            // The register codes priority as "01"; the leading zero is padding in the
+            // source, not a rank anyone wrote.
+            ? budget.requests.map(
+                (r) => `${r.priority ? Number(r.priority) + '. ' : ''}${r.title}`
+              )
+            : ['No register edition is held for this board.'],
+        ],
       ];
     },
   },
@@ -236,18 +282,21 @@ async function main() {
   let geometry;
   let basemap;
   try {
-    const [library, council, board, style, lookup] = await Promise.all([
+    const [library, council, board, style, lookup, facts] = await Promise.all([
       import('/vendor/maplibre-gl.mjs'),
       fetchJson(LAYERS.council.url),
       fetchJson(LAYERS.board.url),
       loadBasemapStyle(container.dataset.basemap || BASEMAP_STYLE),
-      // Names are a nicety, so a failure here must not cost the map.
+      // Names and the panel's facts are both niceties: a failure in either must not cost
+      // the map, which still draws, hit-tests and links through to the full page.
       fetchJson('/data/lookup.json').catch(() => null),
+      fetchJson('/data/preview.json').catch(() => null),
     ]);
     MapLibre = library;
     geometry = { council, board };
     basemap = style;
     if (lookup) indexNames(lookup);
+    preview = facts;
   } catch (error) {
     // Named, not swallowed: a reader who sees nothing should be told whose fault it is.
     say(`The map could not load (${error.message}). Everything is listed below.`);
@@ -321,6 +370,7 @@ async function main() {
     const view = new View(map);
     view.show('council');
     bindToggle(view);
+    bindClose(view);
     bindZoom(map);
     bindSelection(view);
     bindAddress(view);
@@ -409,8 +459,13 @@ class View {
       );
     }
     this.selected = null;
+
     const card = document.getElementById('map-card');
     if (card) card.hidden = true;
+    // Only resize when the split actually collapses, or every clear costs a reflow.
+    const wasSplit = document.body.classList.contains('has-selection');
+    document.body.classList.remove('has-selection');
+    if (wasSplit) this.map.resize();
   }
 
   select(id) {
@@ -421,29 +476,64 @@ class View {
     say(`${this.layer.label(id)} selected.`);
   }
 
-  /** The selection card: what was selected, and the one link that opens it. */
+  /** The detail panel: headline facts for whatever was selected, then a link onward. */
   fillCard(id) {
     const card = document.getElementById('map-card');
     const title = document.getElementById('map-card-title');
-    const facts = document.getElementById('map-card-facts');
+    const body = document.getElementById('map-card-body');
     const link = document.getElementById('map-selection');
-    if (!card || !title || !facts || !link) return;
+    const asOf = document.getElementById('map-card-asof');
+    if (!card || !title || !body || !link) return;
 
     title.textContent = this.layer.label(id);
-    // Built with DOM calls and textContent, never innerHTML: these values are ours, but
-    // the rule in CLAUDE.md is that nothing reaches the page as markup.
-    facts.replaceChildren();
-    for (const [term, value] of this.layer.facts(id)) {
-      const dt = document.createElement('dt');
-      dt.textContent = term;
-      const dd = document.createElement('dd');
-      dd.textContent = value;
-      facts.append(dt, dd);
+    // Built with DOM calls and textContent, never innerHTML: these values are ours, but the
+    // rule in CLAUDE.md is that nothing reaches the page as markup.
+    body.replaceChildren();
+    for (const [heading, rows] of this.layer.sections(id)) {
+      if (!rows.length) continue;
+      body.append(section(heading, rows));
     }
-    link.textContent = `Open ${this.layer.label(id)}`;
+    link.textContent = `More details — ${this.layer.label(id)}`;
     link.href = this.layer.href(id);
+    if (asOf && preview && preview.as_of) {
+      // Stated once for the panel rather than per field; the page carries the per-fact
+      // provenance, which is what the link above is for.
+      asOf.textContent = `Summary of ${this.layer.href(id)}, built ${formatAsOf(preview.as_of)}.`;
+    }
     card.hidden = false;
+    document.body.classList.add('has-selection');
+    // MapLibre does not watch its container: without this the canvas keeps the full-width
+    // size and the city sits off-centre behind the panel.
+    this.map.resize();
   }
+}
+
+/** One labelled block of lines in the panel. */
+function section(heading, lines) {
+  const wrap = document.createElement('section');
+  const h = document.createElement('h3');
+  h.textContent = heading;
+  wrap.append(h);
+  const ul = document.createElement('ul');
+  for (const line of lines) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    ul.append(li);
+  }
+  wrap.append(ul);
+  return wrap;
+}
+
+function formatAsOf(iso) {
+  const when = new Date(iso);
+  return Number.isNaN(when.getTime()) ? iso : when.toLocaleDateString();
+}
+
+/** The panel's close button puts the map back to full width. */
+function bindClose(view) {
+  const close = document.getElementById('map-card-close');
+  if (!close) return;
+  close.addEventListener('click', () => view.clear());
 }
 
 function bindToggle(view) {

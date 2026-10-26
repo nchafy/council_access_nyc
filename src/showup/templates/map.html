@@ -68,13 +68,22 @@
     </p>
   </div>
 
-  <!-- What is selected. Revealed by the module, so it never shows an empty heading. -->
-  <div class="card card-selection" id="map-card" hidden>
-    <h2 id="map-card-title"></h2>
-    <dl id="map-card-facts"></dl>
-    <a id="map-selection" class="map-selection" href="/"></a>
-  </div>
 </div>
+
+<!-- The detail panel. A sibling of the cards, not one of them, because when something is
+     selected it docks beside the map and the map gives up the width — a floating card cannot
+     do that. Revealed by the module, so it never shows an empty heading. -->
+<aside class="detail" id="map-card" aria-labelledby="map-card-title" hidden>
+  <div class="detail-head">
+    <h2 id="map-card-title"></h2>
+    <button type="button" id="map-card-close" class="detail-close" aria-label="Close details">
+      ×
+    </button>
+  </div>
+  <div id="map-card-body"></div>
+  <a id="map-selection" class="map-selection" href="/"></a>
+  <p class="detail-asof" id="map-card-asof"></p>
+</aside>
 {% endblock %}
 {% block extra_script %}<script src="/assets/address.js" defer></script>
 <script type="module" src="/assets/map.mjs"></script>{% endblock %}

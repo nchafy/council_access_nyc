@@ -151,8 +151,79 @@ html:has(body.app) {
 .card .card-search button { min-height: 44px; font: inherit; padding: 0 .9rem; }
 .card-selection[hidden] { display: none; }
 
+/* The detail panel. On a phone it is a bottom sheet over the lower half of the map; once
+   there is room it docks to the right and the map gives up the width — `.has-selection` on
+   the body is what moves the map, so the no-selection state stays a full-bleed map. */
+.detail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 62%;
+  overflow-y: auto;
+  z-index: 2;
+  padding: .85rem 1rem 1.1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--rule);
+  box-shadow: 0 -2px 8px rgb(16 25 40 / 10%);
+}
+.detail[hidden] { display: none; }
+.detail-head { display: flex; align-items: flex-start; gap: .5rem; }
+.detail-head h2 { margin: 0; font-size: 1.05rem; flex: 1 1 auto; }
+.detail-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.detail h3 {
+  margin: .9rem 0 .2rem;
+  font-size: .78rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.detail ul { margin: 0; padding-left: 1.1rem; }
+.detail li { margin: .1rem 0; }
+.detail-asof { margin: .9rem 0 0; font-size: .8rem; color: var(--muted); }
+
+@media (min-width: 52rem) {
+  .detail {
+    top: 0;
+    left: auto;
+    width: 25rem;
+    max-height: none;
+    border-top: 0;
+    border-left: 1px solid var(--rule);
+    box-shadow: -2px 0 8px rgb(16 25 40 / 8%);
+  }
+}
+body.has-selection .map { right: 0; }
+@media (min-width: 52rem) {
+  body.has-selection .map { right: 25rem; }
+  body.has-selection .cards { right: 25rem; }
+}
+
 .map-status { color: var(--muted); font-size: .88rem; margin: .5rem 0 0; }
 .map-selection:not([hidden]) { display: inline-block; margin: .2rem 0 0; font-weight: 600; }
+/* Pinned to the foot of the panel: it is the one thing the panel exists to offer, and a
+   long committee list otherwise pushes it below the fold. */
+.detail .map-selection {
+  position: sticky;
+  bottom: 0;
+  display: block;
+  margin: 1rem 0 0;
+  padding: .6rem 0 .2rem;
+  background: var(--bg);
+  box-shadow: 0 -6px 8px -6px rgb(16 25 40 / 18%);
+}
 
 /* The layer toggle. Two buttons rather than a select: both states are one press away, and
    `aria-pressed` tells a screen reader which is on without a label of its own.

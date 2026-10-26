@@ -14,6 +14,7 @@ from .deadlines import accommodation_state, written_state
 from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
 
 __all__ = [
+    "preview_payload",
     "render_district",
     "render_index",
     "render_listing",
@@ -166,6 +167,94 @@ def render_listing(
         built_at=built_at,
         window_end=window_end,
     )
+
+
+#: How many filed requests the panel lists before sending the reader to the page.
+PREVIEW_REQUESTS = 3
+
+
+def _preview_budget(asked: BoardBudgetRequests | None) -> dict | None:
+    """The register in headline form: the ask and its priority, nothing more.
+
+    Deliberately thinner than `_budget`. Carrying each request's explanation and the agency
+    response as well took `preview.json` to 41 KB gzipped for text the panel never shows; the
+    board page already has all of it.
+    """
+    if asked is None or not asked.requests:
+        return None
+    return {
+        "fiscal_year": asked.fiscal_year,
+        "published": asked.publication.strftime("%-d %B %Y"),
+        "total": len(asked.requests),
+        "requests": [
+            {
+                "title": request.request or "The register does not describe this request",
+                "priority": request.priority,
+            }
+            for request in asked.requests[:PREVIEW_REQUESTS]
+        ],
+    }
+
+
+def preview_payload(
+    districts: list[District],
+    boards: list[DistrictBoard],
+    meetings: list[Meeting],
+    budget_requests: dict[str, BoardBudgetRequests],
+    *,
+    built_at: datetime,
+    today: date | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """The headline facts the map's detail panel shows, one artifact for both layers.
+
+    Summaries only. Everything here is on the page the panel links to, which is where the
+    provenance lives, so the panel states `as_of` once and sends the reader on rather than
+    repeating a source line per field.
+
+    `next_meeting` is top-level and not per district on purpose: Council and committee
+    meetings are citywide and belong to no district, which is the whole reason the district
+    is a filter in this project and never the organising key.
+    """
+    day = today or date.today()
+    moment = now or datetime.now()
+    upcoming = _meeting_card(meetings[0], today=day, now=moment) if meetings else None
+
+    return {
+        "as_of": built_at.isoformat(timespec="seconds"),
+        "next_meeting": upcoming,
+        "districts": {
+            str(d.number): {
+                "member": None
+                if d.member is None
+                else {"name": d.member.name, "seat_status": d.member.seat_status},
+                # Chair and member are different facts, so the role travels with the name.
+                "committees": [
+                    {"name": c.name, "role": c.role}
+                    for c in (getattr(d.member, "committees", ()) or ())
+                ],
+                # Ordered by how much of the district each board covers, which is how the
+                # district page orders them too.
+                "boards": [
+                    {"code": b.code, "label": b.label, "share": b.share}
+                    for b in sorted(d.boards or (), key=lambda b: -b.share)
+                ],
+            }
+            for d in districts
+        },
+        "boards": {
+            b.code: {
+                "label": b.label,
+                # Quoted verbatim: the City's dataset and the boards' own sites have been
+                # observed to disagree, so this is not reworded into a schedule.
+                "cadence": b.board_meeting,
+                "phone": b.phone,
+                "address": b.address,
+                "budget": _preview_budget(budget_requests.get(b.code)),
+            }
+            for b in boards
+        },
+    }
 
 
 def render_map(*, built_at: datetime, window_end: date | None) -> str:

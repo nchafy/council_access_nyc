@@ -17,6 +17,7 @@ from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
 from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
 from .render import (
+    preview_payload,
     render_board,
     render_district,
     render_index,
@@ -339,6 +340,26 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         raise BuildError(
             f"board geometry has {len(board_polygons)} features, expected {BOARD_COUNT}"
         )
+    # The map's detail panel. Summaries of what the two page types say, so selecting a
+    # polygon can answer without a page load; the panel links through for the rest.
+    preview = preview_payload(
+        districts,
+        sorted(boards_by_code.values(), key=lambda b: b.code),
+        ahead,
+        budget_requests,
+        built_at=now,
+        today=day,
+        now=now,
+    )
+    if len(preview["districts"]) != DISTRICT_COUNT or len(preview["boards"]) != BOARD_COUNT:
+        raise BuildError(
+            f"preview covers {len(preview['districts'])} districts and "
+            f"{len(preview['boards'])} boards, expected {DISTRICT_COUNT} and {BOARD_COUNT}"
+        )
+    (data_dir / "preview.json").write_text(
+        json.dumps(preview, separators=(",", ":")), encoding="utf-8"
+    )
+
     (data_dir / "boards.geo.json").write_text(
         json.dumps(to_geojson(board_polygons, "boro_cd"), separators=(",", ":")),
         encoding="utf-8",

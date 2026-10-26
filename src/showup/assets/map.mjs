@@ -60,6 +60,21 @@ const NAMED_STYLES = { 'esri-light-gray': ESRI_LIGHT_GRAY };
 //: to know where you are without competing with the thing being shown.
 const DROPPED_SOURCE_LAYERS = new Set(['transportation', 'transportation_name']);
 
+//: Paint overrides applied to the basemap style after the roads come out. positron paints
+//: parks `rgb(230,233,229)` on a `rgb(242,243,240)` background — a 12/255 difference, which
+//: is why green space does not read on it at all. Greened here instead of switching to a
+//: raster basemap, because raster labels blur on a 2x display and vector ones do not.
+const PAINT_OVERRIDES = {
+  park: { 'fill-color': '#d4e5ca' },
+  landcover_wood: {
+    'fill-color': '#c8dcbd',
+    // Woods faded in between zoom 8 and 12, so they appeared only once well zoomed in.
+    'fill-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.55, 10, 0.9],
+  },
+  landcover_glacier: { 'fill-color': '#eef2f5' },
+  water: { 'fill-color': '#b6c4cc' },
+};
+
 const FALLBACK_STYLE = {
   version: 8,
   sources: {},
@@ -172,9 +187,13 @@ async function loadBasemapStyle(url) {
   if (NAMED_STYLES[url]) return NAMED_STYLES[url];
   try {
     const style = await fetchJson(url);
-    const kept = (style.layers || []).filter(
-      (layer) => !DROPPED_SOURCE_LAYERS.has(layer['source-layer'])
-    );
+    const kept = (style.layers || [])
+      .filter((layer) => !DROPPED_SOURCE_LAYERS.has(layer['source-layer']))
+      .map((layer) =>
+        PAINT_OVERRIDES[layer.id]
+          ? { ...layer, paint: { ...layer.paint, ...PAINT_OVERRIDES[layer.id] } }
+          : layer
+      );
     // Filtered here rather than hidden after load, so the roads never paint at all and
     // there is no flash of them on a slow connection.
     return { ...style, layers: kept };

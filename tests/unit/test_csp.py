@@ -76,7 +76,7 @@ class TestConnectSrc:
     #: deliberate decision, which is what this list exists to force.
     ALLOWED_ORIGINS = (
         "https://geosearch.planninglabs.nyc",
-        "https://server.arcgisonline.com",
+        "https://tiles.openfreemap.org",
     )
 
     def test_connect_src_names_exactly_the_decided_hosts(self):

@@ -633,3 +633,31 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   one unchanging frame. | A fixed `minZoom` constant would have been wrong at every viewport
   but one. Deriving it from the fit is what makes "as far out as the whole city, and no
   further" true on a phone and on a desktop.
+- 2026-10-26 | `src/showup/assets/map.mjs` (`PAINT_OVERRIDES`), basemap back to positron |
+  **Raster tiles blur on a 2x display and vector ones do not.** Esri's Light Gray Canvas is a
+  256 px bitmap set with no retina variant, so its labels upscale and soften; MapLibre
+  rasterises a vector style at the device ratio. The basemap returned to OpenFreeMap positron
+  and the two things Esri was chosen for were taken by overriding its paint instead: positron
+  paints parks `rgb(230,233,229)` against a `rgb(242,243,240)` background — **12/255 apart**,
+  which is why green space did not read — and faded woodland in only between zoom 8 and 12. |
+  "Which tile set" was the wrong question twice over. The park problem was a 12/255 colour
+  difference and the blur was raster-vs-vector; neither needed a different provider, and one of
+  them could not be fixed by choosing one.
+- 2026-10-26 | `etl/raw/districts.geojson` vs `site/data/districts.geo.json`, district 35 |
+  A district boundary that visibly cuts across the street grid at zoom 15 was reported as the
+  overlay not matching the basemap. Four hypotheses, three refuted by measurement: our
+  simplification deviates **2.6 m at worst** with **0 of 259 raw vertices more than 10 m off**;
+  the line sits in the **identical** position on Esri raster and OpenFreeMap vector tiles, so it
+  is not tile registration; and `872g-cjhh` is DCP version **26b, updated 2026-05-26**, so it is
+  not a stale vintage. What is left is that the City's own published line runs mid-block there.
+  | Raising `MAX_ZOOM` to 15 is what made this visible — the geometry is resolution-grade and
+  was never meant to be read at 3.6 m/px. The useful discipline was refusing to "fix" it before
+  measuring: the obvious story, that our own simplification had cut the corner off a staircase,
+  was wrong by a factor of twenty.
+- 2026-10-26 | `tests/integration/test_map_route.py` (`_district_paint`) | The choropleth guard
+  grepped the whole module for `interpolate`, `step` and `match`, and fired on an `interpolate`
+  added to the **basemap's** woodland opacity — a zoom ramp on somebody else's layer, shading
+  nothing of ours. Now scoped to the district layers' own paint block, and joined by a check
+  that the fill reads `feature-state` and never `get`. | A guard that cannot distinguish our
+  paint from a vendor's is a guard that will be edited away the first time it cries wolf.
+  Scoping it cost four lines and made it able to state what it actually forbids.

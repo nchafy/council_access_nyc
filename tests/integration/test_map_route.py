@@ -174,13 +174,31 @@ class TestTheMapRefusesToRank:
         for word in ("rank", "score", "worst", "best"):
             assert word not in html, f"the map page uses ranking language: {word!r}"
 
-    def test_the_fill_does_not_vary_by_any_datum(self):
-        """One fill for every district, and one more only for what the reader selected."""
+    #: The district layers' own paint block is the only place the choropleth ban applies.
+    #: Scoped deliberately: this guard used to grep the whole module, and fired on an
+    #: `interpolate` added to the *basemap's* woodland opacity, which shades nothing of ours.
+
+    def _district_paint(self) -> str:
         source = (REPO_ROOT / "src" / "showup" / "assets" / "map.mjs").read_text(encoding="utf-8")
-        assert "'fill-color'" in source
-        # A data-driven fill would need one of these against a property.
+        start = source.index("id: `${layer.source}-fill`")
+        end = source.index("id: `${layer.source}-line`")
+        return source[start:end]
+
+    def test_the_district_fill_has_no_data_driven_ramp(self):
+        """One fill for every district, and two more only for hover and selection."""
+        paint = self._district_paint()
+        assert "'fill-color'" in paint
         for ramp in ("interpolate", "step", "match"):
-            assert f"'{ramp}'" not in source, f"a {ramp} fill expression shades by value"
+            assert f"'{ramp}'" not in paint, f"a {ramp} expression shades districts by value"
+
+    def test_the_district_fill_reads_no_feature_property(self):
+        """`feature-state` is hover and selection, which the reader caused. `get` would be a
+        datum about the district itself, which is what product-brief.md §5 forbids."""
+        paint = self._district_paint()
+        assert "feature-state" in paint
+        assert "['get'" not in paint and '["get"' not in paint, (
+            "the district fill reads a feature property; that is a choropleth"
+        )
 
     def test_the_geometry_it_draws_is_the_one_already_shipped(self, site):
         """No separate display artifact: the council layer reuses the resolution file the

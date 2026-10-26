@@ -178,19 +178,31 @@ html:has(body.app) {
   font-weight: 600;
 }
 
-.map-zoom:not([hidden]) { display: flex; gap: .4rem; margin: .6rem 0 0; }
+/* Floated bottom-left over the canvas. Stacked rather than side by side, which is what
+   every map control does, so the pair reads as one object. */
+.map-zoom:not([hidden]) {
+  position: absolute;
+  left: .75rem;
+  bottom: .75rem;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
 .map-zoom-button {
+  /* 44px square: a target a thumb can hit, and well past the 24px SC 2.5.8 minimum. */
+  width: 44px;
+  height: 44px;
   font: inherit;
-  font-size: .92rem;
+  font-size: 1.35rem;
+  line-height: 1;
   color: var(--ink);
   background: var(--bg);
   border: 1px solid var(--rule);
-  border-radius: 3px;
-  /* 44px tall: a target a thumb can hit, and past the 24px SC 2.5.8 minimum. */
-  min-height: 44px;
-  padding: 0 .9rem;
   cursor: pointer;
 }
+.map-zoom-button:first-child { border-radius: 4px 4px 0 0; }
+.map-zoom-button:last-child { border-radius: 0 0 4px 4px; }
 
 /* MapLibre puts `tabindex="0"` on its canvas, so a keyboard user lands on the map and can
    pan it with the arrow keys. Without this they land on it and see nothing. The offset is

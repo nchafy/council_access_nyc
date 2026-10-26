@@ -81,11 +81,6 @@ const FALLBACK_STYLE = {
   layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#f6f7f9' } }],
 };
 
-//: How far outside the city the view may travel, in degrees. The pan box is the district
-//: geometry's own bounds plus this, so there is always some context at the edges without the
-//: city ever becoming a speck in an ocean of grey.
-const PAN_MARGIN_DEG = 0.12;
-
 //: The zoom window. The floor is computed per viewport — whatever zoom fits the whole city is
 //: as far out as the map goes, so it can never be zoomed out to a continent. The ceiling is
 //: fixed: past this the basemap has no more detail to give and the district boundary, which is
@@ -96,6 +91,16 @@ const FILL = '#9db8d2';
 const SELECTED = '#2b5f93';
 const HOVERED = '#7fa0c4';
 const LINE = '#31506f';
+
+//: Neighbourhood names and the City's own board labels, from the lookup the address box
+//: already fetches — 5.7 KB gzipped, so reusing it costs nothing. Populated before the map
+//: draws; `names.district` is keyed by number, `names.board` by `boro_cd`.
+const names = { district: new Map(), board: new Map() };
+
+function indexNames(lookup) {
+  for (const d of lookup.districts || []) names.district.set(String(d.n), d);
+  for (const b of lookup.boards || []) names.board.set(String(b.code), b);
+}
 
 const BOROUGHS = {
   1: 'Manhattan',
@@ -121,10 +126,13 @@ const LAYERS = {
     // "drawn to equal population" was asserted here and cut 2026-10-22: the criteria are in
     // City Charter §52 and were never read, so the card states who draws the lines and when,
     // which nyc.gov/site/districting does say.
-    facts: (id) => [
-      ['District', String(id)],
-      ['Boundaries', 'Set by the NYC Districting Commission, redrawn every 10 years'],
-    ],
+    facts: (id) => {
+      const hoods = (names.district.get(String(id)) || {}).hoods;
+      return [
+        ...(hoods ? [['Neighbourhoods', hoods]] : []),
+        ['Boundaries', 'Set by the NYC Districting Commission, redrawn every 10 years'],
+      ];
+    },
   },
   board: {
     url: '/data/boards.geo.json',
@@ -132,14 +140,19 @@ const LAYERS = {
     source: 'board',
     noun: 'community board',
     href: (id) => `/board/${id}/`,
-    // `302` is Brooklyn's board 2: the first digit is the borough, the rest the board,
-    // and the leading zero is padding rather than part of the number.
-    label: (id) => `Community Board ${Number(String(id).slice(1))}, ${boroughOf(id)}`,
-    facts: (id) => [
-      ['Borough', boroughOf(id)],
-      ['Board', String(Number(String(id).slice(1)))],
-      ['Code', String(id)],
-    ],
+    // The City's own label where the lookup has one ("Manhattan Community Board 1"), and the
+    // derived form only as a fallback. `302` is Brooklyn's board 2: the first digit is the
+    // borough, the rest the board, and the leading zero is padding, not part of the number.
+    label: (id) =>
+      (names.board.get(String(id)) || {}).label ||
+      `Community Board ${Number(String(id).slice(1))}, ${boroughOf(id)}`,
+    facts: (id) => {
+      const hoods = (names.board.get(String(id)) || {}).hoods;
+      return [
+        ...(hoods ? [['Neighbourhoods', hoods]] : []),
+        ['Borough', boroughOf(id)],
+      ];
+    },
   },
 };
 
@@ -223,15 +236,18 @@ async function main() {
   let geometry;
   let basemap;
   try {
-    const [library, council, board, style] = await Promise.all([
+    const [library, council, board, style, lookup] = await Promise.all([
       import('/vendor/maplibre-gl.mjs'),
       fetchJson(LAYERS.council.url),
       fetchJson(LAYERS.board.url),
       loadBasemapStyle(container.dataset.basemap || BASEMAP_STYLE),
+      // Names are a nicety, so a failure here must not cost the map.
+      fetchJson('/data/lookup.json').catch(() => null),
     ]);
     MapLibre = library;
     geometry = { council, board };
     basemap = style;
+    if (lookup) indexNames(lookup);
   } catch (error) {
     // Named, not swallowed: a reader who sees nothing should be told whose fault it is.
     say(`The map could not load (${error.message}). Everything is listed below.`);
@@ -286,11 +302,20 @@ async function main() {
       // Order matters. fitBounds first, so the zoom it lands on is "the whole city at this
       // viewport"; that becomes the floor. Then the pan box, which MapLibre re-checks against
       // the current zoom, so it has to come after.
-      map.setMinZoom(map.getZoom());
-      map.setMaxBounds([
-        [bounds[0][0] - PAN_MARGIN_DEG, bounds[0][1] - PAN_MARGIN_DEG],
-        [bounds[1][0] + PAN_MARGIN_DEG, bounds[1][1] + PAN_MARGIN_DEG],
-      ]);
+      // The pan box is the *visible* extent at this zoom, not the geometry's bounds: those
+      // are narrower than a laptop viewport, and MapLibre only constrains the centre, so the
+      // leftover slack let the city be dragged up and down at full zoom out.
+      //
+      // Order is load-bearing and was wrong once. `setMaxBounds` re-constrains and can nudge
+      // the zoom, so reading the zoom before it settles leaves a step of slack — the view
+      // drifted once and then locked. Set the box, let it settle, then take the zoom that
+      // results as the floor.
+      map.setMaxBounds(map.getBounds());
+      map.once('idle', () => {
+        map.setMaxBounds(map.getBounds());
+        map.setMinZoom(map.getZoom());
+        lockPanAtMinZoom(map);
+      });
     }
 
     const view = new View(map);
@@ -431,6 +456,27 @@ function bindToggle(view) {
     });
   }
   toggle.hidden = false;
+}
+
+/** Drag is off at full zoom out, and on as soon as the reader zooms in.
+ *
+ * `maxBounds` alone was not enough: MapLibre constrains the *centre*, and its tolerance left
+ * one step of movement before pinning — the whole city slid up or down once on a laptop,
+ * which is the thing being complained about. Disabling the handler is deterministic, and it
+ * is honest about the state: at full zoom out the city is already entirely in frame, so there
+ * is nowhere to pan to.
+ */
+function lockPanAtMinZoom(map) {
+  const apply = () => {
+    // A hair of tolerance, because zoom is a float and minZoom is whatever fitBounds left.
+    if (map.getZoom() <= map.getMinZoom() + 0.01) {
+      map.dragPan.disable();
+    } else {
+      map.dragPan.enable();
+    }
+  };
+  map.on('zoomend', apply);
+  apply();
 }
 
 function bindZoom(map) {

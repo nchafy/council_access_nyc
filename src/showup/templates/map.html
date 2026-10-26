@@ -25,6 +25,14 @@
 <div id="map" class="map"
      data-basemap="https://tiles.openfreemap.org/styles/positron"></div>
 
+<!-- Bottom-left over the canvas, not in a card: a map control belongs on the map. The
+     visible glyph is a symbol, so each button carries an aria-label — "+" is not a name.
+     `−` is U+2212 MINUS SIGN, not a hyphen, so it matches the plus optically. -->
+<div class="map-zoom" hidden id="map-zoom">
+  <button type="button" id="map-zoom-in" class="map-zoom-button" aria-label="Zoom in">+</button>
+  <button type="button" id="map-zoom-out" class="map-zoom-button" aria-label="Zoom out">−</button>
+</div>
+
 <!-- Cards float on the map. Each is hidden until it has something to say, so the map is
      never covered by an empty box. -->
 <div class="cards">
@@ -58,10 +66,6 @@
       <a href="/district/">All 51 districts</a> and <a href="/board/">all 59 boards</a> are
       listed without it.
     </p>
-    <div class="map-zoom" hidden id="map-zoom">
-      <button type="button" id="map-zoom-in" class="map-zoom-button">Zoom in</button>
-      <button type="button" id="map-zoom-out" class="map-zoom-button">Zoom out</button>
-    </div>
   </div>
 
   <!-- What is selected. Revealed by the module, so it never shows an empty heading. -->

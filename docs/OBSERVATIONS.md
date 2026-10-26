@@ -661,3 +661,28 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   that the fill reads `feature-state` and never `get`. | A guard that cannot distinguish our
   paint from a vendor's is a guard that will be edited away the first time it cries wolf.
   Scoping it cost four lines and made it able to state what it actually forbids.
+- 2026-10-26 | `src/showup/assets/map.mjs` (`lockPanAtMinZoom`) | At full zoom out on a laptop
+  the whole city could still be dragged up and down. `maxBounds` does not prevent it: MapLibre
+  constrains the **centre**, and setting the box to the rendered extent still left a step of
+  tolerance — two attempts at tightening it (taking `getBounds()` after `fitBounds`, then again
+  after an `idle`) both still moved. `dragPan.disable()` below `minZoom + 0.01`, re-enabled on
+  `zoomend`, is deterministic. Measured: centre unchanged at `[-73.97779, 40.70616]` after four
+  downward drags, and 40.70616 → 40.83590 after the same drag two zoom steps in. | At full zoom
+  out the city is already entirely in frame, so there is nothing to pan to and nothing lost by
+  turning the handler off. Chasing a geometric fix for two rounds was the wrong instinct when
+  the honest statement was "panning is meaningless here".
+- 2026-10-26 | the drift test itself | Three rounds of "still drifting" were **the test being
+  wrong**, not the fix. The drag moves the cursor across districts, which sets the hover state,
+  which repaints a polygon — so the screenshot hash changed while the map had not moved at all.
+  The control that settled it: three screenshots with no interaction, which were byte-identical,
+  and then reading `map.getCenter()` instead of hashing pixels. | A pixel hash is a proxy for
+  "did the view move" and this feature has a second thing that changes pixels. Measure the
+  quantity, not a photograph of it — and when a fix appears not to work three times, suspect the
+  instrument.
+- 2026-10-26 | `data/lookup.json`, reused by the map | Both layers already had neighbourhood
+  names and the City's own board labels, shipped for the address box at **5.7 KB gzipped**:
+  `districts[].hoods`, `boards[].label` and `boards[].hoods`. The map cards now read "Council
+  District 35 — Fort Greene, Clinton Hill, Prospect Heights, Crown Heights" and "Brooklyn
+  Community Board 2" rather than a derived label. | The names were one fetch away the whole
+  time, and the derived `Community Board 2, Brooklyn` was worse than the City's own string.
+  Worth asking what the build already ships before adding anything.

@@ -58,26 +58,6 @@ const NAMED_STYLES = { 'esri-light-gray': ESRI_LIGHT_GRAY };
 //: `transportation_name` is the 6 road labels and highway shields. What survives is water,
 //: waterways, parks, landuse, buildings, administrative boundaries and place labels — enough
 //: to know where you are without competing with the thing being shown.
-//: The panel's participatory-budgeting rows. Each names its cycle and carries its own
-//: link, because a district takes part cycle by cycle rather than permanently.
-function pbRows(flags) {
-  const meta = (preview && preview.pb) || null;
-  if (!flags || !meta) return [];
-  const rows = [
-    flags.open
-      ? 'Current cycle — named in the Council\'s idea map.'
-      : 'Current cycle — not named in the Council\'s idea map.',
-  ];
-  if (flags.open) rows.push(['Idea map', meta.open_cycle_url]);
-  if (meta.cycle) {
-    rows.push(
-      `${meta.cycle} results — ${flags.past ? 'named' : 'not named'}.`,
-      [`${meta.cycle} results release`, meta.results_url],
-    );
-  }
-  return rows;
-}
-
 const DROPPED_SOURCE_LAYERS = new Set(['transportation', 'transportation_name']);
 
 //: Road layers kept despite their source layer being dropped. An early-2000s satnav screen is
@@ -165,6 +145,14 @@ let preview = null;
 //: The district geometry's own bounds, kept so `refit` can be called again on resize.
 let cityBounds = null;
 
+//: Per-feature bounding boxes, so selecting one district frames that district instead of
+//: refitting the whole city. Built once, when the geometry arrives.
+const featureBounds = { council: new Map(), board: new Map() };
+
+//: Street level for a geocoded address, matching what the reader asked for: a located
+//: point, not a dot on a city-wide map. Capped by MAX_ZOOM, which is the tile ceiling.
+const ADDRESS_ZOOM = 15;
+
 //: The MapLibre module, kept so the pin can be built after load.
 let library = null;
 
@@ -208,30 +196,18 @@ const LAYERS = {
       const member = d.member;
       return [
         ['Neighbourhoods', hoods ? [hoods] : []],
+        // One value, so lines rather than a table. A seat status that is not "filled" gets
+        // its own line instead of being hung off the name with a dash.
         [
           'Council Member',
           member
-            ? [member.seat_status === 'filled' ? member.name : `${member.name} — seat ${member.seat_status}`]
+            ? [member.name, ...(member.seat_status === 'filled' ? [] : [`Seat recorded as ${member.seat_status}.`])]
             : ['No current member is on record for this seat.'],
         ],
-        // Participatory budgeting, from the two sources that name districts: the Council's
-        // idea map for the cycle open now, and the newest results release. Stated per
-        // cycle, never as a standing property — 24 districts are in the open cycle and 22
-        // were named in FY2027, and only 21 are in both.
-        [
-          'Participatory budgeting',
-          pbRows(d.pb),
-          ((preview && preview.pb) || {}).programme_url,
-        ],
-        [
-          'Committees',
-          (d.committees || []).slice(0, 5).map((c) => `${c.name} — ${c.role}`),
-          COMMITTEES_INDEX,
-        ],
-        [
-          'Community boards',
-          (d.boards || []).map((b) => shareRow(b.label, `/board/${b.code}/`, b.share)),
-        ],
+        // Participatory budgeting, committees and the covering boards, exactly as the
+        // district page renders them: the columns and rows are declared once, in
+        // `render.district_tables`, and arrive here already shaped.
+        ...(d.tables || []).map((spec) => [spec.legend, spec, spec.href]),
       ];
     },
   },
@@ -250,31 +226,15 @@ const LAYERS = {
     sections: (id) => {
       const hoods = (names.board.get(String(id)) || {}).hoods;
       const b = (preview && preview.boards && preview.boards[String(id)]) || {};
-      const budget = b.budget;
       return [
         ['Neighbourhoods', hoods ? [hoods] : []],
         // Quoted as the City's dataset records it. Boards publish their own schedules and
         // the two have been observed to differ, so this is not presented as a calendar.
         ['Meets', b.cadence ? [b.cadence] : ['No City dataset records this board\'s cadence.']],
         ['Board office', [b.address, b.phone].filter(Boolean)],
-        // A fixed heading: it used to carry the fiscal year and the filed count, which made
-        // it read differently every edition. Those are facts about the data and belong in
-        // the lines, not in the label.
-        //
-        // The priority number is gone from the lines too. It is the rank *within a budget
-        // category*, so it repeats — three requests all showed as "1." — and a bare number
-        // reads as a ranking the board never filed. The category carries the meaning.
-        [
-          'Budget requests',
-          budget
-            ? [
-                `Fiscal ${budget.fiscal_year}: ${budget.total} filed, the first few below.`,
-                ...budget.requests.map((r) =>
-                  r.category ? `${r.title} (${r.category.toLowerCase()})` : r.title
-                ),
-              ]
-            : ['No register edition is held for this board.'],
-        ],
+        // The covering council districts and the budget register headline, from the same
+        // specs the board page renders.
+        ...(b.tables || []).map((spec) => [spec.legend, spec, spec.href]),
       ];
     },
   },
@@ -432,6 +392,11 @@ async function main() {
       map.addLayer({ id: 'esri-reference', type: 'raster', source: 'esri-reference' });
     }
 
+    // `LAYERS`, `geometry` and `featureBounds` are all keyed by source name, so one key
+    // walks all three.
+    for (const name of Object.keys(LAYERS)) {
+      indexBounds(LAYERS[name].source, LAYERS[name].key, geometry[name]);
+    }
     cityBounds = geometryBounds(geometry.council);
     const bounds = cityBounds;
     if (bounds) {
@@ -496,13 +461,21 @@ function addLayer(map, layer, data, beforeId) {
       // its boundary, not by its tint, and at 0.45 the overlay washed the basemap out —
       // parks and water stopped reading, which was the whole reason for having a basemap.
       // Hover and selection earn the opacity instead.
+      // Faded by zoom as well as by state. At street level the selected fill buried the
+      // streets the reader had just searched for, so the tint is multiplied by a ramp on
+      // `zoom` — never on a feature property, which is what would make it a choropleth.
+      // The ordering between the three states is preserved at every zoom.
       'fill-opacity': [
-        'case',
-        ['boolean', ['feature-state', 'selected'], false],
-        0.55,
-        ['boolean', ['feature-state', 'hovered'], false],
-        0.35,
-        0.12,
+        '*',
+        [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          0.55,
+          ['boolean', ['feature-state', 'hovered'], false],
+          0.35,
+          0.12,
+        ],
+        ['interpolate', ['linear'], ['zoom'], 12, 1, MAX_ZOOM, 0.4],
       ],
     },
   }, beforeId);
@@ -580,12 +553,13 @@ class View {
     const body = document.getElementById('map-card-body');
     const link = document.getElementById('map-selection');
     if (!card || !heading || !body || !link) return;
-    heading.textContent = `${title} — ${ids.length} council districts`;
+    heading.textContent = title;
     body.replaceChildren(
-      group(
-        'Districts covering this ZIP',
-        ids.map((id) => [`Council District ${id}`, `/district/${id}/`])
-      )
+      group('Districts covering this ZIP', {
+        caption: `${ids.length} council districts`,
+        columns: ['District'],
+        rows: ids.map((id) => [[`Council District ${id}`, `/district/${id}/`]]),
+      })
     );
     link.textContent = 'Select one on the map for its details';
     link.href = '/district/';
@@ -593,6 +567,8 @@ class View {
     document.body.classList.add('has-selection');
     this.map.resize();
     refit(this.map);
+    // Frame everything highlighted, in the part of the map the panel leaves visible.
+    frameBounds(this.map, unionBounds(this.layer.source, ids));
     say(`${title} covers ${ids.length} council districts, all highlighted.`);
   }
 
@@ -618,10 +594,10 @@ class View {
     // rule in CLAUDE.md is that nothing reaches the page as markup.
     body.replaceChildren();
     for (const [heading, rows, headingHref] of this.layer.sections(id)) {
-      if (!rows.length) continue;
+      if (!rowCount(rows)) continue;
       body.append(group(heading, rows, headingHref));
     }
-    link.textContent = `More details — ${this.layer.label(id)}`;
+    link.textContent = `Full page for ${this.layer.label(id)}`;
     link.href = this.layer.href(id);
     if (asOf && preview && preview.as_of) {
       // Stated once for the panel rather than per field; the page carries the per-fact
@@ -640,38 +616,30 @@ class View {
   }
 }
 
-/** One board's share of a district: a labelled link, the figure, and a bar.
+/** One board's share of a district: the figure, and a bar beneath it.
  *
  * Bars, not a stacked bar: the shares are measured per board and do not sum to 100 (44 + 29
  * + 23 for district 35), so one stacked bar would imply a complete partition it does not
- * make. One series, so no legend — each bar is named by its own link.
+ * make. One series, so no legend: the row header names each bar.
  *
  * Width is an SVG geometry attribute, not CSS: `style-src 'self'` refuses a style attribute,
  * which rules out the usual `style="width:44%"`. Square ends rather than the 4px rounded
- * ones, because `preserveAspectRatio="none"` is what lets the bar stretch to the panel and
+ * ones, because `preserveAspectRatio="none"` is what lets the bar stretch to the column and
  * it would distort a corner radius.
  */
-function shareRow(label, href, share) {
-  const percent = Math.round(share * 100);
-  const row = document.createElement('div');
-  row.className = 'share-row';
+function shareCell(label, percent) {
+  const cell = document.createDocumentFragment();
 
-  const head = document.createElement('p');
-  head.className = 'share-head';
-  const link = document.createElement('a');
-  link.textContent = label;
-  link.href = href;
   const value = document.createElement('span');
   value.className = 'share-value';
-  value.textContent = `${percent}%`;
-  head.append(link, value);
+  value.textContent = label;
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'share-bar');
   svg.setAttribute('viewBox', '0 0 100 8');
   svg.setAttribute('preserveAspectRatio', 'none');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', `${percent}% of this district`);
+  svg.setAttribute('aria-label', `${label} of the total`);
   for (const [cls, width] of [['share-track', 100], ['share-fill', percent]]) {
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('class', cls);
@@ -681,14 +649,111 @@ function shareRow(label, href, share) {
     rect.setAttribute('height', '8');
     svg.append(rect);
   }
-  row.append(head, svg);
-  return row;
+  cell.append(value, svg);
+  return cell;
 }
 
-/** One labelled group in the panel, as a fieldset — the era-appropriate group box.
+/** Whether a group's content is a table spec rather than a list of lines. */
+function isTable(rows) {
+  return Boolean(rows) && !Array.isArray(rows) && Array.isArray(rows.columns);
+}
+
+/** How many rows a group holds, whichever shape it is. An empty group is not rendered. */
+function rowCount(rows) {
+  return isTable(rows) ? rows.rows.length : rows.length;
+}
+
+/** A cell's content, in the shapes `render.py` emits plus the two the panel builds itself.
  *
- * A row is either a string or `[text, href]`. Bulleted lists read as a dump; a titled group
- * of lines reads as a record, which is what this is.
+ * A plain string; `{text, href}` for a link; `{text, share}` for a share figure and its
+ * bar; `[text, href]`; or a Node. The object forms are what travel in `preview.json`, so
+ * this function and the `cell` macro in `macros.html` are the two renderers of one shape.
+ */
+function fillCell(target, value) {
+  if (value instanceof Node) {
+    target.append(value);
+    return;
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (value.share !== undefined && value.share !== null) {
+      target.append(shareCell(value.text, value.share));
+      return;
+    }
+    fillCell(target, value.href ? [value.text, value.href] : value.text);
+    return;
+  }
+  const [text, href] = Array.isArray(value) ? value : [value, null];
+  if (!href) {
+    target.textContent = text == null ? '' : String(text);
+    return;
+  }
+  const a = document.createElement('a');
+  a.textContent = text;
+  a.href = href;
+  if (href.startsWith('http')) {
+    // Same rule as the rest of the site: an off-site link carries no referrer.
+    a.rel = 'noopener noreferrer';
+  }
+  target.append(a);
+}
+
+
+/** A group's content as a real table.
+ *
+ * Owner's choice, 2026-10-27, over three alternatives. The panel used to put a label and
+ * its value in one line separated by an em dash, which is punctuation doing structural
+ * work: it reads as neither a sentence nor a list. Real `th` elements carry `scope`, so a
+ * screen reader announces the column with every cell and the relationship is in the markup
+ * rather than in a dash.
+ */
+function table(spec) {
+  const element = document.createElement('table');
+  element.className = 'group-table';
+
+  if (spec.caption) {
+    const caption = document.createElement('caption');
+    caption.textContent = spec.caption;
+    element.append(caption);
+  }
+
+  const headRow = document.createElement('tr');
+  for (const name of spec.columns) {
+    const th = document.createElement('th');
+    th.setAttribute('scope', 'col');
+    th.textContent = name;
+    headRow.append(th);
+  }
+  const head = document.createElement('thead');
+  head.append(headRow);
+
+  const body = document.createElement('tbody');
+  for (const row of spec.rows) {
+    const tr = document.createElement('tr');
+    row.forEach((value, index) => {
+      // The first column names its row, so it is a row header and not a plain cell.
+      const cell = document.createElement(index === 0 ? 'th' : 'td');
+      if (index === 0) {
+        cell.setAttribute('scope', 'row');
+      } else {
+        // Narrow viewports hide the header row and collapse each row to a block, so the
+        // column name travels with the cell for the stylesheet to print back.
+        cell.dataset.label = spec.columns[index];
+      }
+      fillCell(cell, value);
+      tr.append(cell);
+    });
+    body.append(tr);
+  }
+
+  element.append(head, body);
+  return element;
+}
+
+/** One labelled group in the panel, as a fieldset: the era-appropriate group box.
+ *
+ * Content is either a list of lines — each a string, `[text, href]`, or a Node — or a table
+ * spec `{ caption, columns, rows }`. Bulleted lists read as a dump; a titled group reads as
+ * a record, which is what this is.
  */
 function group(heading, rows, headingHref) {
   const box = document.createElement('fieldset');
@@ -703,26 +768,18 @@ function group(heading, rows, headingHref) {
     legend.textContent = heading;
   }
   box.append(legend);
+
+  if (isTable(rows)) {
+    box.append(table(rows));
+    return box;
+  }
+
+  // A single value per line, for a group that is not tabular: one neighbourhood list, one
+  // member, one cadence. Giving these a header row would invent columns they do not have.
   for (const row of rows) {
-    if (row instanceof Node) {
-      box.append(row);
-      continue;
-    }
-    const [text, href] = Array.isArray(row) ? row : [row, null];
     const line = document.createElement('p');
     line.className = 'group-line';
-    if (href) {
-      const a = document.createElement('a');
-      a.textContent = text;
-      a.href = href;
-      if (href.startsWith('http')) {
-        // Same rule as the rest of the site: an off-site link carries no referrer.
-        a.rel = 'noopener noreferrer';
-      }
-      line.append(a);
-    } else {
-      line.textContent = text;
-    }
+    fillCell(line, row);
     box.append(line);
   }
   return box;
@@ -780,7 +837,7 @@ function refit(map) {
   if (!cityBounds) return;
   map.setMinZoom(0);
   map.setMaxBounds(null);
-  map.fitBounds(cityBounds, { padding: 24, animate: false });
+  map.fitBounds(cityBounds, { padding: viewPadding(map), animate: false });
   map.setMaxBounds(map.getBounds());
   map.setMinZoom(map.getZoom());
   lockPanAtMinZoom(map);
@@ -902,9 +959,75 @@ function featureAt(view, detail) {
   return feature.id ?? feature.properties[view.layer.key] ?? null;
 }
 
+/** Go to a geocoded address: street level, centred in the visible frame, pin showing.
+ *
+ * Zoom 12 used to leave the pin as a dot on a borough-wide view, which is not a located
+ * address. `padding` is what keeps the point out from behind the panel — `easeTo` centres
+ * on the container otherwise, and the panel covers the right 400 px of it.
+ */
 function panTo(view, detail) {
   if (!Number.isFinite(detail.lon) || !Number.isFinite(detail.lat)) return;
-  view.map.easeTo({ center: [detail.lon, detail.lat], zoom: 12, duration: 600 });
+  view.map.easeTo({
+    center: [detail.lon, detail.lat],
+    zoom: Math.min(ADDRESS_ZOOM, MAX_ZOOM),
+    padding: viewPadding(view.map),
+    duration: 600,
+  });
+}
+
+/** One bounding box per feature, keyed by the same property `promoteId` uses. */
+function indexBounds(source, key, collection) {
+  const index = featureBounds[source];
+  for (const feature of (collection && collection.features) || []) {
+    const id = feature.properties && feature.properties[key];
+    const box = geometryBounds({ features: [feature] });
+    if (id !== undefined && id !== null && box) index.set(String(id), box);
+  }
+}
+
+/** The union of several features' boxes, for a ZIP that straddles districts. */
+function unionBounds(source, ids) {
+  const boxes = ids.map((id) => featureBounds[source].get(String(id))).filter(Boolean);
+  if (!boxes.length) return null;
+  return boxes.reduce((a, b) => [
+    [Math.min(a[0][0], b[0][0]), Math.min(a[0][1], b[0][1])],
+    [Math.max(a[1][0], b[1][0]), Math.max(a[1][1], b[1][1])],
+  ]);
+}
+
+/** Camera padding that accounts for the detail panel.
+ *
+ * The panel is `position: absolute` *over* the map, so the container's width never changes
+ * when it opens — measured 2026-10-27: map stays 1440 px while the panel covers the right
+ * 400 px. That is why recomputing the fit on its own did nothing for the reader: MapLibre
+ * centres on the container, and 400 px of that container is behind the panel. Every camera
+ * move is padded by the measured overlap instead.
+ */
+function viewPadding(map) {
+  const edge = 24;
+  const flat = { top: edge, bottom: edge, left: edge, right: edge };
+  const card = document.getElementById('map-card');
+  if (!card || card.hidden) return flat;
+
+  const cardBox = card.getBoundingClientRect();
+  const mapBox = map.getContainer().getBoundingClientRect();
+  if (!cardBox.width || !mapBox.width) return flat;
+
+  // Docked beside the map at wide widths and stacked beneath it at narrow ones. Only the
+  // docked case steals horizontal room, and only the overlap counts.
+  const overlap = Math.max(0, Math.min(mapBox.right, cardBox.right) - cardBox.left);
+  const vertical = Math.max(0, Math.min(mapBox.bottom, cardBox.bottom) - cardBox.top);
+  if (overlap < 40 || vertical < mapBox.height * 0.5) return flat;
+
+  // Never give away more than half the frame: past that the fit zooms out so far the city
+  // is smaller than it was before the panel opened.
+  return { ...flat, right: Math.min(overlap + edge, mapBox.width * 0.5) };
+}
+
+/** Frame a box in whatever part of the map the panel is not covering. */
+function frameBounds(map, box) {
+  if (!box) return;
+  map.fitBounds(box, { padding: viewPadding(map), maxZoom: MAX_ZOOM, animate: false });
 }
 
 /** The data's own bounding box, so the city fills the frame at any container size. */

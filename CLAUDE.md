@@ -297,6 +297,16 @@ get re-argued.
   office email is. The harm is the name-to-mailbox pairing, not the address —
   11 boards publish only the district manager's work email and withholding it
   would leave them uncontactable. R30 in the outline carries the measurement.
+- **Participatory budgeting participation is per cycle, and lives in two places.** No
+  dataset carries it: `wwhr-5ven`, `qm5f-frjb` and `wa6b-r9jh` stop at 2017-2019 on
+  pre-redistricting district numbers, and `council.nyc.gov/pb/` names no districts (and on
+  2026-10-27 was a year stale). The open cycle comes from the Council's idea map at
+  `rnd.council.nyc.gov/ideamap/`, which states **no year** — so no cycle label may be
+  derived from it. Completed cycles come from the **press site's own** WordPress REST API
+  (`council.nyc.gov/press/wp-json/...`; the main site has no press post type), where a
+  results release enumerates its districts *and* states how many, giving the parse a
+  checksum. **Match that count or quarantine the release** — a dropped district renders as
+  "not taking part". The two rosters disagree, so neither is "whether the district has PB".
 - **Two facts residents most want are published nowhere official:** the
   registration cut-off before a hearing, and the per-speaker time limit. These
   render as explicit refusal strings pointing at

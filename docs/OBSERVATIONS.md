@@ -779,3 +779,41 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   category carries the meaning. | A fact about the data does not belong in a label. And a
   misreading already written down in the voice doc was reintroduced the first time the same
   field was shown somewhere new — the note was attached to the page, not to the field.
+- 2026-10-27 | `council.nyc.gov/press/wp-json/wp/v2/posts` | **Supersedes the entry above that
+  refused the per-district participatory budgeting claim.** The press releases are on a
+  *second* WordPress install with its own public REST API, which is why searching the main
+  site's API suggests PB coverage stopped in 2019 — the main install has no press post type at
+  all. `?search=participatory%20budgeting&per_page=100` returns 43 posts; two are results
+  releases. Post **3126** (`/press/2026/05/22/3126/`) enumerates 22 districts **and states "22
+  Council Districts" in its own body**, so the parse has a checksum rather than a guess.
+  Verified against post 2892 (FY2026, 24 stated / 24 parsed). | The checksum is the reason this
+  is usable at all: a reworded release fails loudly instead of dropping a district, which would
+  render as "not taking part". FY2025 has no results release — only a vote-week post naming a
+  count and no districts — so cycles are not uniformly recoverable.
+- 2026-10-27 | `rnd.council.nyc.gov/ideamap/map/` | The only source for the cycle that is **open
+  now**: 24 districts carry a `data-district` attribute. The page states **no year, no fiscal
+  year and no vote date** — grepped `FY20\d\d`, `[Ff]iscal [Yy]ear 20\d\d` and `20\d\d`, all
+  zero matches — so any "FY2028" label is inference, not a published fact, and is not rendered.
+  The visible Council-member table lists every district, so a name there is not evidence of
+  participation; only the attribute is read. | refused: labelling the open cycle with a year we
+  derived. The page is unversioned and overwritten each cycle, which is why the roster is
+  fetched weekly rather than pinned.
+- 2026-10-27 | `etl/raw/district_pages.json` | Tried the cheapest possible PB signal — a
+  `council.nyc.gov/<member>/pb/` link in a district page's own nav, already in the cache at zero
+  extra fetch cost. It appears on **1 of 51** pages (district 35). Zero false positives, 23
+  false negatives against the idea map. | refused: a signal that only some members opt into
+  measures the member's site habits, not the programme. Worth not re-testing.
+- 2026-10-27 | `showup.sources.participatory_budgeting` | The two rosters **disagree**: 24 in the
+  open cycle, 22 in the FY2027 results, **21 in both**; 4/17/21 are open-only and 8 is
+  FY2027-only. | So participation is a fact about a *cycle*, never a standing property of a
+  district. Both views state each roster separately with its own date and link, and a district
+  in neither is reported as unlisted — not as having no programme, which is a claim neither
+  source supports.
+- 2026-10-27 | `council.nyc.gov/pb/` | On this date the programme page still advertised the
+  **already-closed** FY2027 vote window ("April 11-19, 2026") and "Thank you for your
+  participation this cycle." | So `/pb/` is linked as the programme's own page and never parsed:
+  a cycle read off it would have been a year stale. Dead ends also confirmed:
+  `/ideamap/districts/` returns HTTP 200 with a literal `[]`; `/ideamap/ideas/` and
+  `/ideamap/api/` 404; and `/pb/vote/`, `/pb/districts/` and `/budget/participatory-budgeting/`
+  return a real 404 **carrying a ~46 KB styled page with an empty `<title>`** — the inverse of
+  the usual trap, so check the status *and* the title.

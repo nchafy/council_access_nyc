@@ -67,6 +67,7 @@ preference.
 | Document | Governs |
 |---|---|
 | `docs/voice.md` | every user-facing string: no imperatives, no second person, no advice, headings name a thing, provenance lives on `/references/` |
+| `docs/design.md` | the visual system (XP chrome, satnav map), the map's interaction model, and what `style-src 'self'` leaves available |
 | `docs/commits.md` | commit size and message; one commit, one claim |
 | `docs/pull-requests.md` | the review loop; distrust the description and re-derive the number |
 | `docs/dependencies.md` | open-source dependencies allowed; no install-time code execution, no browser dependency |
@@ -107,6 +108,14 @@ lives on `/references/`. Both are owner decisions, measured and recorded — a v
 took imperatives 16 to 0 and second-person uses 38 to 0, and the next one should find
 zero. Freshness is `docs/refresh.md`: one source has a 12-hour window and no scheduled
 refresh yet, so the footer states the fetch time rather than judging it.
+
+**Design: the control explains itself, and a heading stays stable over time.**
+`docs/design.md` is binding on every rendered surface — the Windows XP chrome and the
+early-2000s satnav map palette, the bounded zoom window, why the map is its own route, and the
+two things `style-src 'self'` and `img-src 'self'` take away (no inline `style` attribute, so a
+runtime width is an SVG geometry attribute; no `data:` URI, which is how MapLibre's own zoom
+buttons shipped blank and logged nothing). A period colour is measured before it ships: Luna's
+palette failed WCAG 1.4.3 twice.
 
 **Security is the owner's stated top priority.** The threat model is in
 `docs/phase-1-scope.md` §4. The short version, because it is easy to get wrong:

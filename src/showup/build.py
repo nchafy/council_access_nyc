@@ -234,6 +234,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     _check_floor("calendar", len(meetings))
 
     districts, _, boards_by_code = _load_districts(raw, day)
+    repo_root = Path(__file__).resolve().parents[2]
+    boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
 
     budget_requests_file = cache_path(raw, "budget-requests")
     try:
@@ -305,8 +307,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             encoding="utf-8",
         )
 
-    repo_root = Path(__file__).resolve().parents[2]
-    boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
     board_root = staging / "board"
     board_root.mkdir()
     boards_written = 0
@@ -371,6 +371,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         today=day,
         now=now,
         participation=participation,
+        boards_to_districts=boards_to_districts,
     )
     if len(preview["districts"]) != DISTRICT_COUNT or len(preview["boards"]) != BOARD_COUNT:
         raise BuildError(

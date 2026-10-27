@@ -76,15 +76,12 @@
 </section>
 {% endif %}
 
-<section class="committees">
-  <h2>Council districts</h2>
-  <ul class="district-list">
-{% for number, share in districts %}
-    <li><a href="/district/{{ number }}/">Council District {{ number }}</a> <span class="share">{{ share|percent }} of this board</span></li>
+{# Same specs the map panel renders, built once in `render.board_tables`. Full request
+   records stay below; these are the headline. #}
+{% for spec in tables %}
+{{ m.group(spec) }}
 {% endfor %}
-  </ul>
 {{ m.source("Shares are approximate") }}
-</section>
 
 <section class="participate">
   <h2>Attending</h2>

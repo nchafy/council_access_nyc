@@ -3,12 +3,24 @@
 {% macro lines(parts) %}{% for part in parts if part %}{% if not loop.first %}<br>{% endif %}{{ part }}{% endfor %}{% endmacro %}
 {% macro email_suppressed(reason) %}<em>Not shown — {{ reason }}.</em>{% endmacro %}
 {% macro cadence(text) %}{{ text }}<br><small>The board's own published wording. Boards move meetings.</small>{% endmacro %}
-{% macro pb(pb) %}<dl>
-  <dt>Current cycle</dt>
-  <dd>{% if pb.in_open_cycle %}Named in the Council's idea map. {{ link(pb.open_cycle_url, "Idea map") }}{% else %}Not named in the Council's idea map.{% endif %}</dd>
-{% if pb.cycle %}  <dt>{{ pb.cycle }} results</dt>
-  <dd>{% if pb.named_in_results %}Named.{% else %}Not named.{% endif %} Published {{ pb.results_published }}. {{ link(pb.results_url, "Results release") }}</dd>
-{% endif %}</dl>{% endmacro %}
+{# One cell of a table spec: plain text, a link, or a share figure with its bar. The bar's
+   width is an SVG geometry attribute because `style-src 'self'` refuses style="width:44%". #}
+{% macro cell(value) %}{% if value is mapping %}{% if value.href %}{{ link(value.href, value.text) }}{% elif value.share is not none %}<span class="share-value">{{ value.text }}</span><svg class="share-bar" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" aria-label="{{ value.text }} of the total"><rect class="share-track" x="0" y="0" width="100" height="8"/><rect class="share-fill" x="0" y="0" width="{{ value.share }}" height="8"/></svg>{% else %}{{ value.text }}{% endif %}{% else %}{{ value }}{% endif %}{% endmacro %}
+
+{# A table spec from `render.district_tables` / `render.board_tables`, as the map panel
+   renders the same spec from preview.json. The columns live in one place so a page and the
+   panel cannot disagree about them. #}
+{% macro group(spec) %}<fieldset class="group">
+  <legend>{% if spec.href %}{{ link(spec.href, spec.legend) }}{% else %}{{ spec.legend }}{% endif %}</legend>
+  <table class="group-table">
+{% if spec.caption %}    <caption>{{ spec.caption }}</caption>
+{% endif %}    <thead><tr>{% for name in spec.columns %}<th scope="col">{{ name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+{% for row in spec.rows %}      <tr>{% for value in row %}{% if loop.first %}<th scope="row">{{ cell(value) }}</th>{% else %}<td data-label="{{ spec.columns[loop.index0] }}">{{ cell(value) }}</td>{% endif %}{% endfor %}</tr>
+{% endfor %}    </tbody>
+  </table>
+</fieldset>{% endmacro %}
+
 {% macro source(what) %}  <p class="source">{{ what }}. <a href="/references/">Sources</a>.</p>{% endmacro %}
 {% macro dl(rows) %}{% if rows %}<dl>
 {% for key, value in rows if value %}  <dt>{{ key }}</dt>

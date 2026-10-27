@@ -355,7 +355,9 @@ class TestBoardView:
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         board_page = (out / "board" / "302" / "index.html").read_text()
-        assert "of this board" in board_page
+        # The denominator moved from a phrase on every row to the column header, which is
+        # where it belongs once the shares are a table.
+        assert "Share of board" in board_page
         district_page = (out / "district" / "35" / "index.html").read_text()
         assert "of this council district" in district_page
 

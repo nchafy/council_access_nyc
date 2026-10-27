@@ -186,31 +186,6 @@ def render_listing(
 PREVIEW_REQUESTS = 3
 
 
-def _preview_budget(asked: BoardBudgetRequests | None) -> dict | None:
-    """The register in headline form: the ask and its priority, nothing more.
-
-    Deliberately thinner than `_budget`. Carrying each request's explanation and the agency
-    response as well took `preview.json` to 41 KB gzipped for text the panel never shows; the
-    board page already has all of it.
-    """
-    if asked is None or not asked.requests:
-        return None
-    return {
-        "fiscal_year": asked.fiscal_year,
-        "published": asked.publication.strftime("%-d %B %Y"),
-        "total": len(asked.requests),
-        "requests": [
-            {
-                "title": request.request or "The register does not describe this request",
-                # The category, not the priority number: priority is the rank *within* a
-                # category and repeats, so three requests all read "1." in the panel.
-                "category": request.category,
-            }
-            for request in asked.requests[:PREVIEW_REQUESTS]
-        ],
-    }
-
-
 def preview_payload(
     districts: list[District],
     boards: list[DistrictBoard],
@@ -221,6 +196,7 @@ def preview_payload(
     today: date | None = None,
     now: datetime | None = None,
     participation: Participation | None = None,
+    boards_to_districts: dict[str, list[tuple[int, float]]] | None = None,
 ) -> dict:
     """The headline facts the map's detail panel shows, one artifact for both layers.
 
@@ -235,6 +211,7 @@ def preview_payload(
     day = today or date.today()
     moment = now or datetime.now()
     upcoming = _meeting_card(meetings[0], today=day, now=moment) if meetings else None
+    boards_to_districts = boards_to_districts or {}
 
     return {
         "as_of": built_at.isoformat(timespec="seconds"),
@@ -245,22 +222,10 @@ def preview_payload(
                 "member": None
                 if d.member is None
                 else {"name": d.member.name, "seat_status": d.member.seat_status},
-                # Chair and member are different facts, so the role travels with the name.
-                "committees": [
-                    {"name": c.name, "role": c.role}
-                    for c in (getattr(d.member, "committees", ()) or ())
-                ],
-                # Ordered by how much of the district each board covers, which is how the
-                # district page orders them too.
-                "boards": [
-                    {"code": b.code, "label": b.label, "share": b.share}
-                    for b in sorted(d.boards or (), key=lambda b: -b.share)
-                ],
-                # Two flags only. The cycle labels and the five URLs are identical for
-                # every district, so they are hoisted to `pb` at the top level rather
-                # than repeated 51 times — that repetition alone was 68 KB of the
-                # artifact before it was lifted out.
-                "pb": _pb_flags(participation, d.number),
+                # The same specs the district page renders. Committees carry their role,
+                # boards their share, and participatory budgeting its cycle, because the
+                # columns are declared once in `district_tables` for both views.
+                "tables": district_tables(d, participation),
             }
             for d in districts
         },
@@ -272,7 +237,9 @@ def preview_payload(
                 "cadence": b.board_meeting,
                 "phone": b.phone,
                 "address": b.address,
-                "budget": _preview_budget(budget_requests.get(b.code)),
+                "tables": board_tables(
+                    boards_to_districts.get(b.code, []), budget_requests.get(b.code)
+                ),
             }
             for b in boards
         },
@@ -301,15 +268,136 @@ def _participation(participation: Participation | None, number: int) -> dict | N
     }
 
 
-def _pb_flags(participation: Participation | None, number: int) -> dict | None:
-    """One district's standing in each roster, as the map's artifact carries it."""
-    if participation is None:
+#: The one place a panel/page table's shape is written down. A spec is
+#: `{legend, href, caption, columns, rows}`; a cell is a plain string, `{"text", "href"}`
+#: for a link, or `{"text", "share"}` for a share figure with its bar.
+#:
+#: Both views render these specs and neither invents a column: the district page through
+#: the `group` macro, the map panel from `preview.json`. Before this, the panel built its
+#: tables in JavaScript while the page built its own in Jinja, so a column added to one
+#: was silently missing from the other.
+COMMITTEES_INDEX = "https://council.nyc.gov/committees/"
+
+#: Matches the panel, which shows the headline and links on for the rest.
+COMMITTEES_SHOWN = 5
+
+
+#: Both cell kinds carry both optional keys. The template environment uses
+#: StrictUndefined, so a cell that omits one would fail the build the first time a
+#: different kind appeared in the same column.
+def _link_cell(text: str, href: str) -> dict:
+    return {"text": text, "href": href, "share": None}
+
+
+def _share_cell(share: float) -> dict:
+    """A share as a percentage and a bar. Rounded once, here, so the two views cannot
+    round differently."""
+    percent = round(share * 100)
+    return {"text": f"{percent}%", "href": None, "share": percent}
+
+
+def _table(legend: str, columns: list[str], rows: list[list], **extra) -> dict | None:
+    """A spec, or None when there is no row to carry — an empty table is not rendered."""
+    if not rows:
         return None
-    results = participation.results
+    # `caption` and `href` are always present, never omitted: the environment runs with
+    # StrictUndefined, so a missing key is a build failure rather than an empty string.
     return {
-        "open": number in participation.open_cycle,
-        "past": bool(results and number in results.districts),
+        "legend": legend,
+        "columns": columns,
+        "rows": rows,
+        "caption": extra.get("caption"),
+        "href": extra.get("href"),
     }
+
+
+def district_tables(district: District, participation: Participation | None) -> list[dict]:
+    """Every tabular group for one council district, in the order both views show them."""
+    pb = _participation(participation, district.number)
+    meta = _pb_meta(participation)
+    specs = []
+
+    if pb and meta:
+        rows = [
+            [
+                "Current",
+                "Named" if pb["in_open_cycle"] else "Not named",
+                _link_cell("Idea map", meta["open_cycle_url"]),
+            ]
+        ]
+        if meta["cycle"]:
+            rows.append(
+                [
+                    meta["cycle"],
+                    "Named" if pb["named_in_results"] else "Not named",
+                    _link_cell("Results release", meta["results_url"]),
+                ]
+            )
+        specs.append(
+            _table(
+                "Participatory budgeting",
+                ["Cycle", "Status", "Source"],
+                rows,
+                href=meta["programme_url"],
+            )
+        )
+
+    committees = (getattr(district.member, "committees", ()) or ())[:COMMITTEES_SHOWN]
+    specs.append(
+        _table(
+            "Committees",
+            ["Committee", "Role"],
+            [[c.name, c.role] for c in committees],
+            href=COMMITTEES_INDEX,
+        )
+    )
+
+    specs.append(
+        _table(
+            "Community boards",
+            ["Board", "Share of district"],
+            [
+                [_link_cell(b.label, f"/board/{b.code}/"), _share_cell(b.share)]
+                for b in sorted(district.boards or (), key=lambda b: -b.share)
+            ],
+        )
+    )
+    return [spec for spec in specs if spec]
+
+
+def board_tables(
+    districts: list[tuple[int, float]],
+    asked: BoardBudgetRequests | None,
+) -> list[dict]:
+    """Every tabular group for one community board."""
+    specs = [
+        _table(
+            "Council districts",
+            ["District", "Share of board"],
+            [
+                [_link_cell(f"Council District {n}", f"/district/{n}/"), _share_cell(share)]
+                for n, share in districts
+            ],
+        )
+    ]
+    if asked is not None and asked.requests:
+        specs.append(
+            _table(
+                "Budget requests",
+                ["Request", "Category"],
+                [
+                    [
+                        r.request or "The register does not describe this request",
+                        (r.category or "").lower(),
+                    ]
+                    for r in asked.requests[:PREVIEW_REQUESTS]
+                ],
+                caption=(
+                    f"Fiscal {asked.fiscal_year}: {len(asked.requests)} filed, the first few below."
+                ),
+            )
+        )
+    return [spec for spec in specs if spec]
 
 
 def _pb_meta(participation: Participation | None) -> dict | None:
@@ -353,7 +441,7 @@ def render_district(
         "district.html",
         title=f"District {district.number}",
         district=district,
-        pb=_participation(participation, district.number),
+        tables=district_tables(district, participation),
         cards=[_meeting_card(meeting, today=day, now=moment) for meeting in meetings],
         built_at=built_at,
         window_end=window_end,
@@ -418,6 +506,7 @@ def render_board(
         title=board.label,
         board=board,
         districts=districts,
+        tables=board_tables(districts, budget_requests),
         budget=_budget(budget_requests),
         register_url=BUDGET_REGISTER_URL,
         bp_url=BP_SITES.get(board.borough_name),

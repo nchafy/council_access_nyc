@@ -8,6 +8,7 @@ one page may name MapLibre, and the map must never be the only way to reach a di
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import date
 from pathlib import Path
@@ -175,8 +176,16 @@ class TestParticipatoryBudgetingIsOptional:
     """Both helpers answer None when no roster was loaded, so a caller without one
     renders no participatory-budgeting rows rather than empty ones."""
 
-    def test_the_flags_are_absent_without_a_roster(self):
-        assert render._pb_flags(None, 35) is None
+    def test_no_participatory_budgeting_table_without_a_roster(self):
+        """The group is simply not emitted, rather than emitted empty: an empty table
+        would read as "we looked and found nothing", which is a different claim."""
+        from showup.model import District
+
+        district = District(
+            number=35, neighborhoods=None, member=None, boards=(), provenance={}, missing=()
+        )
+        legends = [spec["legend"] for spec in render.district_tables(district, None)]
+        assert "Participatory budgeting" not in legends
 
     def test_the_shared_labels_are_absent_without_a_roster(self):
         assert render._pb_meta(None) is None
@@ -210,41 +219,53 @@ class TestThePreviewArtifact:
 
     def test_a_district_entry_has_what_the_panel_shows(self, preview):
         entry = preview["districts"]["1"]
-        assert set(entry) == {"member", "committees", "boards", "pb"}
+        # The tabular groups all live under one key now: `render.district_tables` declares
+        # their columns once and both the page and the panel render those specs.
+        assert set(entry) == {"member", "tables"}
 
     def test_committee_roles_travel_with_the_name(self, preview):
         """Chair and member are different facts about the same person."""
-        roles = [c for entry in preview["districts"].values() for c in entry["committees"]]
+        roles = [
+            {"name": row[0], "role": row[1]}
+            for entry in preview["districts"].values()
+            for spec in entry["tables"]
+            if spec["legend"] == "Committees"
+            for row in spec["rows"]
+        ]
         assert roles, "no district in the fixture has a committee assignment"
         for committee in roles:
             assert set(committee) == {"name", "role"}
 
     def test_boards_are_ordered_by_how_much_of_the_district_they_cover(self, preview):
         for entry in preview["districts"].values():
-            shares = [b["share"] for b in entry["boards"]]
+            specs = [s for s in entry["tables"] if s["legend"] == "Community boards"]
+            shares = [row[1]["share"] for s in specs for row in s["rows"]]
             assert shares == sorted(shares, reverse=True)
 
     def test_the_budget_preview_is_thinner_than_the_page(self, preview):
         """Explanations and agency responses are on the board page, not here: carrying them
         took this artifact to 41 KB gzipped for text the panel never shows."""
         for entry in preview["boards"].values():
-            budget = entry["budget"]
-            if budget is None:
-                continue
-            assert len(budget["requests"]) <= PREVIEW_REQUESTS
-            for request in budget["requests"]:
-                assert set(request) == {"title", "category"}
+            for spec in entry["tables"]:
+                if spec["legend"] != "Budget requests":
+                    continue
+                assert spec["columns"] == ["Request", "Category"]
+                assert len(spec["rows"]) <= PREVIEW_REQUESTS
+                # Two columns and no more: an explanation or an agency response here
+                # would be text the panel never shows.
+                assert all(len(row) == 2 for row in spec["rows"])
 
     def test_the_preview_carries_no_priority_number(self, preview):
         """Priority is the rank *within* a budget category, so it repeats: three requests
         all rendered as "1." in the panel, which reads as a ranking no board filed. The
         category carries the meaning, so that is what ships."""
         for entry in preview["boards"].values():
-            budget = entry["budget"]
-            if budget is None:
-                continue
-            for request in budget["requests"]:
-                assert "priority" not in request
+            for spec in entry["tables"]:
+                if spec["legend"] != "Budget requests":
+                    continue
+                assert "Priority" not in spec["columns"]
+                for row in spec["rows"]:
+                    assert not str(row[1]).strip().rstrip(".").isdigit()
 
     def test_no_officer_name_reaches_the_preview(self, preview):
         """Chairs and district managers are never published; the office is."""
@@ -287,11 +308,22 @@ class TestTheMapRefusesToRank:
         return source[start:end]
 
     def test_the_district_fill_has_no_data_driven_ramp(self):
-        """One fill for every district, and two more only for hover and selection."""
+        """One fill for every district, and two more only for hover and selection.
+
+        `step` and `match` are banned outright: neither has a use here that is not shading
+        a district by a value. `interpolate` is allowed on `['zoom']` alone — a zoom ramp
+        fades every district identically, which is a legibility choice and carries no
+        datum. Any other `interpolate` input is a choropleth and fails.
+        """
         paint = self._district_paint()
         assert "'fill-color'" in paint
-        for ramp in ("interpolate", "step", "match"):
+        for ramp in ("step", "match"):
             assert f"'{ramp}'" not in paint, f"a {ramp} expression shades districts by value"
+        for found in re.finditer(r"'interpolate'", paint):
+            tail = paint[found.end() : found.end() + 80]
+            assert "['zoom']" in tail, (
+                f"an interpolate on something other than zoom shades districts by value: {tail!r}"
+            )
 
     def test_the_district_fill_reads_no_feature_property(self):
         """`feature-state` is hover and selection, which the reader caused. `get` would be a

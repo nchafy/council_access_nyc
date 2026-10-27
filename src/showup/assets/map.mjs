@@ -142,6 +142,12 @@ const names = { district: new Map(), board: new Map() };
 //: arrives, and null forever if it does not — the panel then shows what it has.
 let preview = null;
 
+//: The district geometry's own bounds, kept so `refit` can be called again on resize.
+let cityBounds = null;
+
+//: The MapLibre module, kept so the pin can be built after load.
+let library = null;
+
 function indexNames(lookup) {
   for (const d of lookup.districts || []) names.district.set(String(d.n), d);
   for (const b of lookup.boards || []) names.board.set(String(b.code), b);
@@ -211,10 +217,7 @@ const LAYERS = {
         ],
         [
           'Community boards here',
-          (d.boards || []).map((b) => [
-            `${b.label} — ${Math.round(b.share * 100)}% of this district`,
-            `/board/${b.code}/`,
-          ]),
+          (d.boards || []).map((b) => shareRow(b.label, `/board/${b.code}/`, b.share)),
         ],
       ];
     },
@@ -241,16 +244,22 @@ const LAYERS = {
         // the two have been observed to differ, so this is not presented as a calendar.
         ['Meets', b.cadence ? [b.cadence] : ['No City dataset records this board\'s cadence.']],
         ['Board office', [b.address, b.phone].filter(Boolean)],
+        // A fixed heading: it used to carry the fiscal year and the filed count, which made
+        // it read differently every edition. Those are facts about the data and belong in
+        // the lines, not in the label.
+        //
+        // The priority number is gone from the lines too. It is the rank *within a budget
+        // category*, so it repeats — three requests all showed as "1." — and a bare number
+        // reads as a ranking the board never filed. The category carries the meaning.
         [
+          'Budget requests',
           budget
-            ? `Fiscal ${budget.fiscal_year} budget requests — ${budget.total} filed`
-            : 'Budget requests',
-          budget
-            // The register codes priority as "01"; the leading zero is padding in the
-            // source, not a rank anyone wrote.
-            ? budget.requests.map(
-                (r) => `${r.priority ? Number(r.priority) + '. ' : ''}${r.title}`
-              )
+            ? [
+                `Fiscal ${budget.fiscal_year}: ${budget.total} filed, the first few below.`,
+                ...budget.requests.map((r) =>
+                  r.category ? `${r.title} (${r.category.toLowerCase()})` : r.title
+                ),
+              ]
             : ['No register edition is held for this board.'],
         ],
       ];
@@ -346,7 +355,7 @@ async function main() {
   let geometry;
   let basemap;
   try {
-    const [library, council, board, style, lookup, facts] = await Promise.all([
+    const [lib, council, board, style, lookup, facts] = await Promise.all([
       import('/vendor/maplibre-gl.mjs'),
       fetchJson(LAYERS.council.url),
       fetchJson(LAYERS.board.url),
@@ -356,7 +365,8 @@ async function main() {
       fetchJson('/data/lookup.json').catch(() => null),
       fetchJson('/data/preview.json').catch(() => null),
     ]);
-    MapLibre = library;
+    MapLibre = lib;
+    library = lib;
     geometry = { council, board };
     basemap = style;
     if (lookup) indexNames(lookup);
@@ -409,7 +419,8 @@ async function main() {
       map.addLayer({ id: 'esri-reference', type: 'raster', source: 'esri-reference' });
     }
 
-    const bounds = geometryBounds(geometry.council);
+    cityBounds = geometryBounds(geometry.council);
+    const bounds = cityBounds;
     if (bounds) {
       map.fitBounds(bounds, { padding: 24, animate: false });
       // Order matters. fitBounds first, so the zoom it lands on is "the whole city at this
@@ -497,6 +508,7 @@ class View {
     this.map = map;
     this.name = 'council';
     this.selected = null;
+    this.many = null;
   }
 
   get layer() {
@@ -516,6 +528,10 @@ class View {
   }
 
   clear() {
+    for (const id of this.many || []) {
+      this.map.setFeatureState({ source: this.layer.source, id }, { selected: false });
+    }
+    this.many = null;
     if (this.selected !== null) {
       this.map.setFeatureState(
         { source: this.layer.source, id: this.selected },
@@ -529,7 +545,42 @@ class View {
     // Only resize when the split actually collapses, or every clear costs a reflow.
     const wasSplit = document.body.classList.contains('has-selection');
     document.body.classList.remove('has-selection');
-    if (wasSplit) this.map.resize();
+    if (wasSplit) {
+      this.map.resize();
+      refit(this.map);
+    }
+  }
+
+  /** Several features at once, with a card that names what they have in common. */
+  selectMany(ids, title) {
+    this.clear();
+    if (this.name !== 'council') {
+      say('That lookup gives council districts. Switch to council districts to see them.');
+      return;
+    }
+    this.many = ids;
+    for (const id of ids) {
+      this.map.setFeatureState({ source: this.layer.source, id }, { selected: true });
+    }
+    const card = document.getElementById('map-card');
+    const heading = document.getElementById('map-card-title');
+    const body = document.getElementById('map-card-body');
+    const link = document.getElementById('map-selection');
+    if (!card || !heading || !body || !link) return;
+    heading.textContent = `${title} — ${ids.length} council districts`;
+    body.replaceChildren(
+      group(
+        'Districts covering this ZIP',
+        ids.map((id) => [`Council District ${id}`, `/district/${id}/`])
+      )
+    );
+    link.textContent = 'Select one on the map for its details';
+    link.href = '/district/';
+    card.hidden = false;
+    document.body.classList.add('has-selection');
+    this.map.resize();
+    refit(this.map);
+    say(`${title} covers ${ids.length} council districts, all highlighted.`);
   }
 
   select(id) {
@@ -567,9 +618,58 @@ class View {
     card.hidden = false;
     document.body.classList.add('has-selection');
     // MapLibre does not watch its container: without this the canvas keeps the full-width
-    // size and the city sits off-centre behind the panel.
+    // size and the city sits off-centre behind the panel. The floor has to be recomputed
+    // too — it was the zoom that fitted the city across the *full* width, so once the panel
+    // takes 25rem the city no longer fits at that zoom and pan is locked, leaving it
+    // half-hidden with no way to recover.
     this.map.resize();
+    refit(this.map);
   }
+}
+
+/** One board's share of a district: a labelled link, the figure, and a bar.
+ *
+ * Bars, not a stacked bar: the shares are measured per board and do not sum to 100 (44 + 29
+ * + 23 for district 35), so one stacked bar would imply a complete partition it does not
+ * make. One series, so no legend — each bar is named by its own link.
+ *
+ * Width is an SVG geometry attribute, not CSS: `style-src 'self'` refuses a style attribute,
+ * which rules out the usual `style="width:44%"`. Square ends rather than the 4px rounded
+ * ones, because `preserveAspectRatio="none"` is what lets the bar stretch to the panel and
+ * it would distort a corner radius.
+ */
+function shareRow(label, href, share) {
+  const percent = Math.round(share * 100);
+  const row = document.createElement('div');
+  row.className = 'share-row';
+
+  const head = document.createElement('p');
+  head.className = 'share-head';
+  const link = document.createElement('a');
+  link.textContent = label;
+  link.href = href;
+  const value = document.createElement('span');
+  value.className = 'share-value';
+  value.textContent = `${percent}%`;
+  head.append(link, value);
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'share-bar');
+  svg.setAttribute('viewBox', '0 0 100 8');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `${percent}% of this district`);
+  for (const [cls, width] of [['share-track', 100], ['share-fill', percent]]) {
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('class', cls);
+    rect.setAttribute('x', '0');
+    rect.setAttribute('y', '0');
+    rect.setAttribute('width', String(width));
+    rect.setAttribute('height', '8');
+    svg.append(rect);
+  }
+  row.append(head, svg);
+  return row;
 }
 
 /** One labelled group in the panel, as a fieldset — the era-appropriate group box.
@@ -591,6 +691,10 @@ function group(heading, rows, headingHref) {
   }
   box.append(legend);
   for (const row of rows) {
+    if (row instanceof Node) {
+      box.append(row);
+      continue;
+    }
     const [text, href] = Array.isArray(row) ? row : [row, null];
     const line = document.createElement('p');
     line.className = 'group-line';
@@ -633,6 +737,40 @@ function bindToggle(view) {
     });
   }
   toggle.hidden = false;
+}
+
+//: The pin dropped on a geocoded address. One marker, moved rather than recreated, so a
+//: second lookup does not litter the map.
+let pin = null;
+
+function dropPin(map, MapLibre, lon, lat) {
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+  if (pin) {
+    pin.setLngLat([lon, lat]);
+    return;
+  }
+  // MapLibre's default marker is an inline-styled SVG, which `style-src 'self'` would
+  // refuse. Ours is an element with a class, styled in site.css.
+  const element = document.createElement('div');
+  element.className = 'map-pin';
+  element.setAttribute('aria-hidden', 'true');
+  pin = new MapLibre.Marker({ element }).setLngLat([lon, lat]).addTo(map);
+}
+
+/** Fit the city to the container, then set the zoom floor and pan box from that fit.
+ *
+ * Called on load and again whenever the map's width changes, because every one of these
+ * depends on the container: the fit, the floor derived from it, and the box derived from the
+ * floor. Recomputing one without the others is what left the city behind the panel.
+ */
+function refit(map) {
+  if (!cityBounds) return;
+  map.setMinZoom(0);
+  map.setMaxBounds(null);
+  map.fitBounds(cityBounds, { padding: 24, animate: false });
+  map.setMaxBounds(map.getBounds());
+  map.setMinZoom(map.getZoom());
+  lockPanAtMinZoom(map);
 }
 
 /** Drag is off at full zoom out, and on as soon as the reader zooms in.
@@ -706,6 +844,16 @@ function bindAddress(view) {
   document.addEventListener('showup:located', (event) => {
     const detail = event.detail || {};
     event.preventDefault();
+
+    // The pin marks the address itself; the highlight marks what contains it.
+    if (library) dropPin(view.map, library, detail.lon, detail.lat);
+
+    // A ZIP covering several districts: highlight every one rather than making the reader
+    // pick before they can see where any of them is.
+    if (Array.isArray(detail.districts) && detail.districts.length) {
+      view.selectMany(detail.districts.map(String), `ZIP ${detail.zip}`);
+      return;
+    }
 
     if (view.name === 'council' && detail.district) {
       view.select(String(detail.district));

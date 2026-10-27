@@ -201,7 +201,9 @@ def _preview_budget(asked: BoardBudgetRequests | None) -> dict | None:
         "requests": [
             {
                 "title": request.request or "The register does not describe this request",
-                "priority": request.priority,
+                # The category, not the priority number: priority is the rank *within* a
+                # category and repeats, so three requests all read "1." in the panel.
+                "category": request.category,
             }
             for request in asked.requests[:PREVIEW_REQUESTS]
         ],

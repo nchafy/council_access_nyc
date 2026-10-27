@@ -752,3 +752,30 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   needs no script for it. | This was already written down as a principle — the district is a
   filter, never the organising key — and the panel had broken it within a day of being built.
   The `(citywide)` label it carried was a patch over a placement that was wrong.
+- 2026-10-27 | `src/showup/assets/map.mjs` (`refit`) | Opening the panel at full zoom out left
+  the city half-hidden behind it with no way to recover: `minZoom` had been computed from the
+  fit across the **full-width** map, so once the panel took 25rem the city no longer fit at
+  that zoom — and pan is locked at `minZoom`, so it could not be dragged back. The fit, the
+  floor derived from it and the pan box derived from the floor all depend on the container, so
+  all three are now recomputed together whenever the width changes. | Three values computed
+  once from a width that then changes. Deriving the floor from the fit was the right idea and
+  exactly what made the bug unrecoverable, because the lock trusted a stale floor.
+- 2026-10-27 | the board share bars, `site.css` (`.share-fill`) | Shares render as bars, not a
+  stacked bar: they are measured per board and do not sum to 100 (44 + 29 + 23 for district
+  35), so a stacked bar would imply a partition the data does not make. One series, so one hue
+  and no legend — each bar is named by its own link. Width is an **SVG geometry attribute**,
+  because `style-src 'self'` refuses the usual `style="width:44%"`, and the ends are square
+  because `preserveAspectRatio="none"` is what lets the bar stretch and would distort a corner
+  radius. Measured: fill 5.17:1 on the group background, and the track only **1.45:1**, so the
+  track carries a border rather than relying on fill. | The CSP shaped the chart. Every
+  familiar way to draw a proportional bar sets an inline style, and the one that does not —
+  geometry attributes — costs the rounded ends.
+- 2026-10-27 | the panel's budget heading and priorities | The heading read "Fiscal 2027 budget
+  requests — 56 filed", which changes with every edition, and three requests all rendered as
+  "1." — because **priority is the rank within a budget category**, so it repeats. This repeat
+  is already recorded in `docs/voice.md` as a note the board page has to carry, and the panel
+  reproduced the exact misreading that note exists to prevent. Heading is now "Budget
+  requests"; the fiscal year and count moved into the lines; the number is gone and the
+  category carries the meaning. | A fact about the data does not belong in a label. And a
+  misreading already written down in the voice doc was reintroduced the first time the same
+  field was shown somewhere new — the note was attached to the page, not to the field.

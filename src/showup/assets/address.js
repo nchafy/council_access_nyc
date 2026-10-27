@@ -79,13 +79,28 @@
   function announce(district, lon, lat) {
     var event;
     var detail = { district: district, lon: lon, lat: lat };
-    // Only a geocoded street address is offered to the map. A district number, a ZIP or a
-    // neighbourhood names a place the reader already chose, and SLA-1 promises that goes
-    // straight to its page — the same as the dropdown. Highlighting instead would add a
-    // click to the one path that is meant to be instant.
-    if (typeof lon !== "number" || typeof lat !== "number") return false;
+    // Every resolution is offered to the map, including a district number, a ZIP and a
+    // neighbourhood: owner's decision 2026-10-27, reversing the earlier rule that only a
+    // geocoded address was. SLA-1's promise is kept because the landing page has no map, so
+    // nothing claims the event there and it still navigates; on /map/ the map claims it and
+    // highlights instead, which is the point of having the map.
     try {
       event = new CustomEvent("showup:located", { detail: detail, cancelable: true });
+    } catch (error) {
+      return false;
+    }
+    document.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  // Several districts at once, for a ZIP that covers more than one.
+  function announceMany(districts, zip) {
+    var event;
+    try {
+      event = new CustomEvent("showup:located", {
+        detail: { districts: districts, zip: zip },
+        cancelable: true,
+      });
     } catch (error) {
       return false;
     }
@@ -301,6 +316,10 @@
         }
         if (local && local.kind === "choices") {
           say("");
+          // A ZIP straddling districts is the case the map answers best: highlight all of
+          // them at once. The link list stays for the no-map page, and for when the map
+          // does not claim the event.
+          if (announceMany(local.districts, local.zip)) return null;
           showChoices(
             "ZIP " + local.zip + " covers more than one council district:",
             local.districts.map(function (n) {

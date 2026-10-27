@@ -218,7 +218,18 @@ class TestThePreviewArtifact:
                 continue
             assert len(budget["requests"]) <= PREVIEW_REQUESTS
             for request in budget["requests"]:
-                assert set(request) == {"title", "priority"}
+                assert set(request) == {"title", "category"}
+
+    def test_the_preview_carries_no_priority_number(self, preview):
+        """Priority is the rank *within* a budget category, so it repeats: three requests
+        all rendered as "1." in the panel, which reads as a ranking no board filed. The
+        category carries the meaning, so that is what ships."""
+        for entry in preview["boards"].values():
+            budget = entry["budget"]
+            if budget is None:
+                continue
+            for request in budget["requests"]:
+                assert "priority" not in request
 
     def test_no_officer_name_reaches_the_preview(self, preview):
         """Chairs and district managers are never published; the office is."""

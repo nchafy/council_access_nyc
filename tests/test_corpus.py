@@ -18,6 +18,10 @@ import pytest
 from showup.deadlines import accommodation_deadline
 from showup.sources.boards import _compose_address, email_policy
 from showup.sources.calendar import parse_clock, parse_us_date
+from showup.sources.participatory_budgeting import (
+    districts_in_release,
+    stated_district_count,
+)
 from showup.text import esc, strip_tags
 from showup.urls import safe_url
 from showup.venues import normalize_location
@@ -51,6 +55,16 @@ def test_strip_tags(given, expected):
 @cases("esc")
 def test_esc(given, expected):
     assert esc(given) == expected
+
+
+@cases("districts_in_release")
+def test_districts_in_release(given, expected):
+    assert list(districts_in_release(given)) == expected
+
+
+@cases("stated_district_count")
+def test_stated_district_count(given, expected):
+    assert stated_district_count(given) == expected
 
 
 @cases("safe_url")
@@ -101,6 +115,8 @@ EXPECTED_FILES = {
     "compose_address",
     "email_policy",
     "accommodation_deadline",
+    "districts_in_release",
+    "stated_district_count",
 }
 
 

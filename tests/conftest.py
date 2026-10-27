@@ -95,6 +95,13 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
     # Six boards and two editions, including the future-dated one the loader must refuse.
     shutil.copy2(FIXTURES / "board_budget_requests.json", cache_path(raw, "budget-requests"))
 
+    # The real FY2027 results release byte-exact, so the parse is checked against the
+    # count the release states about itself, plus a trimmed idea map carrying the 24
+    # `data-district` attributes and the decoy member table that must not count.
+    shutil.copy2(
+        FIXTURES / "participatory_budgeting.json", cache_path(raw, "participatory-budgeting")
+    )
+
     # Synthetic squares, one per district: the build only counts features here, and
     # real-geometry accuracy is tests/unit/test_geo.py::TestSimplifiedGeometryAgrees.
     features = []

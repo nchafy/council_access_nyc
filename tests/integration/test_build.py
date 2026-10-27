@@ -611,8 +611,8 @@ class TestReferencesPage:
 
     def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        # Six of the eight: the two geometry files are not in this fixture's cache.
-        assert page.count("<dt>Fetched</dt>") == 7
+        # Seven of the nine: the two geometry files are not in this fixture's cache.
+        assert page.count("<dt>Fetched</dt>") == 8
 
     def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
         """Deleting a disclosure paragraph may relocate a citation, never lose one."""

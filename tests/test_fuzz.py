@@ -21,6 +21,15 @@ from showup.deadlines import accommodation_deadline, is_business_day, written_sa
 from showup.geo import Polygon
 from showup.sources.boards import _compose_address, email_policy
 from showup.sources.calendar import parse_clock, parse_us_date
+from showup.sources.participatory_budgeting import (
+    DISTRICT_COUNT,
+    PB_DISTRICT_FLOOR,
+    ParticipatoryBudgetingError,
+    districts_in_release,
+    is_results_release,
+    parse_idea_map,
+    stated_district_count,
+)
 from showup.text import collapse, esc, strip_tags, text_lines
 from showup.urls import ALLOWED_HOSTS, safe_url
 from showup.venues import VENUES, normalize_location
@@ -295,6 +304,38 @@ class TestParserInvariants:
         for part in (left, right):
             for token in part.replace(",", " ").split():
                 assert token in result, f"the join dropped the token {token!r}"
+
+    def test_district_numbers_are_always_real_districts(self, value):
+        """Only integers cross this boundary, and only ones that name a district.
+
+        This is what keeps the participatory-budgeting roster off the injection surface:
+        no upstream prose is rendered, so there is nothing to escape.
+        """
+        for number in districts_in_release(value):
+            assert isinstance(number, int)
+            assert 1 <= number <= DISTRICT_COUNT
+
+    def test_a_release_roster_is_sorted_and_unique(self, value):
+        numbers = districts_in_release(value)
+        assert list(numbers) == sorted(set(numbers))
+
+    def test_a_stated_count_is_a_non_negative_integer_or_none(self, value):
+        stated = stated_district_count(value)
+        assert stated is None or (isinstance(stated, int) and stated >= 0)
+
+    def test_the_title_gate_never_raises(self, value):
+        assert isinstance(is_results_release(value), bool)
+
+    def test_the_idea_map_refuses_or_returns_a_full_roster(self, value):
+        """Never a partial roster: below the floor it must raise rather than return a
+        short list that would read as "these districts and no others"."""
+        try:
+            roster = parse_idea_map(value)
+        except ParticipatoryBudgetingError:
+            return
+        assert len(roster) >= PB_DISTRICT_FLOOR
+        assert list(roster) == sorted(set(roster))
+        assert all(1 <= n <= DISTRICT_COUNT for n in roster)
 
     def test_email_policy_returns_exactly_one_of_email_or_reason(self, value):
         email, reason = email_policy(value)

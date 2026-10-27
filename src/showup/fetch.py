@@ -20,6 +20,12 @@ from pathlib import Path
 
 from .model import BOARD_COUNT, DISTRICT_COUNT
 from .sources.boards import JOINT_INTEREST_AREAS
+from .sources.participatory_budgeting import (
+    IDEA_MAP_URL,
+    ParticipatoryBudgetingError,
+    is_results_release,
+    participation_from_payload,
+)
 
 __all__ = ["SOURCES", "FetchError", "cache_path", "fetch_all", "fetch_one", "manifest_key"]
 
@@ -33,6 +39,7 @@ CRAWL_DELAY = {
     "council.nyc.gov": 10.0,
     "data.cityofnewyork.us": 1.0,
     "nyc.legistar.com": 2.0,
+    "rnd.council.nyc.gov": 2.0,
 }
 DEFAULT_DELAY = 2.0
 
@@ -312,6 +319,77 @@ def _geospatial(dataset: str) -> Callable[..., bytes]:
     return fetch
 
 
+PRESS_API = "https://council.nyc.gov/press/wp-json/wp/v2/posts"
+
+
+def _fetch_participatory_budgeting(log: Callable[[str], None]) -> bytes:
+    """Both PB rosters: the cycle the idea map is running, and the newest results release.
+
+    The release is located through the press index, never by a URL pattern — press slugs
+    are bare post ids, so no address is derivable from a cycle (docs/OBSERVATIONS.md,
+    2026-10-27). Note the press site is a *second* WordPress install: the main site's API
+    has no press post type, which is why a main-site search suggests PB coverage stopped
+    in 2019.
+    """
+    query = urllib.parse.urlencode(
+        {
+            "search": "participatory budgeting",
+            "per_page": 100,
+            "_fields": "id,date,link,title",
+        }
+    )
+    index = json.loads(_get(f"{PRESS_API}?{query}"))
+    if not isinstance(index, list):
+        raise FetchError(f"press index: expected a JSON array, got {type(index).__name__}")
+
+    releases = [
+        post
+        for post in index
+        if isinstance(post, dict)
+        and is_results_release(str((post.get("title") or {}).get("rendered") or ""))
+    ]
+    if not releases:
+        raise FetchError(
+            f"press index: none of {len(index)} posts is a participatory budgeting "
+            "results release. Keeping the previous cache."
+        )
+    newest = max(releases, key=lambda post: str(post.get("date") or ""))
+    log(f"    {len(releases)} results release(s); newest is post {newest.get('id')}")
+
+    release = json.loads(_get(f"{PRESS_API}/{newest.get('id')}?_fields=id,date,title,content"))
+    idea_map = _get(IDEA_MAP_URL).decode("utf-8", errors="replace")
+
+    return json.dumps(
+        {
+            "idea_map_url": IDEA_MAP_URL,
+            "idea_map_html": idea_map,
+            "release_url": str(newest.get("link") or ""),
+            "release": release,
+        }
+    ).encode()
+
+
+def _participatory_budgeting(body: bytes) -> str | None:
+    """Refuse a payload either roster cannot be read from.
+
+    Both are parsed here rather than only counted, because the release's own stated
+    district count is the only check on the parse and it lives inside the body.
+    """
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        return f"not valid JSON ({error})"
+    if not isinstance(payload, dict):
+        return f"expected a JSON object, got {type(payload).__name__}"
+    try:
+        participation = participation_from_payload(payload)
+    except ParticipatoryBudgetingError as error:
+        return str(error)
+    if participation.results is None:
+        return "no results release in the payload"
+    return None
+
+
 @dataclass(frozen=True)
 class Source:
     name: str
@@ -432,6 +510,18 @@ SOURCES: tuple[Source, ...] = (
         label="ZIP code boundaries",
         dataset="pri4-ifjk",
         url="https://data.cityofnewyork.us/d/pri4-ifjk",
+    ),
+    Source(
+        name="participatory-budgeting",
+        filename="participatory_budgeting.json",
+        fetch=_fetch_participatory_budgeting,
+        invariant=_participatory_budgeting,
+        min_bytes=200_000,
+        max_age_hours=24 * 7,
+        why="the only two sources naming which districts run participatory budgeting",
+        label="Participatory budgeting rosters",
+        dataset="rnd.council.nyc.gov/ideamap/ + the press results release",
+        url="https://council.nyc.gov/pb/",
     ),
 )
 

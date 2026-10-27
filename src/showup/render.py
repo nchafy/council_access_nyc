@@ -12,6 +12,7 @@ from datetime import date, datetime
 from . import templates
 from .deadlines import accommodation_state, written_state
 from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
+from .sources.participatory_budgeting import PB_PROGRAMME_URL, Participation
 
 __all__ = [
     "preview_payload",
@@ -219,6 +220,7 @@ def preview_payload(
     built_at: datetime,
     today: date | None = None,
     now: datetime | None = None,
+    participation: Participation | None = None,
 ) -> dict:
     """The headline facts the map's detail panel shows, one artifact for both layers.
 
@@ -237,6 +239,7 @@ def preview_payload(
     return {
         "as_of": built_at.isoformat(timespec="seconds"),
         "next_meeting": upcoming,
+        "pb": _pb_meta(participation),
         "districts": {
             str(d.number): {
                 "member": None
@@ -253,6 +256,11 @@ def preview_payload(
                     {"code": b.code, "label": b.label, "share": b.share}
                     for b in sorted(d.boards or (), key=lambda b: -b.share)
                 ],
+                # Two flags only. The cycle labels and the five URLs are identical for
+                # every district, so they are hoisted to `pb` at the top level rather
+                # than repeated 51 times — that repetition alone was 68 KB of the
+                # artifact before it was lifted out.
+                "pb": _pb_flags(participation, d.number),
             }
             for d in districts
         },
@@ -268,6 +276,53 @@ def preview_payload(
             }
             for b in boards
         },
+    }
+
+
+def _participation(participation: Participation | None, number: int) -> dict | None:
+    """Participatory budgeting as two dated findings, never one standing claim.
+
+    A district is in the programme *for a cycle*. Measured on 2026-10-27: 24 districts are
+    in the cycle the idea map is running, 22 were named in the FY2027 results, and only 21
+    are in both — so "this district has participatory budgeting" is not a fact either
+    source supports. Each row therefore names its cycle and carries its own link.
+    """
+    if participation is None:
+        return None
+    results = participation.results
+    return {
+        "in_open_cycle": number in participation.open_cycle,
+        "open_cycle_url": participation.open_cycle_url,
+        "cycle": results.cycle if results else None,
+        "named_in_results": bool(results and number in results.districts),
+        "results_url": results.url if results else None,
+        "results_published": results.published.strftime("%-d %B %Y") if results else None,
+        "programme_url": PB_PROGRAMME_URL,
+    }
+
+
+def _pb_flags(participation: Participation | None, number: int) -> dict | None:
+    """One district's standing in each roster, as the map's artifact carries it."""
+    if participation is None:
+        return None
+    results = participation.results
+    return {
+        "open": number in participation.open_cycle,
+        "past": bool(results and number in results.districts),
+    }
+
+
+def _pb_meta(participation: Participation | None) -> dict | None:
+    """The labels and links both rosters share, stated once for the whole artifact."""
+    if participation is None:
+        return None
+    results = participation.results
+    return {
+        "open_cycle_url": participation.open_cycle_url,
+        "cycle": results.cycle if results else None,
+        "results_url": results.url if results else None,
+        "results_published": results.published.strftime("%-d %B %Y") if results else None,
+        "programme_url": PB_PROGRAMME_URL,
     }
 
 
@@ -290,6 +345,7 @@ def render_district(
     window_end: date | None,
     today: date | None = None,
     now: datetime | None = None,
+    participation: Participation | None = None,
 ) -> str:
     day = today or date.today()
     moment = now or datetime.now()
@@ -297,6 +353,7 @@ def render_district(
         "district.html",
         title=f"District {district.number}",
         district=district,
+        pb=_participation(participation, district.number),
         cards=[_meeting_card(meeting, today=day, now=moment) for meeting in meetings],
         built_at=built_at,
         window_end=window_end,

@@ -31,6 +31,10 @@ from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
 from .sources.members import current_by_district, load_members
+from .sources.participatory_budgeting import (
+    ParticipatoryBudgetingError,
+    load_participation,
+)
 
 __all__ = ["SHORTLIST_SIZE", "BuildError", "build_site"]
 
@@ -241,6 +245,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         (entry.publication.isoformat() for entry in budget_requests.values()), None
     )
 
+    # Both rosters, or neither. The floors live in the parser, which refuses a short
+    # roster rather than returning one: a half-read roster would render a participating
+    # district as unlisted, which is a wrong answer rather than a missing one.
+    try:
+        participation = load_participation(cache_path(raw, "participatory-budgeting"))
+    except ParticipatoryBudgetingError as error:
+        raise BuildError(str(error)) from error
     ahead = upcoming(meetings, day, SHORTLIST_SIZE)
     window_end = max((m.date for m in meetings), default=None)
 
@@ -283,7 +294,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         page_dir.mkdir()
         (page_dir / "index.html").write_text(
             render_district(
-                district, ahead, built_at=now, window_end=window_end, today=day, now=now
+                district,
+                ahead,
+                built_at=now,
+                window_end=window_end,
+                today=day,
+                now=now,
+                participation=participation,
             ),
             encoding="utf-8",
         )
@@ -353,6 +370,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         built_at=now,
         today=day,
         now=now,
+        participation=participation,
     )
     if len(preview["districts"]) != DISTRICT_COUNT or len(preview["boards"]) != BOARD_COUNT:
         raise BuildError(
@@ -414,6 +432,12 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "rows": BOARD_COUNT,
         },
     }
+    pb_file = cache_path(raw, "participatory-budgeting")
+    manifest_sources[manifest_key("participatory-budgeting")] = {
+        "fetched_at": _mtime(pb_file),
+        "max_age_hours": 24 * 7,
+        "rows": len(participation.open_cycle),
+    }
     if budget_requests_file.exists():
         manifest_sources[manifest_key("budget-requests")] = {
             "fetched_at": _mtime(budget_requests_file),
@@ -465,6 +489,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "budget_requests": budget_request_rows,
         "budget_publication": budget_publication,
         "zip_codes": len(zips),
+        "pb_open_cycle": len(participation.open_cycle),
+        "pb_latest_results": (participation.results.cycle if participation.results else None),
         "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [
             d.number for d in districts if d.member and d.member.seat_status == "vacant"

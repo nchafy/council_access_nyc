@@ -16,6 +16,7 @@ import pytest
 from pageset import every_page
 from perf import budget, gzipped_size
 
+from showup import render
 from showup.build import VENDOR_FILES, BuildError, build_site
 from showup.fetch import cache_path
 from showup.model import BOARD_COUNT, DISTRICT_COUNT
@@ -170,6 +171,20 @@ class TestTheMapIsNeverTheOnlyWay:
         assert 'id="map-card-close"' in html
 
 
+class TestParticipatoryBudgetingIsOptional:
+    """Both helpers answer None when no roster was loaded, so a caller without one
+    renders no participatory-budgeting rows rather than empty ones."""
+
+    def test_the_flags_are_absent_without_a_roster(self):
+        assert render._pb_flags(None, 35) is None
+
+    def test_the_shared_labels_are_absent_without_a_roster(self):
+        assert render._pb_meta(None) is None
+
+    def test_the_district_page_helper_is_absent_without_a_roster(self):
+        assert render._participation(None, 35) is None
+
+
 class TestThePreviewArtifact:
     """`/data/preview.json`: the headline facts the detail panel shows on selection."""
 
@@ -195,7 +210,7 @@ class TestThePreviewArtifact:
 
     def test_a_district_entry_has_what_the_panel_shows(self, preview):
         entry = preview["districts"]["1"]
-        assert set(entry) == {"member", "committees", "boards"}
+        assert set(entry) == {"member", "committees", "boards", "pb"}
 
     def test_committee_roles_travel_with_the_name(self, preview):
         """Chair and member are different facts about the same person."""

@@ -3,6 +3,12 @@
 {% macro lines(parts) %}{% for part in parts if part %}{% if not loop.first %}<br>{% endif %}{{ part }}{% endfor %}{% endmacro %}
 {% macro email_suppressed(reason) %}<em>Not shown — {{ reason }}.</em>{% endmacro %}
 {% macro cadence(text) %}{{ text }}<br><small>The board's own published wording. Boards move meetings.</small>{% endmacro %}
+{% macro pb(pb) %}<dl>
+  <dt>Current cycle</dt>
+  <dd>{% if pb.in_open_cycle %}Named in the Council's idea map. {{ link(pb.open_cycle_url, "Idea map") }}{% else %}Not named in the Council's idea map.{% endif %}</dd>
+{% if pb.cycle %}  <dt>{{ pb.cycle }} results</dt>
+  <dd>{% if pb.named_in_results %}Named.{% else %}Not named.{% endif %} Published {{ pb.results_published }}. {{ link(pb.results_url, "Results release") }}</dd>
+{% endif %}</dl>{% endmacro %}
 {% macro source(what) %}  <p class="source">{{ what }}. <a href="/references/">Sources</a>.</p>{% endmacro %}
 {% macro dl(rows) %}{% if rows %}<dl>
 {% for key, value in rows if value %}  <dt>{{ key }}</dt>

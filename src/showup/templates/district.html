@@ -125,6 +125,19 @@
 </section>
 {% endif %}
 
+{% if pb %}
+<section class="pb">
+  <h2>Participatory budgeting</h2>
+  <p class="why">
+    Participatory budgeting lets residents of a participating district vote on which
+    capital projects it funds, from a set list. Districts take part cycle by cycle, so each
+    row below names its cycle.
+  </p>
+{{ m.pb(pb) }}
+{{ m.source("Rosters as published by the Council") }}
+</section>
+{% endif %}
+
 <section class="participate">
   <h2>Testimony and attendance</h2>
   <p class="lead-truth">

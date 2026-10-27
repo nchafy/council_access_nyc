@@ -524,6 +524,21 @@ class TestShippedData:
             assert code.isdigit() and len(code) == 5
             assert districts and all(1 <= n <= 51 for n in districts)
 
+    def test_an_unreadable_pb_roster_fails_closed(self, raw_dir, tmp_path):
+        """A roster that cannot be read must stop the build, not render 51 districts as
+        "not taking part" — a wrong answer is worse than a missing page."""
+        (raw_dir / "participatory_budgeting.json").write_text("{", encoding="utf-8")
+        with pytest.raises(BuildError, match=r"participatory_budgeting\.json"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_pb_roster_below_the_floor_fails_closed(self, raw_dir, tmp_path):
+        """The floor is enforced in the parser, so it surfaces here as a BuildError."""
+        payload = json.loads((raw_dir / "participatory_budgeting.json").read_text())
+        payload["idea_map_html"] = '<div data-district="1"></div>'
+        (raw_dir / "participatory_budgeting.json").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="floor is"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
     def test_a_wrong_district_count_fails_closed(self, raw_dir, tmp_path):
         (raw_dir / "districts.geojson").write_text(
             json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"

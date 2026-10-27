@@ -58,6 +58,26 @@ const NAMED_STYLES = { 'esri-light-gray': ESRI_LIGHT_GRAY };
 //: `transportation_name` is the 6 road labels and highway shields. What survives is water,
 //: waterways, parks, landuse, buildings, administrative boundaries and place labels — enough
 //: to know where you are without competing with the thing being shown.
+//: The panel's participatory-budgeting rows. Each names its cycle and carries its own
+//: link, because a district takes part cycle by cycle rather than permanently.
+function pbRows(flags) {
+  const meta = (preview && preview.pb) || null;
+  if (!flags || !meta) return [];
+  const rows = [
+    flags.open
+      ? 'Current cycle — named in the Council\'s idea map.'
+      : 'Current cycle — not named in the Council\'s idea map.',
+  ];
+  if (flags.open) rows.push(['Idea map', meta.open_cycle_url]);
+  if (meta.cycle) {
+    rows.push(
+      `${meta.cycle} results — ${flags.past ? 'named' : 'not named'}.`,
+      [`${meta.cycle} results release`, meta.results_url],
+    );
+  }
+  return rows;
+}
+
 const DROPPED_SOURCE_LAYERS = new Set(['transportation', 'transportation_name']);
 
 //: Road layers kept despite their source layer being dropped. An early-2000s satnav screen is
@@ -194,21 +214,14 @@ const LAYERS = {
             ? [member.seat_status === 'filled' ? member.name : `${member.name} — seat ${member.seat_status}`]
             : ['No current member is on record for this seat.'],
         ],
-        // Participatory budgeting. The programme is a fact about the Council and is stated
-        // as one; *which* districts are running it is not published anywhere this project
-        // reads, and that refusal is said out loud rather than guessed. The Council's own
-        // page names no districts, and the Open Data snapshot (wwhr-5ven) stops at vote year
-        // 2017 and keys to district numbers the 2023 redistricting replaced.
+        // Participatory budgeting, from the two sources that name districts: the Council's
+        // idea map for the cycle open now, and the newest results release. Stated per
+        // cycle, never as a standing property — 24 districts are in the open cycle and 22
+        // were named in FY2027, and only 21 are in both.
         [
           'Participatory budgeting',
-          [
-            'Some districts let residents vote directly on which small capital projects get '
-              + 'funded, from a set list. Projects must be physical infrastructure in a public '
-              + 'space, cost at least $50,000, and last at least five years.',
-            'No City source publishes which districts are taking part, so this page does not '
-              + 'say whether this one is.',
-            ['Participatory budgeting at the Council', 'https://council.nyc.gov/pb/'],
-          ],
+          pbRows(d.pb),
+          ((preview && preview.pb) || {}).programme_url,
         ],
         [
           'Committees',

@@ -34,6 +34,9 @@ ALLOWED_HOSTS = frozenset(
         "www.statenislandusa.com",
         "statenislandusa.com",
         "communityprofiles.planning.nyc.gov",
+        # The Council's own app host. It serves the participatory budgeting idea map,
+        # which is the only source naming the districts in the cycle that is open now.
+        "rnd.council.nyc.gov",
     }
 )
 

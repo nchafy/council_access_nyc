@@ -216,7 +216,7 @@ const LAYERS = {
           COMMITTEES_INDEX,
         ],
         [
-          'Community boards here',
+          'Community boards',
           (d.boards || []).map((b) => shareRow(b.label, `/board/${b.code}/`, b.share)),
         ],
       ];

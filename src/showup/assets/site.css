@@ -169,7 +169,15 @@ html:has(body.app) {
 }
 .detail[hidden] { display: none; }
 .detail-head { display: flex; align-items: flex-start; gap: .5rem; }
-.detail-head h2 { margin: 0; font-size: 1.05rem; flex: 1 1 auto; }
+/* The global h2 carries a separator rule and 1rem above it. Inside a title bar that rule
+   lands on the bar itself, so both are dropped here rather than overridden per theme. */
+.detail-head h2 {
+  margin: 0;
+  padding-top: 0;
+  border-top: 0;
+  font-size: 1.05rem;
+  flex: 1 1 auto;
+}
 .detail-close {
   flex: 0 0 auto;
   width: 36px;

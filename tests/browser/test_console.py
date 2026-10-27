@@ -230,3 +230,90 @@ class TestErrorMessagesBlameTheRightThing:
             f"a real street address left path {landed!r}, selection {selection!r}, "
             f"status {status!r}"
         )
+
+
+@pytest.fixture(scope="module")
+def loaded_map(chrome, built_site):
+    """`/map/` after the geometry has had time to arrive, with the panel opened."""
+    with background_server(built_site) as base, Browser() as browser:
+        page = browser.page()
+        page.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1440,
+            height=900,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        page.navigate(base + "/map/")
+
+        deadline = time.monotonic() + 30
+        state = {}
+        while time.monotonic() < deadline:
+            state = json.loads(
+                page.evaluate(
+                    """JSON.stringify({
+                        status: (document.getElementById('map-status') || {}).textContent || '',
+                        toggleHidden: (document.getElementById('map-toggle') || {}).hidden,
+                    })"""
+                )
+            )
+            if not state.get("toggleHidden"):
+                break
+            time.sleep(0.25)
+
+        page.evaluate(
+            """document.dispatchEvent(new CustomEvent('showup:located',
+                {detail: {district: 35, lon: -73.9549, lat: 40.6736}, cancelable: true}))"""
+        )
+        time.sleep(3.0)
+        after = json.loads(
+            page.evaluate(
+                """(() => {
+                    const card = document.getElementById('map-card');
+                    const box = card.hidden ? null : card.getBoundingClientRect();
+                    const frame = document.getElementById('map').getBoundingClientRect();
+                    return JSON.stringify({
+                        cardOpen: !card.hidden,
+                        groups: document.querySelectorAll('#map-card-body .group').length,
+                        tables: document.querySelectorAll('#map-card-body .group-table').length,
+                        headers: [...document.querySelectorAll('#map-card-body th[scope="col"]')]
+                            .map((th) => th.textContent),
+                        pins: document.querySelectorAll('.map-pin').length,
+                        panelLeft: box ? Math.round(box.left) : null,
+                        frameWidth: Math.round(frame.width),
+                    });
+                })()"""
+            )
+        )
+        yield {**state, **after}
+
+
+class TestTheMapActuallyFinishesLoading:
+    """A thrown exception inside the draw path leaves a canvas, no console error the
+    console gate recognises, and a dead map. That happened on 2026-10-27 — a wrong key
+    into `LAYERS` aborted `draw()`, every gate stayed green, and the only symptom was a
+    status line still reading "Loading the map…". These assert the end state instead.
+    """
+
+    def test_the_status_line_stops_saying_loading(self, loaded_map):
+        assert "Loading" not in loaded_map["status"], loaded_map["status"]
+
+    def test_the_layer_toggle_is_revealed(self, loaded_map):
+        """Revealed only once both layers are drawn, so it stands in for "draw finished"."""
+        assert loaded_map["toggleHidden"] is False
+
+    def test_selecting_opens_the_panel(self, loaded_map):
+        assert loaded_map["cardOpen"]
+
+    def test_the_panel_renders_its_groups_and_tables(self, loaded_map):
+        assert loaded_map["groups"] >= 4
+        assert loaded_map["tables"] >= 3
+
+    def test_every_table_column_is_announced(self, loaded_map):
+        """Real `th scope=col` cells are the whole reason the panel uses a table rather
+        than an em dash between a label and its value."""
+        assert "Cycle" in loaded_map["headers"]
+        assert "Committee" in loaded_map["headers"]
+
+    def test_an_address_drops_exactly_one_pin(self, loaded_map):
+        assert loaded_map["pins"] == 1

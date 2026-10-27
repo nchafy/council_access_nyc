@@ -11,7 +11,7 @@ All five run in CI on every commit.
 
 | Gate | Command | What it proves |
 |---|---|---|
-| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 116 pre-rendered pages, 0 incomplete |
+| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 116 pre-rendered pages; **12 `color-contrast` incomplete**, one per page, which are the XP theme's gradients — resolved by computing the ratios, see §7 |
 | Keyboard + accessibility tree | `make a11y` | 161 checks over 12 page types, 0 failures |
 | Console and CSP | `make console` | 0 complaints — no page logs an error or trips its own policy |
 | Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 116 |
@@ -135,3 +135,26 @@ Both 2026-09-23:
 | No accessibility statement page (R41, a SHOULD) | Deferred with publishing; needs a working feedback address |
 | No readability gate on procedural copy (R41) | Deferred with publishing |
 | `/favicon.ico` 404s on every page load | Shipping one is an open owner decision (§7.3); `scripts/console_check.py` names it as an expected browser probe |
+
+## 7. The XP theme's contrast, computed
+
+axe cannot compute a contrast ratio against a gradient, so every page with the title bar
+reports one `color-contrast` **incomplete** — not a pass and not a failure, axe declining to
+decide. The ratios were computed against both gradient stops instead, which is the only
+honest way to clear them. Luna's own palette failed twice and both were changed rather than
+accepted:
+
+| Pair | Ratio | Verdict |
+|---|---|---|
+| Wordmark white on the title bar's light end `#3a6ea5` | 5.31:1 | pass |
+| Wordmark white on the dark end `#0a246a` | 14.25:1 | pass |
+| Tagline `#dfe8f5` on the light end — **Luna's own value** | **4.30:1** | **failed**, changed to white |
+| Ink `#000` on the control face `#ece9d8` | 17.21:1 | pass |
+| Muted `#3a3a3a` on the control face | 9.32:1 | pass |
+| Link `#0000cc` on white | 11.22:1 | pass |
+| Legend `#0a2a5a` on the group box | 13.70:1 | pass |
+| Button ink on the bevel's darkest stop `#d7d2bf` | 13.86:1 | pass |
+| Close glyph white on `#e8785a` — **Luna's own value** | **2.89:1** | **failed**, darkened to `#c8341a` |
+
+Re-run the computation on any change to these colours. A gradient stop is invisible to the
+gate, so the only thing standing behind these numbers is that somebody worked them out.

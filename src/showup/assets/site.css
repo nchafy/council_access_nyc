@@ -500,3 +500,157 @@ footer.site p { margin: .4rem 0; }
   }
   .distinction, .designed-state, .refusal, .share { background: #1b1f24; }
 }
+
+/* ===========================================================================
+   Windows XP (Luna) theme. Owner's decision, 2026-10-27.
+
+   Appended as one block rather than threaded through the sheet above, so the
+   theme can be read, argued with or reverted as a single unit.
+
+   Every colour here was checked against WCAG 2.2 AA, which Luna itself was
+   not: #000 on #ECE9D8 is about 15:1, white on #0A246A about 12:1, and the
+   classic link blue #0000CC on white about 8.9:1. The one place the real Luna
+   fails — grey disabled text on grey chrome — does not appear, because nothing
+   on this site is disabled.
+   =========================================================================== */
+
+:root {
+  --ink: #000;
+  --muted: #3a3a3a;          /* darkened from Luna's grey, which fails AA */
+  --rule: #919b9c;           /* XP control border */
+  --bg: #fff;
+  --accent: #0000cc;         /* the era's link blue, darkened to clear AA */
+  --face: #ece9d8;           /* XP control face, the "bisque" */
+  --title-a: #0a246a;        /* title bar, dark end */
+  --title-b: #3a6ea5;        /* title bar, light end */
+  --sunken: #7f9db9;         /* input border */
+}
+
+body {
+  font-family: Tahoma, Verdana, Geneva, sans-serif;
+  font-size: 15px;
+  background: var(--face);
+}
+
+/* The site header as a title bar. */
+header.site {
+  background: linear-gradient(to bottom, var(--title-b), var(--title-a));
+  border-bottom: 1px solid #0a1a4a;
+  padding-top: .45rem;
+  padding-bottom: .45rem;
+}
+header.site .wordmark,
+header.site .wordmark a,
+header.site .tagline { color: #fff; }
+header.site .wordmark { font-weight: 700; text-shadow: 0 1px 1px rgb(0 0 0 / 45%); }
+/* White, not Luna's pale blue: #dfe8f5 on the gradient's light end measures 4.30:1, under
+   the 4.5 normal text needs. Distinguished by size rather than by colour. */
+header.site .tagline { color: #fff; font-size: .86rem; }
+
+/* Document surface: a white page inside the bisque frame. */
+main {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+.app main { background: none; border: 0; margin: 0; }
+
+footer.site { color: #1d1d1d; }
+
+a { color: var(--accent); text-decoration: underline; }
+
+/* Beveled controls. The gradient and the two-tone border are what read as XP;
+   the focus ring stays the site's 3px because Luna's dotted one fails the gate. */
+button,
+.cta,
+.map-zoom-button,
+.map-toggle button,
+.detail-close {
+  font-family: inherit;
+  background: linear-gradient(to bottom, #fff 0%, var(--face) 45%, #d7d2bf 100%);
+  border: 1px solid #003c74;
+  border-radius: 3px;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px #fff;
+}
+button:active,
+.map-zoom-button:active,
+.map-toggle button:active {
+  background: linear-gradient(to bottom, #cdc9b4 0%, #e3dfcd 100%);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 25%);
+}
+.cta { color: #fff; background: linear-gradient(to bottom, var(--title-b), var(--title-a)); }
+.map-toggle button[aria-pressed="true"] {
+  background: linear-gradient(to bottom, var(--title-b), var(--title-a));
+  border-color: #0a1a4a;
+  color: #fff;
+}
+
+input[type="text"] {
+  font-family: inherit;
+  border: 1px solid var(--sunken);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 14%);
+  padding: .35rem .4rem;
+  background: #fff;
+}
+
+/* Group box: the fieldset-and-legend the panel uses instead of bullet lists. */
+.group {
+  margin: .7rem 0 0;
+  padding: .55rem .7rem .6rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fcfcfa;
+}
+.group legend {
+  padding: 0 .3rem;
+  font-weight: 700;
+  font-size: .82rem;
+  color: #0a2a5a;
+}
+.group-line { margin: .15rem 0; }
+
+/* Cards and the detail panel as dialog windows, title bar and all. */
+.card,
+.detail {
+  background: var(--face);
+  border: 1px solid #0a1a4a;
+  border-radius: 4px 4px 0 0;
+  box-shadow: 2px 2px 6px rgb(0 0 0 / 28%);
+}
+.detail-head {
+  margin: -.85rem -1rem .6rem;
+  padding: .3rem .4rem .3rem .6rem;
+  background: linear-gradient(to bottom, var(--title-b), var(--title-a));
+  border-radius: 3px 3px 0 0;
+  align-items: center;
+}
+.detail-head h2 { color: #fff; text-shadow: 0 1px 1px rgb(0 0 0 / 45%); }
+.detail-close { width: 24px; height: 24px; font-size: 1rem; }
+.detail .map-selection { background: var(--face); }
+
+/* The title-bar close box, as Luna drew it: a red square with a white glyph, inside the
+   bar rather than floating above it. Kept at 24px with a 44px hit area via padding, so it
+   still clears SC 2.5.8 without looking like a button from another decade. */
+.detail-close {
+  /* Lightest stop is #c8341a, not Luna's #e8785a: white on that measures 2.89:1 and the
+     glyph can sit over it. Every stop here clears 4.5:1. */
+  background: linear-gradient(to bottom, #c8341a 0%, #ad2a0e 55%, #8f1c06 100%);
+  border: 1px solid #7a1a06;
+  border-radius: 3px;
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  font-weight: 700;
+}
+.detail-close:active {
+  background: linear-gradient(to bottom, #a52208, #c8341a);
+}
+
+/* Clearance for the sticky "More details" link, which otherwise sits on top of the last
+   line of the last group. */
+#map-card-body { padding-bottom: .4rem; }
+.detail { padding-bottom: 0; }
+.detail .map-selection { margin-top: .6rem; padding: .55rem 0 .7rem; }

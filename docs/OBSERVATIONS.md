@@ -705,3 +705,32 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   each run" is the tell for a race; a data defect picks the same page every time. This is the
   second gate in this repo to need a settle, and both were written measuring once because a
   single read is obviously enough right up until the suite gets heavier.
+- 2026-10-27 | `src/showup/assets/site.css` (the XP theme block), `docs/accessibility-pass.md` §7 |
+  The whole site moved to a Windows XP (Luna) aesthetic by owner decision. **Luna's own palette
+  fails WCAG AA in two places and both had to be changed**: its pale-blue title text `#dfe8f5`
+  on the gradient's light end measures **4.30:1**, under the 4.5 normal text needs, and the
+  close box's lightest gradient stop `#e8785a` gives white only **2.89:1**. Changed to white
+  and `#c8341a`. axe reports **12 `color-contrast` incomplete**, one per page, because it
+  cannot compute a ratio against a gradient. | A period aesthetic is not a licence to inherit
+  its contrast. The gate goes quiet on gradients, so the nine ratios are computed and written
+  down in §7 — the only thing standing behind them is that somebody worked them out, which is
+  worth saying out loud rather than leaving as 12 silent "incompletes".
+- 2026-10-27 | `src/showup/assets/map.mjs` (`LAYER_OVERRIDES`) | Big parks rendered in pieces:
+  positron ships `landcover_wood` with **`minzoom: 10`**, and this map opens at about zoom 9.6,
+  so the wooded part of Central Park and Prospect Park was not drawn at all — only the `park`
+  polygon — and the woods appeared the moment the reader crossed zoom 10. The paint override
+  that faded woods in across zoom 8–12 was dead code below 10 for the same reason. Fixed with a
+  layer-level override, `minzoom: 0`, which needed a mechanism separate from the paint one. |
+  A raster basemap has no such seam, which is why Esri looked complete and this did not: its
+  tiles are drawn at every level. Two overrides were fighting each other, and the one that
+  looked like the fix — opacity by zoom — was below the floor where the layer existed at all.
+- 2026-10-27 | Jamaica Bay, `872g-cjhh` vs the OSM basemap | District outlines trace marsh
+  islands — Fishkill Hassocks, Sails Point Hassock, Black Wall and several unnamed rings — that
+  the basemap draws no land for, so they read as outlines floating in navy water. Others in the
+  same bay (Canarsie Pol, Ruler's Bar Hassock, Winhole Hassock) do have land under them. Our
+  geometry is DCP's **shoreline-clipped** council districts; the basemap is OSM, which has not
+  mapped every hassock. **Nothing in our pipeline is wrong** and the outlines are the real
+  boundary. | The saturated palette is what exposed it: at pale grey the same disagreement was
+  invisible. DCP also publishes water-areas-included variants (`mkqi-d8x3`, `jgqm-ccbd`) whose
+  districts cover the bay solidly and would not trace islands at all — a data decision, not a
+  styling one, because `/references/` names the dataset the site resolves addresses against.

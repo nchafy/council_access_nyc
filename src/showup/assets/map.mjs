@@ -60,19 +60,60 @@ const NAMED_STYLES = { 'esri-light-gray': ESRI_LIGHT_GRAY };
 //: to know where you are without competing with the thing being shown.
 const DROPPED_SOURCE_LAYERS = new Set(['transportation', 'transportation_name']);
 
+//: Road layers kept despite their source layer being dropped. An early-2000s satnav screen is
+//: *defined* by fat yellow arterials over saturated green, so dropping every road loses the
+//: look entirely — but minor roads and paths were what made the districts unreadable, and
+//: those stay out. Railways stay out too: a GPS unit drew roads, not timetables.
+const KEPT_ROAD_LAYERS = new Set([
+  'highway_motorway_casing',
+  'highway_motorway_inner',
+  'highway_motorway_bridge_casing',
+  'highway_motorway_bridge_inner',
+  'highway_major_casing',
+  'highway_major_inner',
+  'tunnel_motorway_casing',
+  'tunnel_motorway_inner',
+]);
+
 //: Paint overrides applied to the basemap style after the roads come out. positron paints
 //: parks `rgb(230,233,229)` on a `rgb(242,243,240)` background — a 12/255 difference, which
 //: is why green space does not read on it at all. Greened here instead of switching to a
 //: raster basemap, because raster labels blur on a 2x display and vector ones do not.
+//: Layer-level overrides — zoom range, not paint. `landcover_wood` ships `minzoom: 10`, so at
+//: the city-wide zoom this map opens at (about 9.6) the wooded part of Central Park and
+//: Prospect Park is not drawn at all: only the `park` polygon is, and the woods appear as the
+//: reader crosses zoom 10. That is the "piecewise" rendering. Esri's raster has no such seam
+//: because its tiles are pre-drawn at every level.
+const LAYER_OVERRIDES = {
+  landcover_wood: { minzoom: 0 },
+};
+
 const PAINT_OVERRIDES = {
-  park: { 'fill-color': '#d4e5ca' },
+  // The satnav palette: land a flat olive-green, water a deep navy, parks a darker green,
+  // arterials a bright yellow over a dark casing. Saturated on purpose — these screens were
+  // read at a glance in daylight, which is why nothing on them was subtle.
+  background: { 'background-color': '#cfd9a8' },
+  landuse_residential: { 'fill-color': '#d8dfb2', 'fill-opacity': 0.85 },
+  park: { 'fill-color': '#9ec27a' },
   landcover_wood: {
-    'fill-color': '#c8dcbd',
+    'fill-color': '#8fb86c',
     // Woods faded in between zoom 8 and 12, so they appeared only once well zoomed in.
-    'fill-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.55, 10, 0.9],
+    // Flat, not a zoom ramp: the ramp faded woods in across zoom 8-12, which was the other
+    // half of why one park appeared in pieces.
+    'fill-opacity': 0.95,
   },
-  landcover_glacier: { 'fill-color': '#eef2f5' },
-  water: { 'fill-color': '#b6c4cc' },
+  landcover_glacier: { 'fill-color': '#e8eef2' },
+  water: { 'fill-color': '#1b3f7a' },
+  waterway: { 'line-color': '#1b3f7a' },
+  building: { 'fill-color': '#c2ca9c', 'fill-opacity': 0.7 },
+  highway_motorway_casing: { 'line-color': '#8a6b12' },
+  highway_motorway_inner: { 'line-color': '#ffd23f' },
+  highway_motorway_bridge_casing: { 'line-color': '#8a6b12' },
+  highway_motorway_bridge_inner: { 'line-color': '#ffd23f' },
+  tunnel_motorway_casing: { 'line-color': '#8a6b12' },
+  tunnel_motorway_inner: { 'line-color': '#f3cf6a' },
+  highway_major_casing: { 'line-color': '#9a7c1d' },
+  highway_major_inner: { 'line-color': '#ffe27a' },
 };
 
 const FALLBACK_STYLE = {
@@ -87,10 +128,10 @@ const FALLBACK_STYLE = {
 //: simplified to 2.2 m, starts to look like a decision rather than a coastline.
 const MAX_ZOOM = 15;
 
-const FILL = '#9db8d2';
-const SELECTED = '#2b5f93';
-const HOVERED = '#7fa0c4';
-const LINE = '#31506f';
+const FILL = '#1b3f7a';
+const SELECTED = '#e8431f';
+const HOVERED = '#ff8c42';
+const LINE = '#13264a';
 
 //: Neighbourhood names and the City's own board labels, from the lookup the address box
 //: already fetches — 5.7 KB gzipped, so reusing it costs nothing. Populated before the map
@@ -105,6 +146,11 @@ function indexNames(lookup) {
   for (const d of lookup.districts || []) names.district.set(String(d.n), d);
   for (const b of lookup.boards || []) names.board.set(String(b.code), b);
 }
+
+//: The Council's own committees index. Per-committee pages are not linked because no source
+//: this project reads carries a committee URL, and constructing nyc.gov slugs is how 59 board
+//: links were once "verified" as working when they 404ed (docs/pull-requests.md).
+const COMMITTEES_INDEX = 'https://council.nyc.gov/committees/';
 
 const BOROUGHS = {
   1: 'Manhattan',
@@ -152,13 +198,22 @@ const LAYERS = {
                 meeting.committee,
                 [meeting.day, meeting.start_time, meeting.mode].filter(Boolean).join(' · '),
                 meeting.venue_name,
+                // Legistar's own pages for this meeting, as the hearing cards link them.
+                ...(meeting.links || []).map(([href, label]) => [label, href]),
               ].filter(Boolean)
             : [],
         ],
-        ['Committees', (d.committees || []).slice(0, 5).map((c) => `${c.name} — ${c.role}`)],
+        [
+          'Committees',
+          (d.committees || []).slice(0, 5).map((c) => `${c.name} — ${c.role}`),
+          COMMITTEES_INDEX,
+        ],
         [
           'Community boards here',
-          (d.boards || []).map((b) => `${b.label} — ${Math.round(b.share * 100)}% of this district`),
+          (d.boards || []).map((b) => [
+            `${b.label} — ${Math.round(b.share * 100)}% of this district`,
+            `/board/${b.code}/`,
+          ]),
         ],
       ];
     },
@@ -247,12 +302,20 @@ async function loadBasemapStyle(url) {
   try {
     const style = await fetchJson(url);
     const kept = (style.layers || [])
-      .filter((layer) => !DROPPED_SOURCE_LAYERS.has(layer['source-layer']))
-      .map((layer) =>
-        PAINT_OVERRIDES[layer.id]
-          ? { ...layer, paint: { ...layer.paint, ...PAINT_OVERRIDES[layer.id] } }
-          : layer
-      );
+      .filter(
+        (layer) =>
+          !DROPPED_SOURCE_LAYERS.has(layer['source-layer']) || KEPT_ROAD_LAYERS.has(layer.id)
+      )
+      .map((layer) => {
+        const paint = PAINT_OVERRIDES[layer.id];
+        const level = LAYER_OVERRIDES[layer.id];
+        if (!paint && !level) return layer;
+        return {
+          ...layer,
+          ...(level || {}),
+          ...(paint ? { paint: { ...layer.paint, ...paint } } : {}),
+        };
+      });
     // Filtered here rather than hidden after load, so the roads never paint at all and
     // there is no flash of them on a slow connection.
     return { ...style, layers: kept };
@@ -489,9 +552,9 @@ class View {
     // Built with DOM calls and textContent, never innerHTML: these values are ours, but the
     // rule in CLAUDE.md is that nothing reaches the page as markup.
     body.replaceChildren();
-    for (const [heading, rows] of this.layer.sections(id)) {
+    for (const [heading, rows, headingHref] of this.layer.sections(id)) {
       if (!rows.length) continue;
-      body.append(section(heading, rows));
+      body.append(group(heading, rows, headingHref));
     }
     link.textContent = `More details — ${this.layer.label(id)}`;
     link.href = this.layer.href(id);
@@ -508,20 +571,43 @@ class View {
   }
 }
 
-/** One labelled block of lines in the panel. */
-function section(heading, lines) {
-  const wrap = document.createElement('section');
-  const h = document.createElement('h3');
-  h.textContent = heading;
-  wrap.append(h);
-  const ul = document.createElement('ul');
-  for (const line of lines) {
-    const li = document.createElement('li');
-    li.textContent = line;
-    ul.append(li);
+/** One labelled group in the panel, as a fieldset — the era-appropriate group box.
+ *
+ * A row is either a string or `[text, href]`. Bulleted lists read as a dump; a titled group
+ * of lines reads as a record, which is what this is.
+ */
+function group(heading, rows, headingHref) {
+  const box = document.createElement('fieldset');
+  box.className = 'group';
+  const legend = document.createElement('legend');
+  if (headingHref) {
+    const a = document.createElement('a');
+    a.textContent = heading;
+    a.href = headingHref;
+    legend.append(a);
+  } else {
+    legend.textContent = heading;
   }
-  wrap.append(ul);
-  return wrap;
+  box.append(legend);
+  for (const row of rows) {
+    const [text, href] = Array.isArray(row) ? row : [row, null];
+    const line = document.createElement('p');
+    line.className = 'group-line';
+    if (href) {
+      const a = document.createElement('a');
+      a.textContent = text;
+      a.href = href;
+      if (href.startsWith('http')) {
+        // Same rule as the rest of the site: an off-site link carries no referrer.
+        a.rel = 'noopener noreferrer';
+      }
+      line.append(a);
+    } else {
+      line.textContent = text;
+    }
+    box.append(line);
+  }
+  return box;
 }
 
 function formatAsOf(iso) {

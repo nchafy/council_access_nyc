@@ -255,6 +255,9 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
             window_end=window_end,
+            meetings=ahead,
+            today=day,
+            now=now,
         ),
         encoding="utf-8",
     )

@@ -734,3 +734,21 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   invisible. DCP also publishes water-areas-included variants (`mkqi-d8x3`, `jgqm-ccbd`) whose
   districts cover the bay solidly and would not trace islands at all — a data decision, not a
   styling one, because `/references/` names the dataset the site resolves addresses against.
+- 2026-10-27 | `wwhr-5ven`, `qm5f-frjb`, `wa6b-r9jh`, `council.nyc.gov/pb/` | Asked to show
+  participatory budgeting **per district where it exists**, and no source publishes that. The
+  three NYC Open Data PB datasets all report `rows_updated` 2020-02-08 and the projects table's
+  newest `vote_year` is **2017** — nine years stale, and keyed to district numbers the 2023
+  redistricting replaced, so its "district 35" is not today's district 35. The Council's own
+  `/pb/` page covers the FY2027 cycle and **names no participating districts at all**, only the
+  four members who started the programme in 2011. | So the programme is stated as a fact about
+  the Council — residents vote on small capital projects, minimum $50,000, physical
+  infrastructure in a public space, five-year life — and the per-district claim is refused out
+  loud, in the same shape as the testimony cut-off refusal. A stale dataset keyed to superseded
+  boundaries is worse than no dataset: it is wrong twice and looks authoritative.
+- 2026-10-27 | `render_index(meetings=...)`, `src/showup/assets/map.mjs` | The next Council
+  meeting moved off the district panel and onto the landing page. It was never a district fact:
+  Council and committee meetings are citywide, and showing one inside "Council District 35"
+  invited the reading that the district holds it. Rendered at build time, so the landing page
+  needs no script for it. | This was already written down as a principle — the district is a
+  filter, never the organising key — and the panel had broken it within a day of being built.
+  The `(citywide)` label it carried was a patch over a placement that was wrong.

@@ -179,7 +179,6 @@ const LAYERS = {
     sections: (id) => {
       const hoods = (names.district.get(String(id)) || {}).hoods;
       const d = (preview && preview.districts && preview.districts[String(id)]) || {};
-      const meeting = preview && preview.next_meeting;
       const member = d.member;
       return [
         ['Neighbourhoods', hoods ? [hoods] : []],
@@ -189,19 +188,21 @@ const LAYERS = {
             ? [member.seat_status === 'filled' ? member.name : `${member.name} — seat ${member.seat_status}`]
             : ['No current member is on record for this seat.'],
         ],
-        // Citywide, and labelled as such: Council and committee meetings belong to no
-        // district, so presenting this as "this district's meeting" would be a lie.
+        // Participatory budgeting. The programme is a fact about the Council and is stated
+        // as one; *which* districts are running it is not published anywhere this project
+        // reads, and that refusal is said out loud rather than guessed. The Council's own
+        // page names no districts, and the Open Data snapshot (wwhr-5ven) stops at vote year
+        // 2017 and keys to district numbers the 2023 redistricting replaced.
         [
-          'Next Council meeting (citywide)',
-          meeting
-            ? [
-                meeting.committee,
-                [meeting.day, meeting.start_time, meeting.mode].filter(Boolean).join(' · '),
-                meeting.venue_name,
-                // Legistar's own pages for this meeting, as the hearing cards link them.
-                ...(meeting.links || []).map(([href, label]) => [label, href]),
-              ].filter(Boolean)
-            : [],
+          'Participatory budgeting',
+          [
+            'Some districts let residents vote directly on which small capital projects get '
+              + 'funded, from a set list. Projects must be physical infrastructure in a public '
+              + 'space, cost at least $50,000, and last at least five years.',
+            'No City source publishes which districts are taking part, so this page does not '
+              + 'say whether this one is.',
+            ['Participatory budgeting at the Council', 'https://council.nyc.gov/pb/'],
+          ],
         ],
         [
           'Committees',

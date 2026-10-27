@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
+{% import "macros.html" as m %}
 {% block body %}
 <section class="intro">
   {# The visible title is the wordmark in the header; this is here because a page needs
@@ -27,6 +28,27 @@
   <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
   <div id="address-results"></div>
 </section>
+
+{# Citywide, so it belongs on the landing page rather than on any district: Council and
+   committee meetings are held for the whole city. Rendered at build time, so it needs no
+   script. #}
+{% if next_meeting %}
+<fieldset class="group">
+  <legend>Next City Council meeting — citywide</legend>
+  <p class="group-line"><strong>{{ next_meeting.committee }}</strong></p>
+  <p class="group-line">
+    {{ next_meeting.day }}{% if next_meeting.start_time %} · {{ next_meeting.start_time }}{% endif +%}
+    {% if next_meeting.mode %} · {{ next_meeting.mode }}{% endif +%}
+    {% if next_meeting.time_state_label %} · {{ next_meeting.time_state_label }}{% endif +%}
+  </p>
+  {% if next_meeting.venue_name %}<p class="group-line">{{ next_meeting.venue_name }}</p>{% endif %}
+  {% if next_meeting.venue_address %}<p class="group-line">{{ next_meeting.venue_address }}</p>{% endif %}
+{% for href, label in next_meeting.links %}
+  <p class="group-line">{{ m.link(href, label) }}</p>
+{% endfor %}
+  <p class="group-line"><a href="/map/">See every district on the map</a></p>
+</fieldset>
+{% endif %}
 
 {# R6's location-free path and R39's no-JavaScript one. The full lists live on the two index
    pages rather than here, so this is the one link each that reaches them. #}

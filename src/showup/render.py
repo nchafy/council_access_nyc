@@ -47,11 +47,15 @@ def render_index(
     *,
     built_at: datetime,
     window_end: date | None,
+    meetings: list[Meeting] | None = None,
+    today: date | None = None,
+    now: datetime | None = None,
 ) -> str:
-    """The landing page, and the two index pages, which share this template.
+    """The landing page: a map button, an address box, and the next citywide meeting.
 
-    None of them carries the map: it is a route of its own, so the 449 KB library is paid
-    for only by a reader who asks for it.
+    It carries no map — that is a route of its own, so the 449 KB library is paid for only by
+    a reader who asks for it. The two index pages used to share this template and now have
+    `render_listing`.
     """
     return templates.render(
         "index.html",
@@ -68,6 +72,14 @@ def render_index(
             }
             for b in boards
         ],
+        # Citywide, which is why it sits here and not on a district. Council and committee
+        # meetings belong to no district; it was moved off the map's district panel on
+        # 2026-10-27 for that reason.
+        next_meeting=(
+            _meeting_card(meetings[0], today=today or date.today(), now=now or datetime.now())
+            if meetings
+            else None
+        ),
         built_at=built_at,
         window_end=window_end,
     )

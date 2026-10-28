@@ -287,21 +287,34 @@ function firstLabelLayerId(style) {
   return label && label.id;
 }
 
-/** Where to insert the district layers so the basemap's water paints over them.
+/** Where the district fills go: above every land polygon, below the first road.
  *
- * The shipped geometry is DCP's water-areas-included districts, which is what stops the
- * outline tracing Jamaica Bay's marsh islands — but it also means a district polygon
- * covers open water, and tinting the harbour reads as though the district owns it.
- * Inserting beneath the water fill lets the water mask exactly that part, so a district
- * reads as land without its boundary having to be a land boundary.
- *
- * Falls back to the first symbol layer, which keeps place labels above the overlay.
+ * The fill has to sit above `landuse`, `landcover` and `building`, or those polygons paint
+ * over the tint and the district comes out in unshaded patches — which is what inserting
+ * beneath the water fill did, since water sits at index 2 of the style and the land
+ * polygons at 3 to 8. Below the roads, so a road still reads over a selected district.
  */
-function districtInsertionId(style) {
+function fillInsertionId(style) {
+  const road = (style.layers || []).find(
+    (layer) => layer['source-layer'] === 'transportation'
+  );
+  return (road && road.id) || firstLabelLayerId(style);
+}
+
+/** The basemap's own water fill, to be drawn again above the district fills.
+ *
+ * The shipped geometry includes water areas — that is what stops the outline tracing
+ * Jamaica Bay's marsh islands — so without this a district tints the harbour. Re-adding
+ * the style's own water layer above the fills masks exactly the part that is water, and
+ * keeps its colour in step with whatever the basemap does, because it is a copy rather
+ * than a guess. Inserted below the roads, so bridges still cross it.
+ */
+function waterMaskLayer(style) {
   const water = (style.layers || []).find(
     (layer) => layer['source-layer'] === 'water' && layer.type === 'fill'
   );
-  return (water && water.id) || firstLabelLayerId(style);
+  if (!water) return null;
+  return { ...water, id: 'water-mask', filter: water.filter || ['all'] };
 }
 
 /** The basemap style with its road layers removed, or null if it could not be had. */
@@ -408,15 +421,19 @@ async function main() {
   });
 
   const draw = () => {
-    // Two insertion points, because the fill and the boundary want opposite things. The
-    // fill goes under the water so a water-inclusive district reads as land; the boundary
-    // goes above everything, because under the roads and building footprints it came out
-    // visibly broken.
+    // The stack, bottom to top: basemap land, district fills, a second copy of the
+    // basemap's water, roads, district boundaries, labels. Each of those positions is
+    // load-bearing — see `fillInsertionId` and `waterMaskLayer`.
     const style = basemap ? map.getStyle() : null;
-    const fillBeforeId = style ? districtInsertionId(style) : undefined;
+    const fillBeforeId = style ? fillInsertionId(style) : undefined;
     const lineBeforeId = style ? firstLabelLayerId(style) : undefined;
     for (const name of Object.keys(LAYERS)) {
-      addLayer(map, LAYERS[name], geometry[name], fillBeforeId, lineBeforeId);
+      addFillLayer(map, LAYERS[name], geometry[name], fillBeforeId);
+    }
+    const mask = style ? waterMaskLayer(style) : null;
+    if (mask && !map.getLayer(mask.id)) map.addLayer(mask, fillBeforeId);
+    for (const name of Object.keys(LAYERS)) {
+      addLineLayer(map, LAYERS[name], lineBeforeId);
     }
     // Esri ships its labels as their own tile layer, so they go on last to sit above the
     // districts. A vector style needs no equivalent: `beforeId` above does the same job.
@@ -469,7 +486,7 @@ async function main() {
   });
 }
 
-function addLayer(map, layer, data, fillBeforeId, lineBeforeId) {
+function addFillLayer(map, layer, data, beforeId) {
   // promoteId is what makes setFeatureState addressable: these features carry no id of
   // their own, only the one key property.
   map.addSource(layer.source, { type: 'geojson', data, promoteId: layer.key });
@@ -489,24 +506,16 @@ function addLayer(map, layer, data, fillBeforeId, lineBeforeId) {
         HOVERED,
         FILL,
       ],
-      // The resting fill is deliberately almost transparent. A district is identified by
-      // its boundary, not by its tint, and at 0.45 the overlay washed the basemap out —
-      // parks and water stopped reading, which was the whole reason for having a basemap.
-      // Hover and selection earn the opacity instead.
-      // Faded by zoom as well as by state. At street level the selected fill buried the
-      // streets the reader had just searched for, so the tint is multiplied by a ramp on
-      // `zoom` — never on a feature property, which is what would make it a choropleth.
-      // The ordering between the three states is preserved at every zoom.
-      // Faded by zoom as well as by state: at street level the selected fill buried the
-      // streets the reader had just searched for.
+      // The resting fill is almost transparent on purpose. A district is identified by
+      // its boundary, not by its tint, and at 0.45 the overlay washed the basemap out.
+      // Hover and selection earn the opacity instead, and all three fade as the reader
+      // zooms in, where the streets matter more than the tint.
       //
-      // `['zoom']` MUST be the top-level expression, or inside a top-level `interpolate`
-      // or `step`. Writing it as `['*', <state case>, <zoom interpolate>]` put zoom one
-      // level down, which MapLibre rejects — and it rejects it by **discarding the whole
-      // style and falling back**, so the symptom was a map with no basemap at all and
-      // nothing logged (docs/OBSERVATIONS.md, 2026-10-27). So the interpolate is outside
-      // and each stop carries its own state case; the ordering between the three states
-      // holds at every zoom.
+      // `['zoom']` MUST be the top-level expression, or sit inside a top-level
+      // `interpolate`/`step`. Written as `['*', <state case>, <zoom interpolate>]` it put
+      // zoom one level down, which MapLibre rejects by **discarding the whole style and
+      // falling back** — a map with no basemap and nothing logged
+      // (docs/OBSERVATIONS.md, 2026-10-27).
       'fill-opacity': [
         'interpolate',
         ['linear'],
@@ -531,14 +540,26 @@ function addLayer(map, layer, data, fillBeforeId, lineBeforeId) {
         ],
       ],
     },
-  }, fillBeforeId);
-  map.addLayer({
-    id: `${layer.source}-line`,
-    type: 'line',
-    source: layer.source,
-    layout: { visibility: 'none' },
-    paint: { 'line-color': LINE, 'line-width': 1.1 },
-  }, lineBeforeId);
+  }, beforeId);
+}
+
+/** The boundary, above everything the basemap draws.
+ *
+ * Separate from the fill because the two want opposite ends of the stack: the fill has to
+ * sit under the water mask, and under the water mask the boundary was also under the roads
+ * and building footprints, which made it read as broken.
+ */
+function addLineLayer(map, layer, beforeId) {
+  map.addLayer(
+    {
+      id: `${layer.source}-line`,
+      type: 'line',
+      source: layer.source,
+      layout: { visibility: 'none' },
+      paint: { 'line-color': LINE, 'line-width': 1.1 },
+    },
+    beforeId
+  );
 }
 
 /** Which layer is showing, and which feature in it is selected. */
@@ -586,7 +607,9 @@ class View {
     if (card) closePanel(card);
     if (wasSplit) {
       this.map.resize();
-      refit(this.map);
+      // Closing is the one case that does want the city back: the reader dismissed the
+      // answer, so the frame returns to the question.
+      refit(this.map, { move: true });
     }
   }
 
@@ -882,19 +905,31 @@ function dropPin(map, MapLibre, lon, lat) {
   pin = new MapLibre.Marker({ element }).setLngLat([lon, lat]).addTo(map);
 }
 
-/** Fit the city to the container, then set the zoom floor and pan box from that fit.
+/** Recompute the zoom floor and the pan box for the current frame, leaving the camera be.
  *
- * Called on load and again whenever the map's width changes, because every one of these
- * depends on the container: the fit, the floor derived from it, and the box derived from the
- * floor. Recomputing one without the others is what left the city behind the panel.
+ * All three depend on the container: the city fit, the floor derived from it, and the box
+ * derived from the floor. Recomputing one without the others is what left the city behind
+ * the panel.
+ *
+ * Deriving them means briefly standing at the city fit, so the camera is saved and put
+ * back. Both moves happen in one JavaScript turn and MapLibre renders on a frame, so only
+ * the final camera is ever drawn — without the restore, every selection snapped out to the
+ * whole city and then animated in from there, which is the "zoom restarts from a constant"
+ * the owner reported. `move: true` is for the one case that does want the city view.
  */
-function refit(map) {
+function refit(map, { move = false } = {}) {
   if (!cityBounds) return;
+  const before = { center: map.getCenter(), zoom: map.getZoom() };
+
   map.setMinZoom(0);
   map.setMaxBounds(null);
   map.fitBounds(cityBounds, { padding: viewPadding(map), animate: false });
-  map.setMaxBounds(map.getBounds());
-  map.setMinZoom(map.getZoom());
+  const box = map.getBounds();
+  const floor = map.getZoom();
+
+  if (!move) map.jumpTo(before);
+  map.setMaxBounds(box);
+  map.setMinZoom(floor);
   lockPanAtMinZoom(map);
 }
 
@@ -906,6 +941,8 @@ function refit(map) {
  * is honest about the state: at full zoom out the city is already entirely in frame, so there
  * is nowhere to pan to.
  */
+let panLockBound = false;
+
 function lockPanAtMinZoom(map) {
   const apply = () => {
     // A hair of tolerance, because zoom is a float and minZoom is whatever fitBounds left.
@@ -915,7 +952,13 @@ function lockPanAtMinZoom(map) {
       map.dragPan.enable();
     }
   };
-  map.on('zoomend', apply);
+  // Bound once. `refit` runs on every open and close, and a fresh handler each time piled
+  // up listeners that all did the same work. The bound one reads the zoom live, so it
+  // stays correct as the floor changes.
+  if (!panLockBound) {
+    map.on('zoomend', apply);
+    panLockBound = true;
+  }
   apply();
 }
 
@@ -1032,7 +1075,9 @@ function panTo(view, detail) {
   if (!Number.isFinite(detail.lon) || !Number.isFinite(detail.lat)) return;
   view.map.easeTo({
     center: [detail.lon, detail.lat],
-    zoom: Math.min(ADDRESS_ZOOM, MAX_ZOOM),
+    // Never zoom *out* to reach the address: if the reader is already closer in than
+    // street level, that is the zoom they chose.
+    zoom: Math.min(Math.max(view.map.getZoom(), ADDRESS_ZOOM), MAX_ZOOM),
     padding: viewPadding(view.map),
     duration: CAMERA_MS,
   });

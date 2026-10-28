@@ -882,3 +882,22 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   to at least one board, so the board layer answers a ZIP as completely as the council
   layer does. | A typed ZIP could not be drawn without `zip_zcta`: the geometry is keyed by
   ZCTA and 11249-style ZIPs are members of another code's polygon.
+- 2026-10-28 | `map.mjs` layer stack | The unshaded patches inside a selected district were
+  `landuse_residential`, `landcover_wood` and `building` painting over the tint: inserting
+  the fill beneath the water fill necessarily put it beneath those too, because the style
+  orders water at index 2 and the land polygons at 3 to 8. Fixed by inserting the fills
+  above every land polygon and **re-adding a copy of the style's own water layer** above
+  them, both below the first `transportation` layer so bridges still cross the water. The
+  copy is `{...water, id: 'water-mask'}` rather than a hand-written layer, so its colour
+  tracks whatever the basemap does. | Stack, bottom to top: basemap land, district fills,
+  water mask, roads, district boundaries, labels. Every position in that list is
+  load-bearing and one of them has already been got wrong twice.
+- 2026-10-28 | `map.mjs` `refit` | `refit` fitted the city with `animate: false` to derive
+  the zoom floor and pan box, which meant every panel open **snapped the camera to the
+  whole city** before the animated move eased back in — the owner reported it as the zoom
+  restarting from a constant. It now saves the camera, derives floor and box, and jumps
+  back, all in one JavaScript turn, so only the final camera is ever rendered. Verified by
+  screenshotting 90 ms after a selection while zoomed in: the frame is still at the
+  reader's zoom easing outward, not the city. | `move: true` is kept for closing the panel,
+  the one case that does want the city back. Also bound the `zoomend` pan lock once instead
+  of once per refit, which had been piling up identical listeners on every open and close.

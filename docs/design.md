@@ -98,11 +98,15 @@ Dark mode re-steps `--rule` to `#333a42` rather than inverting the light value.
   test_map_route.py` gates this against the district paint block specifically. Scoping
   matters: an unscoped grep fired on an `interpolate` belonging to the basemap's woodland
   opacity.
-- **District layers MUST be inserted beneath the basemap's water fill** (falling back to
-  the first `symbol` layer), so place labels draw above the overlay *and* the water paints
-  over the water part of each district. The shipped geometry includes water areas, which
-  is what stops the outline tracing Jamaica Bay's marsh islands; this is what stops that
-  geometry from tinting the harbour.
+- **The district fill and the district line MUST use different insertion points.** The
+  fill goes beneath the basemap's water fill, so a water-inclusive geometry reads as land
+  and the harbour is not tinted. The line goes before the first `symbol` layer, so labels
+  still sit above it — beneath the water it was also beneath the roads and building
+  footprints, and the boundary came out visibly broken.
+- **A framed feature MUST NOT zoom past `FRAME_MAX_ZOOM` (12), and the move MUST be
+  animated.** Fitting one district to the frame reached about z13.5, which reads as a
+  street map of somewhere rather than a district in its city; a cut rather than a move
+  leaves the reader working out where the view went.
 - **The panel MUST slide, and MUST NOT be hidden until the slide finishes.** `hidden` comes
   off a frame before the class goes on, or the browser has no start state and it snaps.
   Camera padding MUST be measured with `offsetWidth` and the stylesheet's own breakpoint,

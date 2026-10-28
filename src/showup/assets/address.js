@@ -94,11 +94,11 @@
   }
 
   // Several districts at once, for a ZIP that covers more than one.
-  function announceMany(districts, zip) {
+  function announceMany(districts, zip, boards, zcta) {
     var event;
     try {
       event = new CustomEvent("showup:located", {
-        detail: { districts: districts, zip: zip },
+        detail: { districts: districts, zip: zip, boards: boards, zcta: zcta },
         cancelable: true,
       });
     } catch (error) {
@@ -217,9 +217,15 @@
     // A ZIP straddling districts is the norm, so offer the choice rather than pick one.
     var asZip = query.match(/^(\d{5})(?:-\d{4})?$/);
     if (asZip && lookup.zips[asZip[1]]) {
-      var districts = lookup.zips[asZip[1]];
-      if (districts.length === 1) return { kind: "district", district: districts[0] };
-      return { kind: "choices", zip: asZip[1], districts: districts };
+      // Always "choices", even for a ZIP inside one district: the map draws the ZIP's own
+      // outline, and it cannot do that if the ZIP code is dropped on the way through.
+      return {
+        kind: "choices",
+        zip: asZip[1],
+        districts: lookup.zips[asZip[1]],
+        boards: (lookup.zip_boards || {})[asZip[1]] || [],
+        zcta: (lookup.zip_zcta || {})[asZip[1]] || asZip[1],
+      };
     }
     if (asZip) return { kind: "not_nyc", what: "ZIP code " + asZip[1] };
 
@@ -319,9 +325,11 @@
           // A ZIP straddling districts is the case the map answers best: highlight all of
           // them at once. The link list stays for the no-map page, and for when the map
           // does not claim the event.
-          if (announceMany(local.districts, local.zip)) return null;
+          if (announceMany(local.districts, local.zip, local.boards, local.zcta)) return null;
           showChoices(
-            "ZIP " + local.zip + " covers more than one council district:",
+            local.districts.length === 1
+              ? "ZIP " + local.zip + " is in one council district:"
+              : "ZIP " + local.zip + " covers more than one council district:",
             local.districts.map(function (n) {
               return { href: "/district/" + n + "/", label: "Council District " + n };
             })

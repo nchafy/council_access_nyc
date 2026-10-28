@@ -11,6 +11,9 @@ from showup.fetch import MEMBER_ROW_FLOOR, cache_path
 from showup.model import DISTRICT_COUNT
 from showup.sources.boards import JOINT_INTEREST_AREAS
 
+#: Enough synthetic ZCTAs to clear `build.ZCTA_FLOOR`; the real file has 178.
+ZCTA_FIXTURE_COUNT = 178
+
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -179,6 +182,35 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
     )
     cache_path(raw, "community-geometry").write_text(
         json.dumps({"type": "FeatureCollection", "features": board_features}), encoding="utf-8"
+    )
+
+    # Modified ZCTAs, for the ZIP outline overlay. Synthetic squares again: the build
+    # counts them against a floor and simplifies them, and nothing resolves against this
+    # file — the committed crosswalk answers which districts a ZIP covers.
+    zcta_features = []
+    for index in range(ZCTA_FIXTURE_COUNT):
+        x0 = -74.25 + (index % 20) * 0.02
+        y0 = 40.52 + (index // 20) * 0.02
+        zcta_features.append(
+            {
+                "type": "Feature",
+                "properties": {"modzcta": f"{10001 + index:05d}"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [x0, y0],
+                            [x0 + 0.018, y0],
+                            [x0 + 0.018, y0 + 0.018],
+                            [x0, y0 + 0.018],
+                            [x0, y0],
+                        ]
+                    ],
+                },
+            }
+        )
+    cache_path(raw, "zip-geometry").write_text(
+        json.dumps({"type": "FeatureCollection", "features": zcta_features}), encoding="utf-8"
     )
     return raw
 

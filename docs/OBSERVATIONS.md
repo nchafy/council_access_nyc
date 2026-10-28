@@ -864,3 +864,21 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   loss — nobody needs the line down the middle of the bay. | So "which geometry" and "what
   the reader sees" turned out to be separable, and the layer order was the cheaper lever.
   Roads, parks and labels now draw above the tint as well, which also helps legibility.
+- 2026-10-28 | `map.mjs` layer order | Putting the district **line** under the water also put
+  it under the roads and building footprints, and the boundary came out visibly broken.
+  Split into two insertion points: the fill goes beneath the water fill, the line stays
+  before the first symbol layer. | The fill and the boundary want opposite things from the
+  stacking order, so they cannot share a `beforeId`.
+- 2026-10-28 | `data/zips.geo.json` | Measured the ZIP outline overlay at four
+  simplifications: ~2 m is 125 KB gzipped, ~11 m is 51 KB, ~33 m is 33 KB, ~88 m is 18 KB.
+  The rest of the map's data is 145 KB gzipped in total, so the finest option would have
+  been an 86% increase for a feature only a ZIP search uses. Shipped at ~11 m / 4 dp and
+  fetched **on the first ZIP lookup only**. | ~11 m is still finer than the ~110 m lattice
+  the crosswalk samples at, so the overlay is not the weak link in anything. Nothing is
+  hit-tested against it: the crosswalk answers which districts and boards a ZIP covers.
+- 2026-10-28 | `crosswalks/council_to_boards.json` | Added `zip_boards` (a third overlap
+  sweep, ZCTAs against community districts) and `zip_zcta` (real ZIP -> the modified ZCTA
+  polygon that covers it, because several real ZIPs share one shape). All 215 ZIPs resolve
+  to at least one board, so the board layer answers a ZIP as completely as the council
+  layer does. | A typed ZIP could not be drawn without `zip_zcta`: the geometry is keyed by
+  ZCTA and 11249-style ZIPs are members of another code's polygon.

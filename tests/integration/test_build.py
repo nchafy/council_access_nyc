@@ -541,6 +541,15 @@ class TestShippedData:
         with pytest.raises(BuildError, match="floor is"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
 
+    def test_a_thin_zip_geometry_fails_closed(self, raw_dir, tmp_path):
+        """The ZIP outline is only a hint, but a half-read file would draw the wrong
+        boundary for a ZIP, which is worse than drawing none."""
+        payload = json.loads((raw_dir / "modzcta.geojson").read_text())
+        payload["features"] = payload["features"][:3]
+        (raw_dir / "modzcta.geojson").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="ZIP geometry has 3 features"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
     def test_a_wrong_district_count_fails_closed(self, raw_dir, tmp_path):
         (raw_dir / "districts.geojson").write_text(
             json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"
@@ -628,8 +637,10 @@ class TestReferencesPage:
 
     def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        # Seven of the nine: the two geometry files are not in this fixture's cache.
-        assert page.count("<dt>Fetched</dt>") == 8
+        # Nine of the ten. The fixture now caches the ZIP geometry too, because the build
+        # ships a ZIP outline overlay; only the shoreline-clipped council file is absent,
+        # since nothing in a build reads it (it is the crosswalk's denominator).
+        assert page.count("<dt>Fetched</dt>") == 9
 
     def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
         """Deleting a disclosure paragraph may relocate a citation, never lose one."""

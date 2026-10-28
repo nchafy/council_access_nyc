@@ -11,7 +11,14 @@ import shutil
 from datetime import date, datetime
 from pathlib import Path
 
-from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
+from .crosswalk import (
+    CROSSWALK_PATH,
+    CrosswalkError,
+    load_boards_to_districts,
+    load_zip_boards,
+    load_zip_zcta,
+    load_zips,
+)
 from .crosswalk import load as load_crosswalk
 from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
@@ -49,6 +56,13 @@ __all__ = ["SHORTLIST_SIZE", "BuildError", "build_site"]
 
 #: Owner's decision: five. Phase 1 orders the shortlist chronologically, so it ranks nothing.
 SHORTLIST_SIZE = 5
+
+#: The ZIP outline overlay: 178 modified ZCTAs, simplified far more coarsely than the
+#: districts because nothing resolves against it. ~11 m, which is still finer than the
+#: ~110 m lattice the crosswalk itself samples at, so it is not the weak link.
+ZCTA_FLOOR = 170
+ZCTA_TOLERANCE_DEG = 0.0001
+ZCTA_PRECISION = 4
 
 #: Below these the parse is broken rather than thin, and `_check_floor` refuses the build.
 FLOORS = {
@@ -399,6 +413,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     # A district number, neighbourhood, board name or ZIP resolves from this, so typing
     # one never reaches the geocoder.
     zips = load_zips(repo_root / CROSSWALK_PATH)
+    zip_boards = load_zip_boards(repo_root / CROSSWALK_PATH)
+    zip_zcta = load_zip_zcta(repo_root / CROSSWALK_PATH)
     lookup = {
         "districts": [{"n": d.number, "hoods": d.neighborhoods or ""} for d in districts],
         "boards": [
@@ -406,9 +422,34 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             for b in sorted(boards_by_code.values(), key=lambda b: b.code)
         ],
         "zips": {code: [n for n, _ in pairs] for code, pairs in sorted(zips.items())},
+        # The same ZIP against the board layer, so a ZIP resolves whichever layer is on.
+        "zip_boards": {code: [c for c, _ in pairs] for code, pairs in sorted(zip_boards.items())},
+        # Which polygon to outline for a typed ZIP: the City publishes *modified* ZCTAs,
+        # so several real ZIPs share one shape.
+        "zip_zcta": dict(sorted(zip_zcta.items())),
     }
     (data_dir / "lookup.json").write_text(
         json.dumps(lookup, separators=(",", ":")), encoding="utf-8"
+    )
+
+    # The searched ZIP's own outline, fetched by the browser only when a ZIP is typed.
+    # Coarser than the district geometry on purpose: nothing is hit-tested against it (the
+    # crosswalk already answers which districts a ZIP covers), it is drawn as a dashed hint,
+    # and at the shipped tolerance it is 50 KB gzipped against 125 KB at district precision.
+    zcta_polygons = load_features(cache_path(raw, "zip-geometry"), "modzcta")
+    if len(zcta_polygons) < ZCTA_FLOOR:
+        raise BuildError(f"ZIP geometry has {len(zcta_polygons)} features, floor is {ZCTA_FLOOR}")
+    (data_dir / "zips.geo.json").write_text(
+        json.dumps(
+            to_geojson(
+                zcta_polygons,
+                "modzcta",
+                tolerance=ZCTA_TOLERANCE_DEG,
+                precision=ZCTA_PRECISION,
+            ),
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
     )
 
     assets_src = Path(__file__).parent / "assets"

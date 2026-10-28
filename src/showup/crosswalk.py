@@ -21,6 +21,8 @@ __all__ = [
     "generate",
     "load",
     "load_boards_to_districts",
+    "load_zip_boards",
+    "load_zip_zcta",
     "load_zips",
 ]
 
@@ -57,15 +59,27 @@ def generate(
     # The City publishes *modified* ZCTAs, which merge several real ZIPs into one area,
     # so each feature is expanded back out to the codes a person would type.
     zips: dict[str, list[list]] = {}
+    zip_boards: dict[str, list[list]] = {}
+    #: Real ZIP -> the modified ZCTA whose polygon covers it, so a typed ZIP can be drawn.
+    zip_zcta: dict[str, str] = {}
     if zip_geojson and Path(zip_geojson).exists():
         zctas = load_features(zip_geojson, "modzcta")
         zcta_shares = overlap_shares(zctas, council, spacing=spacing, min_share=0.02)
+        # The same sweep against the boards, so a ZIP resolves on either layer rather than
+        # only on council districts.
+        zcta_board_shares = overlap_shares(zctas, boards, spacing=spacing, min_share=0.02)
         members = _zcta_members(zip_geojson)
         for code, pairs in zcta_shares.items():
             if not pairs:
                 continue
             for real_zip in members.get(code, [code]):
                 zips[real_zip] = [[district, share] for district, share in pairs]
+                zip_zcta[real_zip] = code
+        for code, pairs in zcta_board_shares.items():
+            if not pairs:
+                continue
+            for real_zip in members.get(code, [code]):
+                zip_boards[real_zip] = [[board, share] for board, share in pairs]
 
     uncovered = sorted((key for key, value in shares.items() if not value), key=int)
     if uncovered:
@@ -95,6 +109,8 @@ def generate(
             for key, value in sorted(reverse.items(), key=lambda kv: int(kv[0]))
         },
         "zips": dict(sorted(zips.items())),
+        "zip_boards": dict(sorted(zip_boards.items())),
+        "zip_zcta": dict(sorted(zip_zcta.items())),
     }
 
 
@@ -161,6 +177,21 @@ def load_boards_to_districts(path: Path) -> dict[str, list[tuple[int, float]]]:
     if empty:
         raise CrosswalkError(f"community boards with no council district: {empty}")
     return result
+
+
+def load_zip_boards(path: Path) -> dict[str, list[tuple[str, float]]]:
+    """Real ZIP -> the community boards covering it, ordered by share."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {
+        code: [(str(board), float(share)) for board, share in pairs]
+        for code, pairs in (data.get("zip_boards") or {}).items()
+    }
+
+
+def load_zip_zcta(path: Path) -> dict[str, str]:
+    """Real ZIP -> the modified ZCTA polygon that covers it."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {code: str(zcta) for code, zcta in (data.get("zip_zcta") or {}).items()}
 
 
 def load_zips(path: Path) -> dict[str, list[tuple[int, float]]]:

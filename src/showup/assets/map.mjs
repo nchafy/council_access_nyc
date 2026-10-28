@@ -149,9 +149,18 @@ let cityBounds = null;
 //: refitting the whole city. Built once, when the geometry arrives.
 const featureBounds = { council: new Map(), board: new Map() };
 
+//: How far a framed feature is allowed to zoom. Well below MAX_ZOOM on purpose: fitting
+//: one district to the frame landed around z13.5, which reads as a street map of somewhere
+//: rather than as a district in its city. At 12 the surrounding districts stay in view.
+const FRAME_MAX_ZOOM = 12;
+
+//: How long a camera move takes. Animated rather than cut, so the reader can see where the
+//: view went instead of being teleported.
+const CAMERA_MS = 550;
+
 //: Street level for a geocoded address, matching what the reader asked for: a located
 //: point, not a dot on a city-wide map. Capped by MAX_ZOOM, which is the tile ceiling.
-const ADDRESS_ZOOM = 15;
+const ADDRESS_ZOOM = 14;
 
 //: The MapLibre module, kept so the pin can be built after load.
 let library = null;
@@ -399,9 +408,15 @@ async function main() {
   });
 
   const draw = () => {
-    const beforeId = basemap ? districtInsertionId(map.getStyle()) : undefined;
+    // Two insertion points, because the fill and the boundary want opposite things. The
+    // fill goes under the water so a water-inclusive district reads as land; the boundary
+    // goes above everything, because under the roads and building footprints it came out
+    // visibly broken.
+    const style = basemap ? map.getStyle() : null;
+    const fillBeforeId = style ? districtInsertionId(style) : undefined;
+    const lineBeforeId = style ? firstLabelLayerId(style) : undefined;
     for (const name of Object.keys(LAYERS)) {
-      addLayer(map, LAYERS[name], geometry[name], beforeId);
+      addLayer(map, LAYERS[name], geometry[name], fillBeforeId, lineBeforeId);
     }
     // Esri ships its labels as their own tile layer, so they go on last to sit above the
     // districts. A vector style needs no equivalent: `beforeId` above does the same job.
@@ -454,7 +469,7 @@ async function main() {
   });
 }
 
-function addLayer(map, layer, data, beforeId) {
+function addLayer(map, layer, data, fillBeforeId, lineBeforeId) {
   // promoteId is what makes setFeatureState addressable: these features carry no id of
   // their own, only the one key property.
   map.addSource(layer.source, { type: 'geojson', data, promoteId: layer.key });
@@ -516,14 +531,14 @@ function addLayer(map, layer, data, beforeId) {
         ],
       ],
     },
-  }, beforeId);
+  }, fillBeforeId);
   map.addLayer({
     id: `${layer.source}-line`,
     type: 'line',
     source: layer.source,
     layout: { visibility: 'none' },
     paint: { 'line-color': LINE, 'line-width': 1.1 },
-  }, beforeId);
+  }, lineBeforeId);
 }
 
 /** Which layer is showing, and which feature in it is selected. */
@@ -556,6 +571,7 @@ class View {
       this.map.setFeatureState({ source: this.layer.source, id }, { selected: false });
     }
     this.many = null;
+    hideZipOutline(this.map);
     if (this.selected !== null) {
       this.map.setFeatureState(
         { source: this.layer.source, id: this.selected },
@@ -577,8 +593,8 @@ class View {
   /** Several features at once, with a card that names what they have in common. */
   selectMany(ids, title) {
     this.clear();
-    if (this.name !== 'council') {
-      say('That lookup gives council districts. Switch to council districts to see them.');
+    if (!ids.length) {
+      say(`${title} does not resolve to a ${this.layer.noun} in this dataset.`);
       return;
     }
     this.many = ids;
@@ -591,21 +607,24 @@ class View {
     const link = document.getElementById('map-selection');
     if (!card || !heading || !body || !link) return;
     heading.textContent = title;
+    // Whichever layer is showing: a ZIP resolves against both, so switching layers with a
+    // ZIP on screen answers the same question about the other geography.
+    const plural = `${this.layer.noun}s`;
     body.replaceChildren(
-      group('Districts covering this ZIP', {
-        caption: `${ids.length} council districts`,
-        columns: ['District'],
-        rows: ids.map((id) => [[`Council District ${id}`, `/district/${id}/`]]),
+      group(`Covering this ZIP`, {
+        caption: `${ids.length} ${ids.length === 1 ? this.layer.noun : plural}`,
+        columns: [this.name === 'council' ? 'District' : 'Board'],
+        rows: ids.map((id) => [[this.layer.label(id), this.layer.href(id)]]),
       })
     );
     link.textContent = 'Select one on the map for its details';
-    link.href = '/district/';
+    link.href = this.name === 'council' ? '/district/' : '/board/';
     openPanel(card);
     this.map.resize();
     refit(this.map);
     // Frame everything highlighted, in the part of the map the panel leaves visible.
     frameBounds(this.map, unionBounds(this.layer.source, ids));
-    say(`${title} covers ${ids.length} council districts, all highlighted.`);
+    say(`${title} covers ${ids.length} ${ids.length === 1 ? this.layer.noun : plural}, all highlighted.`);
   }
 
   select(id) {
@@ -956,8 +975,16 @@ function bindAddress(view) {
 
     // A ZIP covering several districts: highlight every one rather than making the reader
     // pick before they can see where any of them is.
-    if (Array.isArray(detail.districts) && detail.districts.length) {
-      view.selectMany(detail.districts.map(String), `ZIP ${detail.zip}`);
+    if (detail.zip && Array.isArray(detail.districts)) {
+      const ids = view.name === 'council' ? detail.districts : detail.boards || [];
+      view.selectMany(ids.map(String), `ZIP ${detail.zip}`);
+      // After the selection, so a slow or missing overlay cannot delay the answer. Once
+      // the outline is there the camera frames the ZIP rather than the union of whatever
+      // covers it: the ZIP is what was typed, and the covering areas are listed in the
+      // panel whether or not they fit in the frame.
+      showZipOutline(view.map, detail.zcta || detail.zip).then((box) => {
+        if (box) frameBounds(view.map, box);
+      });
       return;
     }
 
@@ -1007,7 +1034,7 @@ function panTo(view, detail) {
     center: [detail.lon, detail.lat],
     zoom: Math.min(ADDRESS_ZOOM, MAX_ZOOM),
     padding: viewPadding(view.map),
-    duration: 600,
+    duration: CAMERA_MS,
   });
 }
 
@@ -1069,6 +1096,63 @@ function closePanel(card) {
   }, PANEL_SLIDE_MS);
 }
 
+//: The searched ZIP's own outline. Fetched on the first ZIP lookup and never before:
+//: `zips.geo.json` is 50 KB gzipped against the 145 KB the rest of the map's data costs,
+//: and a reader who never types a ZIP should not pay for it. Nothing is hit-tested against
+//: it — the crosswalk already answers which districts and boards a ZIP covers — so it is
+//: simplified far more coarsely than the district geometry.
+const ZIP_SOURCE = 'zip-outline';
+const ZIP_URL = '/data/zips.geo.json';
+let zipGeometry = null;
+let zipPending = null;
+
+/** Draw the dashed boundary of one modified ZCTA, or quietly draw nothing.
+ *
+ * The outline is a hint on top of an answer the panel has already given, so every failure
+ * here is swallowed: a ZIP lookup must not break because an overlay could not be fetched.
+ */
+async function showZipOutline(map, zcta) {
+  if (!zcta) return null;
+  if (!zipGeometry) {
+    if (!zipPending) zipPending = fetchJson(ZIP_URL).catch(() => null);
+    zipGeometry = await zipPending;
+  }
+  if (!zipGeometry) return null;
+
+  const feature = (zipGeometry.features || []).find(
+    (candidate) => String((candidate.properties || {}).modzcta) === String(zcta)
+  );
+  if (!feature) return null;
+
+  const data = { type: 'FeatureCollection', features: [feature] };
+  if (map.getSource(ZIP_SOURCE)) {
+    map.getSource(ZIP_SOURCE).setData(data);
+  } else {
+    map.addSource(ZIP_SOURCE, { type: 'geojson', data });
+    map.addLayer({
+      id: `${ZIP_SOURCE}-line`,
+      type: 'line',
+      source: ZIP_SOURCE,
+      paint: {
+        // Dashed, and a different colour from a district boundary, because it is a
+        // different kind of line: the ZIP is what was asked about, not what was found.
+        'line-color': '#2a2a2a',
+        'line-width': 2,
+        'line-dasharray': [2, 2],
+      },
+    });
+  }
+  map.setLayoutProperty(`${ZIP_SOURCE}-line`, 'visibility', 'visible');
+  return geometryBounds({ features: [feature] });
+}
+
+/** Take the ZIP outline away: the next lookup is a different question. */
+function hideZipOutline(map) {
+  if (map.getLayer(`${ZIP_SOURCE}-line`)) {
+    map.setLayoutProperty(`${ZIP_SOURCE}-line`, 'visibility', 'none');
+  }
+}
+
 /** Camera padding that accounts for the detail panel.
  *
  * The panel is `position: absolute` *over* the map, so the container's width never changes
@@ -1102,7 +1186,11 @@ function viewPadding(map) {
 /** Frame a box in whatever part of the map the panel is not covering. */
 function frameBounds(map, box) {
   if (!box) return;
-  map.fitBounds(box, { padding: viewPadding(map), maxZoom: MAX_ZOOM, animate: false });
+  map.fitBounds(box, {
+    padding: viewPadding(map),
+    maxZoom: FRAME_MAX_ZOOM,
+    duration: CAMERA_MS,
+  });
 }
 
 /** The data's own bounding box, so the city fills the frame at any container size. */

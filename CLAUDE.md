@@ -297,6 +297,12 @@ get re-argued.
   office email is. The harm is the name-to-mailbox pairing, not the address —
   11 boards publish only the district manager's work email and withholding it
   would leave them uncontactable. R30 in the outline carries the measurement.
+- **Two council-district geometries, for two jobs.** What ships is `mkqi-d8x3`, water
+  areas included: the shoreline-clipped file traced every Jamaica Bay marsh island as its
+  own ring (28 on district 42) against a basemap that does not draw them as land. Over
+  land it is the same boundary, so hit-testing is unchanged. `872g-cjhh` is kept as a
+  **build-only** source, never shipped and never drawn, purely as the denominator for
+  board shares — computing those against a water-inflated area halves every coastal one.
 - **Participatory budgeting participation is per cycle, and lives in two places.** No
   dataset carries it: `wwhr-5ven`, `qm5f-frjb` and `wa6b-r9jh` stop at 2017-2019 on
   pre-redistricting district numbers, and `council.nyc.gov/pb/` names no districts (and on

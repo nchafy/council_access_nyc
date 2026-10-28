@@ -237,6 +237,32 @@ def loaded_map(chrome, built_site):
     """`/map/` after the geometry has had time to arrive, with the panel opened."""
     with background_server(built_site) as base, Browser() as browser:
         page = browser.page()
+        # Wrap `fetch` before the module runs, so the basemap's own requests are visible.
+        # MapLibre reports a rejected style by falling back silently, and the only
+        # external evidence is that no vector tile is ever fetched.
+        page.call("Page.enable")
+        page.call(
+            "Page.addScriptToEvaluateOnNewDocument",
+            source="""
+            window.__tiles = [];
+            (function () {
+              const original = window.fetch;
+              window.fetch = function (...args) {
+                const url = String((args[0] && args[0].url) || args[0]);
+                return original.apply(this, args).then(
+                  (response) => {
+                    window.__tiles.push(url + ' -> ' + response.status);
+                    return response;
+                  },
+                  (error) => {
+                    window.__tiles.push(url + ' -> threw');
+                    throw error;
+                  },
+                );
+              };
+            })();
+            """,
+        )
         page.call(
             "Emulation.setDeviceMetricsOverride",
             width=1440,
@@ -261,11 +287,33 @@ def loaded_map(chrome, built_site):
                 break
             time.sleep(0.25)
 
-        page.evaluate(
-            """document.dispatchEvent(new CustomEvent('showup:located',
-                {detail: {district: 35, lon: -73.9549, lat: 40.6736}, cancelable: true}))"""
-        )
-        time.sleep(3.0)
+        # Wait for a vector tile rather than sleeping: the tile host's latency is not ours
+        # to assume, and a fixed sleep turns this gate into a coin toss.
+        tile_deadline = time.monotonic() + 25
+        while time.monotonic() < tile_deadline:
+            if json.loads(page.evaluate("JSON.stringify(window.__tiles)")) and any(
+                ".pbf" in line
+                for line in json.loads(page.evaluate("JSON.stringify(window.__tiles)"))
+            ):
+                break
+            time.sleep(0.25)
+
+        # Re-dispatch until the panel opens. The listener is bound at the end of module
+        # start-up, so a single dispatch can land before anything is listening.
+        open_deadline = time.monotonic() + 15
+        while time.monotonic() < open_deadline:
+            page.evaluate(
+                """document.dispatchEvent(new CustomEvent('showup:located',
+                    {detail: {district: 35, lon: -73.9549, lat: 40.6736}, cancelable: true}))"""
+            )
+            time.sleep(0.05)
+            opening = page.evaluate(
+                "getComputedStyle(document.getElementById('map-card')).transform"
+            )
+            time.sleep(1.0)
+            if page.evaluate("!document.getElementById('map-card').hidden") is True:
+                break
+        time.sleep(1.0)
         after = json.loads(
             page.evaluate(
                 """(() => {
@@ -285,7 +333,32 @@ def loaded_map(chrome, built_site):
                 })()"""
             )
         )
-        yield {**state, **after}
+        tiles = json.loads(page.evaluate("JSON.stringify(window.__tiles)"))
+
+        # The slide, sampled rather than described: a transform read 50 ms after the class
+        # lands is the only evidence that the panel travels instead of snapping.
+        probe = """(() => {
+            const card = document.getElementById('map-card');
+            return JSON.stringify({
+                hidden: card.hidden,
+                isOpen: card.classList.contains('is-open'),
+                transform: getComputedStyle(card).transform,
+            });
+        })()"""
+        page.evaluate("document.getElementById('map-card-close').click()")
+        time.sleep(0.05)
+        closing = json.loads(page.evaluate(probe))
+        time.sleep(0.9)
+        shut = json.loads(page.evaluate(probe))
+
+        yield {
+            **state,
+            **after,
+            "tiles": tiles,
+            "openingTransform": opening,
+            "closing": closing,
+            "shut": shut,
+        }
 
 
 class TestTheMapActuallyFinishesLoading:
@@ -317,3 +390,34 @@ class TestTheMapActuallyFinishesLoading:
 
     def test_an_address_drops_exactly_one_pin(self, loaded_map):
         assert loaded_map["pins"] == 1
+
+    def test_the_panel_slid_in_rather_than_snapping(self, loaded_map):
+        """Sampled 50 ms after opening: a non-identity translate means it is travelling.
+
+        An identity matrix here would mean `hidden` and the class were set in the same
+        frame, which gives the browser no start state and skips the animation.
+        """
+        assert loaded_map["openingTransform"] not in ("none", "matrix(1, 0, 0, 1, 0, 0)"), (
+            loaded_map["openingTransform"]
+        )
+
+    def test_closing_slides_before_it_hides(self, loaded_map):
+        """`hidden` must not land until the slide is done, or the panel vanishes instead
+        of leaving. It still has to end up hidden, so it leaves the tab order."""
+        assert loaded_map["closing"]["hidden"] is False
+        assert loaded_map["closing"]["isOpen"] is False
+        assert loaded_map["shut"]["hidden"] is True
+
+    def test_the_basemap_really_drew(self, loaded_map):
+        """An invalid paint expression makes MapLibre discard the whole style and fall
+        back, with nothing logged: on 2026-10-27 a `['*', <case>, <zoom interpolate>]`
+        fill-opacity left a map with district outlines and no basemap at all, and every
+        gate including the console check stayed green. A fetched vector tile is the
+        evidence that the real style survived.
+        """
+        fetched = [line for line in loaded_map["tiles"] if ".pbf" in line]
+        assert fetched, (
+            "no vector tile was fetched, so the basemap style was rejected or never "
+            f"loaded; requests were {loaded_map['tiles']}"
+        )
+        assert any(line.endswith("-> 200") for line in fetched), fetched

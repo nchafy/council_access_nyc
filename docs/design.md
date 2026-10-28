@@ -88,13 +88,25 @@ Dark mode re-steps `--rule` to `#333a42` rather than inverting the light value.
 - **`refit()` MUST recompute fit, `minZoom`, `maxBounds` and the pan lock together**, on
   load and on every container width change. Computing them separately let the detail panel
   obscure the city at full zoom-out with no way to recover the view.
+- **`['zoom']` MUST be the top-level paint expression, or sit inside a top-level
+  `interpolate`/`step`.** MapLibre does not report a violation: it discards the whole style
+  and falls back, so the symptom is a map with no basemap and nothing logged. `make console`
+  stays green. `['*', <state case>, <zoom interpolate>]` is the shape that fails;
+  `['interpolate', ['linear'], ['zoom'], z1, <case>, z2, <case>]` is the shape that works.
 - **Hover and selection MUST use `feature-state`, never `get`.** Reading a data property
   into paint is a choropleth, which §2 of the outline forbids; `tests/integration/
   test_map_route.py` gates this against the district paint block specifically. Scoping
   matters: an unscoped grep fired on an `interpolate` belonging to the basemap's woodland
   opacity.
-- **District layers MUST be inserted before the first `symbol` layer** so place labels
-  draw above the overlay.
+- **District layers MUST be inserted beneath the basemap's water fill** (falling back to
+  the first `symbol` layer), so place labels draw above the overlay *and* the water paints
+  over the water part of each district. The shipped geometry includes water areas, which
+  is what stops the outline tracing Jamaica Bay's marsh islands; this is what stops that
+  geometry from tinting the harbour.
+- **The panel MUST slide, and MUST NOT be hidden until the slide finishes.** `hidden` comes
+  off a frame before the class goes on, or the browser has no start state and it snaps.
+  Camera padding MUST be measured with `offsetWidth` and the stylesheet's own breakpoint,
+  never a client rect — a rect includes the in-flight transform.
 - Fill opacity by state: selected `0.55`, hovered `0.35`, resting `0.12`. Every district
   and board is drawn identically — the uniform fill *is* the claim that nothing is ranked.
 
@@ -121,7 +133,7 @@ A layout defect is invisible to an HTTP assertion. These MUST run on any change 
 | `make reflow` | WCAG 1.4.10 at 320 px and 390 px |
 | `make axe` | WCAG 2.2 AA over every page |
 | `make a11y` | real `Tab` keypresses against the accessibility tree |
-| `make console` | any CSP violation or console error |
+| `make console` | any CSP violation or console error, **and** that the map finished drawing and fetched a vector tile |
 | `make shot` | what the other four cannot see |
 
 Three traps this project has already fallen into:

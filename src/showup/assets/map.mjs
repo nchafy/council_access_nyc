@@ -278,6 +278,23 @@ function firstLabelLayerId(style) {
   return label && label.id;
 }
 
+/** Where to insert the district layers so the basemap's water paints over them.
+ *
+ * The shipped geometry is DCP's water-areas-included districts, which is what stops the
+ * outline tracing Jamaica Bay's marsh islands — but it also means a district polygon
+ * covers open water, and tinting the harbour reads as though the district owns it.
+ * Inserting beneath the water fill lets the water mask exactly that part, so a district
+ * reads as land without its boundary having to be a land boundary.
+ *
+ * Falls back to the first symbol layer, which keeps place labels above the overlay.
+ */
+function districtInsertionId(style) {
+  const water = (style.layers || []).find(
+    (layer) => layer['source-layer'] === 'water' && layer.type === 'fill'
+  );
+  return (water && water.id) || firstLabelLayerId(style);
+}
+
 /** The basemap style with its road layers removed, or null if it could not be had. */
 async function loadBasemapStyle(url) {
   // A named style is ours already; there is nothing to fetch and no roads to strip.
@@ -382,7 +399,7 @@ async function main() {
   });
 
   const draw = () => {
-    const beforeId = basemap ? firstLabelLayerId(map.getStyle()) : undefined;
+    const beforeId = basemap ? districtInsertionId(map.getStyle()) : undefined;
     for (const name of Object.keys(LAYERS)) {
       addLayer(map, LAYERS[name], geometry[name], beforeId);
     }
@@ -465,8 +482,21 @@ function addLayer(map, layer, data, beforeId) {
       // streets the reader had just searched for, so the tint is multiplied by a ramp on
       // `zoom` — never on a feature property, which is what would make it a choropleth.
       // The ordering between the three states is preserved at every zoom.
+      // Faded by zoom as well as by state: at street level the selected fill buried the
+      // streets the reader had just searched for.
+      //
+      // `['zoom']` MUST be the top-level expression, or inside a top-level `interpolate`
+      // or `step`. Writing it as `['*', <state case>, <zoom interpolate>]` put zoom one
+      // level down, which MapLibre rejects — and it rejects it by **discarding the whole
+      // style and falling back**, so the symptom was a map with no basemap at all and
+      // nothing logged (docs/OBSERVATIONS.md, 2026-10-27). So the interpolate is outside
+      // and each stop carries its own state case; the ordering between the three states
+      // holds at every zoom.
       'fill-opacity': [
-        '*',
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        12,
         [
           'case',
           ['boolean', ['feature-state', 'selected'], false],
@@ -475,7 +505,15 @@ function addLayer(map, layer, data, beforeId) {
           0.35,
           0.12,
         ],
-        ['interpolate', ['linear'], ['zoom'], 12, 1, MAX_ZOOM, 0.4],
+        MAX_ZOOM,
+        [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          0.22,
+          ['boolean', ['feature-state', 'hovered'], false],
+          0.16,
+          0.05,
+        ],
       ],
     },
   }, beforeId);
@@ -527,10 +565,9 @@ class View {
     this.selected = null;
 
     const card = document.getElementById('map-card');
-    if (card) card.hidden = true;
     // Only resize when the split actually collapses, or every clear costs a reflow.
     const wasSplit = document.body.classList.contains('has-selection');
-    document.body.classList.remove('has-selection');
+    if (card) closePanel(card);
     if (wasSplit) {
       this.map.resize();
       refit(this.map);
@@ -563,8 +600,7 @@ class View {
     );
     link.textContent = 'Select one on the map for its details';
     link.href = '/district/';
-    card.hidden = false;
-    document.body.classList.add('has-selection');
+    openPanel(card);
     this.map.resize();
     refit(this.map);
     // Frame everything highlighted, in the part of the map the panel leaves visible.
@@ -604,8 +640,7 @@ class View {
       // provenance, which is what the link above is for.
       asOf.textContent = `Summary of ${this.layer.href(id)}, built ${formatAsOf(preview.as_of)}.`;
     }
-    card.hidden = false;
-    document.body.classList.add('has-selection');
+    openPanel(card);
     // MapLibre does not watch its container: without this the canvas keeps the full-width
     // size and the city sits off-centre behind the panel. The floor has to be recomputed
     // too — it was the zoom that fitted the city across the *full* width, so once the panel
@@ -613,6 +648,7 @@ class View {
     // half-hidden with no way to recover.
     this.map.resize();
     refit(this.map);
+    frameBounds(this.map, featureBounds[this.layer.source].get(String(id)));
   }
 }
 
@@ -995,6 +1031,44 @@ function unionBounds(source, ids) {
   ]);
 }
 
+//: How long the panel takes to slide, matching the transition in site.css. The element is
+//: marked `hidden` only once the close has finished, so it is never seen vanishing
+//: mid-slide, and it stays out of the tab order the rest of the time.
+const PANEL_SLIDE_MS = 220;
+
+let closeTimer = null;
+
+/** Reveal the panel, then let CSS slide it in from the edge.
+ *
+ * `hidden` comes off first and the class goes on in a later frame: setting both in one go
+ * gives the browser no start state to animate from, so it snaps. Two nested
+ * `requestAnimationFrame` calls guarantee a layout in between.
+ */
+function openPanel(card) {
+  if (closeTimer !== null) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+  card.classList.remove('is-open');
+  card.hidden = false;
+  document.body.classList.add('has-selection');
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => card.classList.add('is-open'));
+  });
+}
+
+/** Slide the panel out, and only hide it once the slide has finished. */
+function closePanel(card) {
+  document.body.classList.remove('has-selection');
+  if (card.hidden) return;
+  card.classList.remove('is-open');
+  if (closeTimer !== null) clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => {
+    card.hidden = true;
+    closeTimer = null;
+  }, PANEL_SLIDE_MS);
+}
+
 /** Camera padding that accounts for the detail panel.
  *
  * The panel is `position: absolute` *over* the map, so the container's width never changes
@@ -1009,15 +1083,16 @@ function viewPadding(map) {
   const card = document.getElementById('map-card');
   if (!card || card.hidden) return flat;
 
-  const cardBox = card.getBoundingClientRect();
   const mapBox = map.getContainer().getBoundingClientRect();
-  if (!cardBox.width || !mapBox.width) return flat;
+  if (!mapBox.width) return flat;
 
-  // Docked beside the map at wide widths and stacked beneath it at narrow ones. Only the
-  // docked case steals horizontal room, and only the overlap counts.
-  const overlap = Math.max(0, Math.min(mapBox.right, cardBox.right) - cardBox.left);
-  const vertical = Math.max(0, Math.min(mapBox.bottom, cardBox.bottom) - cardBox.top);
-  if (overlap < 40 || vertical < mapBox.height * 0.5) return flat;
+  // `offsetWidth`, not a client rect: the panel is mid-slide for 220 ms after it opens and
+  // a rect includes the transform, which would make the camera padding animate along with
+  // it. Docked-vs-stacked is the stylesheet's own breakpoint for the same reason — at
+  // narrow widths the panel sits under the map and steals no horizontal room.
+  const docked = window.matchMedia('(min-width: 52rem)').matches;
+  const overlap = docked ? card.offsetWidth : 0;
+  if (overlap < 40) return flat;
 
   // Never give away more than half the frame: past that the fit zooms out so far the city
   // is smaller than it was before the panel opened.

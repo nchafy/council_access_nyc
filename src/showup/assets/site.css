@@ -168,6 +168,26 @@ html:has(body.app) {
   box-shadow: 0 -2px 8px rgb(16 25 40 / 10%);
 }
 .detail[hidden] { display: none; }
+
+/* The panel slides in from whichever edge it is docked to: up from the bottom while it
+   spans the width, in from the right once it docks beside the map. `is-open` is added a
+   frame after `hidden` comes off, so there is a start state to animate from, and removed
+   before the element is hidden again, so closing slides too (map.mjs, `openPanel`).
+
+   `transform` and `opacity` only — both are compositor properties, so the slide does not
+   relayout the panel's tables on every frame. */
+.detail {
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform 220ms ease-out, opacity 160ms ease-out;
+  will-change: transform;
+}
+.detail.is-open {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+
 .detail-head { display: flex; align-items: flex-start; gap: .5rem; }
 /* The global h2 carries a separator rule and 1rem above it. Inside a title bar that rule
    lands on the bar itself, so both are dropped here rather than overridden per theme. */
@@ -211,7 +231,10 @@ html:has(body.app) {
     border-top: 0;
     border-left: 1px solid var(--rule);
     box-shadow: -2px 0 8px rgb(16 25 40 / 8%);
+    /* Docked to the right edge, so it travels horizontally instead. */
+    transform: translateX(100%);
   }
+  .detail.is-open { transform: translateX(0); }
 }
 body.has-selection .map { right: 0; }
 @media (min-width: 52rem) {
@@ -804,4 +827,15 @@ input[type="text"] {
   background: var(--title-a);
   border-bottom: 1px solid #06143c;
   border-radius: 0;
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  /* WCAG 2.3.3. Last in the file so it also overrides the docked rule above, which is
+     inside a min-width query and would otherwise win on source order. */
+  .detail,
+  .detail.is-open {
+    transform: none;
+    transition: none;
+  }
 }

@@ -817,3 +817,50 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   `/ideamap/api/` 404; and `/pb/vote/`, `/pb/districts/` and `/budget/participatory-budgeting/`
   return a real 404 **carrying a ~46 KB styled page with an empty `<title>`** — the inverse of
   the usual trap, so check the status *and* the title.
+- 2026-10-27 | `mkqi-d8x3` vs `872g-cjhh` | Switched the shipped council geometry to DCP's
+  **water-areas-included** districts. Measured ring counts per district: **42 goes from 28
+  rings / 7,417 points to 1 ring / 340**, 32 from 13 to 1, 31 from 11 to 1; city-wide 185
+  rings to 53. Districts away from water are the same line — 36 is 197 points against 195,
+  35 is 259 against 257 — so this is not a different boundary over land, it is the same
+  boundary without the marsh islands the basemap never draws. The file is 862 KB against
+  3.8 MB. | So the second report of "islands look weird" (district 42, after Rockaway) is
+  fixed at the data layer rather than by styling. Land points hit-test identically, which
+  is where addresses are; a point in open water now resolves to a district instead of to
+  nothing, which is the City's own assignment.
+- 2026-10-27 | `crosswalks/council_to_boards.json` | Regenerating the crosswalk against the
+  water-included districts **halved every coastal share**: district 1 went 0.5375/0.2997/
+  0.1318 to 0.2688/0.1475/0.0645, so its three boards summed to **0.48** instead of 0.97,
+  and district 5's single board went 0.9813 to 0.5814. The missing half is open water,
+  because the shares are areal and the boards stay shoreline-clipped. | refused: one
+  geometry for both jobs. `872g-cjhh` is kept as a build-only source purely as the
+  **denominator** for "what share of this district does board N cover"; it is never
+  shipped and never drawn. With that split the regenerated crosswalk is byte-identical to
+  the committed one, and 0 of 215 ZIP assignments changed.
+- 2026-10-27 | `map.mjs` fill-opacity | A `['*', <feature-state case>, <interpolate on
+  ['zoom']>]` expression is **invalid**: MapLibre requires `['zoom']` to be the top-level
+  expression or sit inside a top-level `interpolate`/`step`. It does not report this as an
+  error — it **discards the whole style and falls back**, so the symptom was a map showing
+  district outlines on the fallback `#f6f7f9` background, no basemap, no fill. `make
+  console` reported 0 complaints, an injected `window.onerror` collector caught nothing,
+  and the only external evidence was that `tiles.openfreemap.org/planet` was fetched once
+  and aborted and no `.pbf` ever followed. | The fix is `['interpolate', ['linear'],
+  ['zoom'], 12, <case>, 15, <case>]` — zoom outside, the data-driven case as each stop's
+  output. Gated now by `TestTheMapActuallyFinishesLoading::test_the_basemap_really_drew`,
+  which asserts a vector tile was fetched; verified by reintroducing the bad expression.
+  Isolating this cost a bisect against a rebuilt pre-swap tree, because the obvious suspect
+  was the geometry change landing at the same time and it was not that.
+- 2026-10-28 | `872g-cjhh` ring areas | Tried to keep the land-only boundary and simply drop
+  the marsh rings. **There is no threshold that works.** The Jamaica Bay hassocks in
+  districts 31, 32 and 42 measure 0.10-1.07 km2, and the real islands elsewhere sit in the
+  same band: Governors Island 0.71, Roosevelt Island 0.58, City Island 0.30. Of 185 rings,
+  71 are under 0.01 km2 and 61 are over 1.0, but the middle is a continuum. | refused:
+  an area filter. It would have had to drop Governors Island to drop a hassock.
+- 2026-10-28 | `map.mjs` `districtInsertionId` | Owner disliked the water-included districts
+  tinting open water. Fixed without changing the data: the district layers are inserted
+  **beneath the basemap's water fill** rather than beneath the first symbol layer, so the
+  water paints over exactly the part of each polygon that is water. A district then reads
+  as land-only while its geometry stays water-inclusive, which is what keeps the marsh
+  islands from being traced. The boundary across open water is hidden too, which is no
+  loss — nobody needs the line down the middle of the bay. | So "which geometry" and "what
+  the reader sees" turned out to be separable, and the layer order was the cheaper lever.
+  Roads, parks and labels now draw above the tint as well, which also helps legibility.

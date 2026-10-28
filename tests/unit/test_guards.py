@@ -166,21 +166,21 @@ class TestGeoGuards:
                     "type": "FeatureCollection",
                     "features": [
                         {
-                            "properties": {"coundist": "1"},
+                            "properties": {"coun_dist": "1"},
                             "geometry": {"type": "Point", "coordinates": [0, 0]},
                         }
                     ],
                 }
             )
         )
-        assert load_features(path, "coundist") == []
+        assert load_features(path, "coun_dist") == []
 
     def test_a_feature_with_no_key_is_dropped(self, tmp_path):
         path = tmp_path / "g.geojson"
-        payload = _squares("coundist", ["1"])
+        payload = _squares("coun_dist", ["1"])
         payload["features"][0]["properties"] = {}
         path.write_text(json.dumps(payload))
-        assert load_features(path, "coundist") == []
+        assert load_features(path, "coun_dist") == []
 
     def test_a_row_with_no_candidate_polygons_is_skipped(self):
         # Latitudes above every polygon: the row filter short-circuits.

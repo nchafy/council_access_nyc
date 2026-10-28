@@ -111,7 +111,7 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
         features.append(
             {
                 "type": "Feature",
-                "properties": {"coundist": str(n)},
+                "properties": {"coun_dist": str(n)},
                 "geometry": {
                     "type": "Polygon",
                     "coordinates": [

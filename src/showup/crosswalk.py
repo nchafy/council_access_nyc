@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 
 from .geo import GRID_SPACING_DEG, MIN_SHARE, load_features, overlap_shares
-from .model import BOARD_COUNT, DISTRICT_COUNT
+from .model import BOARD_COUNT, COUNCIL_KEY, DISTRICT_COUNT
 from .sources.boards import JOINT_INTEREST_AREAS
 
 __all__ = [
@@ -39,7 +39,9 @@ def generate(
     spacing: float = GRID_SPACING_DEG,
 ) -> dict:
     """Compute the crosswalk. Slow by design; called by `showup crosswalk` only."""
-    council = load_features(council_geojson, "coundist")
+    # The shoreline-clipped file, deliberately: these shares are areal, and dividing by a
+    # district area that includes open water halves every coastal one (model.py).
+    council = load_features(council_geojson, COUNCIL_KEY)
     if len(council) != DISTRICT_COUNT:
         raise CrosswalkError(f"expected {DISTRICT_COUNT} council districts, found {len(council)}")
 
@@ -76,7 +78,7 @@ def generate(
             f"shares below {MIN_SHARE} dropped as slivers"
         ),
         "sources": {
-            "council_districts": "NYC Open Data 872g-cjhh",
+            "council_districts": "NYC Open Data 872g-cjhh (shoreline-clipped, for areal shares)",
             "community_districts": "NYC Open Data 5crt-au7u (joint interest areas excluded)",
         },
         "note": (

@@ -88,7 +88,7 @@ def _crosswalk(args: argparse.Namespace) -> int:
 
     try:
         data = generate(
-            cache_path(raw, "council-geometry"),
+            cache_path(raw, "council-geometry-land"),
             cache_path(raw, "community-geometry"),
             cache_path(raw, "zip-geometry"),
         )

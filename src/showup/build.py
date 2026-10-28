@@ -15,7 +15,16 @@ from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts,
 from .crosswalk import load as load_crosswalk
 from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
-from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
+from .model import (
+    BOARD_COUNT,
+    COUNCIL_KEY,
+    COUNCIL_KEY_WATER,
+    DISTRICT_COUNT,
+    District,
+    DistrictBoard,
+    Manifest,
+    Member,
+)
 from .render import (
     preview_payload,
     render_board,
@@ -340,13 +349,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     # does the point-in-polygon against this.
     data_dir = staging / "data"
     data_dir.mkdir()
-    council_polygons = load_features(cache_path(raw, "council-geometry"), "coundist")
+    council_polygons = load_features(cache_path(raw, "council-geometry"), COUNCIL_KEY_WATER)
     if len(council_polygons) != DISTRICT_COUNT:
         raise BuildError(
             f"district geometry has {len(council_polygons)} features, expected {DISTRICT_COUNT}"
         )
     (data_dir / "districts.geo.json").write_text(
-        json.dumps(to_geojson(council_polygons, "coundist"), separators=(",", ":")),
+        json.dumps(to_geojson(council_polygons, COUNCIL_KEY), separators=(",", ":")),
         encoding="utf-8",
     )
 

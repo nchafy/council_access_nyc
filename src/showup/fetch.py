@@ -477,12 +477,26 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="council-geometry",
         filename="districts.geojson",
+        fetch=_geospatial("mkqi-d8x3"),
+        invariant=_geojson_features(DISTRICT_COUNT),
+        # 862 KB against the shoreline-clipped file's 3.8 MB: the difference is the
+        # thousands of vertices that traced every marsh island.
+        min_bytes=500_000,
+        max_age_hours=24 * 365,
+        why="address lookup and the board crosswalk",
+        label="Council district boundaries, water areas included",
+        dataset="mkqi-d8x3",
+        url="https://data.cityofnewyork.us/d/mkqi-d8x3",
+    ),
+    Source(
+        name="council-geometry-land",
+        filename="districts_land.geojson",
         fetch=_geospatial("872g-cjhh"),
         invariant=_geojson_features(DISTRICT_COUNT),
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
-        why="address lookup and the board crosswalk",
-        label="Council district boundaries",
+        why="the denominator for board shares; never shipped, and never drawn",
+        label="Council district boundaries, shoreline-clipped",
         dataset="872g-cjhh",
         url="https://data.cityofnewyork.us/d/872g-cjhh",
     ),

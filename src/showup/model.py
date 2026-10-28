@@ -26,6 +26,23 @@ __all__ = [
 #: How many `District`s and `DistrictBoard`s New York City has. Facts about the city, not
 #: thresholds: the fetch invariants, the crosswalk guards and the build all count to these.
 DISTRICT_COUNT = 51
+
+#: Two council-district files, for two different jobs, spelling the key two ways.
+#:
+#: What ships is `mkqi-d8x3`, water areas included, which spells the property `coun_dist`.
+#: It draws cleanly — the shoreline-clipped file traced every Jamaica Bay marsh island as
+#: its own ring, 28 of them on district 42, against a basemap that does not draw them as
+#: land — and it hit-tests the same over land, where addresses are.
+#:
+#: The shoreline-clipped `872g-cjhh` stays as a build-only input, spelling the property
+#: `coundist`, because it is the right **denominator** for "what share of this district
+#: does board N cover". Measured 2026-10-27: computing those shares against the
+#: water-included area halves them, so district 1's three boards summed to 0.48 and the
+#: missing half was open water.
+#:
+#: Everything downstream of ingest reads `coundist`, so the rename stops here.
+COUNCIL_KEY_WATER = "coun_dist"
+COUNCIL_KEY = "coundist"
 BOARD_COUNT = 59
 
 

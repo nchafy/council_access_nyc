@@ -805,15 +805,11 @@ input[type="text"] {
    as "this address" rather than "somewhere around here". Three sides rounded and the
    fourth square, rotated 45deg, is the shape without an image — `img-src 'self'` refuses
    a data: URI, which is how MapLibre's own marker is drawn. */
-.map-pin {
-  width: 18px;
-  height: 18px;
-  border: 2px solid #fff;
-  border-radius: 50% 50% 50% 0;
-  background: #e8431f;
-  transform: rotate(-45deg);
-  box-shadow: 0 0 0 1px #7a1a06, 1px -1px 3px rgb(0 0 0 / 45%);
-}
+/* The pin's colours only. Its shape and its anchoring are geometry in map.mjs, because
+   MapLibre overwrites `transform` on a marker element and a CSS-rotated teardrop silently
+   rendered unrotated. `filter` is a paint property, so it survives. */
+.map-pin { display: block; filter: drop-shadow(1px 1px 2px rgb(0 0 0 / 45%)); }
+.map-pin path { fill: #e8431f; stroke: #fff; stroke-width: 2; }
 
 /* MapLibre's own stylesheet, reduced to the rules that matter here.
  *

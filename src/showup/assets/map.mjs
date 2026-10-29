@@ -880,6 +880,20 @@ function bindToggle(view) {
 //: second lookup does not litter the map.
 let pin = null;
 
+//: The pin, as a path whose tip is the last point: `PIN_H` is chosen so the tip sits on
+//: the bottom edge of the box, which is what lets `anchor: 'bottom'` put it exactly on the
+//: coordinate with no offset to get wrong.
+//:
+//: It is drawn as SVG and not as a rotated div because **MapLibre writes its own
+//: `transform` onto the marker element**, which silently overrode the `rotate(-45deg)` the
+//: teardrop used to depend on: the shape rendered unrotated, so its sharp corner pointed
+//: down and to the left and readers took that corner for the address (owner's report,
+//: 2026-10-29). Nothing in CSS can win that fight — the shape has to carry its own
+//: geometry.
+const PIN_W = 20;
+const PIN_H = 27;
+const PIN_PATH = 'M10 27C10 27 18 16 18 10A8 8 0 1 0 2 10C2 16 10 27 10 27Z';
+
 function dropPin(map, MapLibre, lon, lat) {
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
   if (pin) {
@@ -887,11 +901,22 @@ function dropPin(map, MapLibre, lon, lat) {
     return;
   }
   // MapLibre's default marker is an inline-styled SVG, which `style-src 'self'` would
-  // refuse. Ours is an element with a class, styled in site.css.
-  const element = document.createElement('div');
-  element.className = 'map-pin';
-  element.setAttribute('aria-hidden', 'true');
-  pin = new MapLibre.Marker({ element }).setLngLat([lon, lat]).addTo(map);
+  // refuse. Ours carries no style attribute: the colours are a class in site.css and the
+  // shape is geometry attributes, the same division the share bars use.
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'map-pin');
+  svg.setAttribute('width', String(PIN_W));
+  svg.setAttribute('height', String(PIN_H));
+  svg.setAttribute('viewBox', `0 0 ${PIN_W} ${PIN_H}`);
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', PIN_PATH);
+  svg.append(path);
+
+  // `bottom`, so the point of the pin is the thing placed on the coordinate.
+  pin = new MapLibre.Marker({ element: svg, anchor: 'bottom' })
+    .setLngLat([lon, lat])
+    .addTo(map);
 }
 
 /** Recompute the zoom floor and pan box for the current frame, leaving the camera be.

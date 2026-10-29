@@ -333,6 +333,32 @@ def loaded_map(chrome, built_site):
                 })()"""
             )
         )
+        # Where the pin's drawn tip is, against where MapLibre put the coordinate. The
+        # resolved transform matrix already includes `translate(-50%, -100%)` for a bottom
+        # anchor, so the coordinate is at (e + width/2, f + height).
+        pin_geometry = json.loads(
+            page.evaluate(
+                """(function () {
+                    var pin = document.querySelector('.map-pin');
+                    if (!pin) return JSON.stringify({present: false});
+                    var nums = (getComputedStyle(pin).transform.match(/-?[\\d.]+/g) || [])
+                        .map(Number);
+                    var box = pin.getBoundingClientRect();
+                    var frame = document.getElementById('map').getBoundingClientRect();
+                    var width = box.width;
+                    var height = box.height;
+                    return JSON.stringify({
+                        present: true,
+                        tag: pin.tagName.toLowerCase(),
+                        pointX: nums[4] + width / 2,
+                        pointY: nums[5] + height,
+                        tipX: box.left - frame.left + width / 2,
+                        tipY: box.top - frame.top + height,
+                    });
+                })()"""
+            )
+        )
+
         tiles = json.loads(page.evaluate("JSON.stringify(window.__tiles)"))
 
         # The slide, sampled rather than described: a transform read 50 ms after the class
@@ -356,6 +382,7 @@ def loaded_map(chrome, built_site):
             **after,
             "tiles": tiles,
             "openingTransform": opening,
+            "pin": pin_geometry,
             "closing": closing,
             "shut": shut,
         }
@@ -407,6 +434,23 @@ class TestTheMapActuallyFinishesLoading:
         assert loaded_map["closing"]["hidden"] is False
         assert loaded_map["closing"]["isOpen"] is False
         assert loaded_map["shut"]["hidden"] is True
+
+    def test_the_pin_points_at_the_address(self, loaded_map):
+        """The tip marks the coordinate, not the middle of the teardrop.
+
+        This regressed invisibly once: `.map-pin` was a div rotated 45deg in CSS, and
+        MapLibre writes its own `transform` onto a marker element, so the rotation never
+        applied. The shape rendered unrotated with its sharp corner down and to the left,
+        and that corner is what a reader takes for the address.
+        """
+        pin = loaded_map["pin"]
+        assert pin["present"], "no pin was dropped for a geocoded address"
+        assert abs(pin["tipX"] - pin["pointX"]) < 1.0, pin
+        assert abs(pin["tipY"] - pin["pointY"]) < 1.0, pin
+
+    def test_the_pin_carries_its_own_geometry(self, loaded_map):
+        """An SVG path, so no CSS transform has to survive MapLibre writing over it."""
+        assert loaded_map["pin"]["tag"] == "svg"
 
     def test_the_basemap_really_drew(self, loaded_map):
         """An invalid paint expression makes MapLibre discard the whole style and fall

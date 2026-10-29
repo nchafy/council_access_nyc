@@ -933,3 +933,14 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   loudly, it silently stops testing. Guarded now by
   `TestTheAddressHarnessMatchesTheRealMarkup`, which also asserts the early-return list in
   the script still matches the element list the test knows about.
+- 2026-10-29 | `.map-pin`, `map.mjs` `dropPin` | The pin read as pointing at something down
+  and to the left of the address. Cause: **MapLibre writes its own `transform` onto the
+  marker element**, which silently overrode `.map-pin`'s `rotate(-45deg)`. The teardrop had
+  never been rotated — it rendered as a square with three rounded corners and a sharp
+  bottom-left one, and that corner is what a reader takes for the location. On top of that
+  MapLibre anchors on the element's centre by default, so even a correctly rotated pin
+  would have pointed ~13 px south of the coordinate. | Now an SVG path whose tip is the
+  last point on the bottom edge, with `anchor: 'bottom'`, so the tip is placed on the
+  coordinate with no offset to get wrong: measured error 0.00 px on both axes. Nothing in
+  CSS can win against a library that owns `transform` — a marker has to carry its own
+  geometry. Gated by `test_the_pin_points_at_the_address`, verified by restoring the div.

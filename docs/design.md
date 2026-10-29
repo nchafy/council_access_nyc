@@ -138,14 +138,23 @@ Dark mode re-steps `--rule` to `#333a42` rather than inverting the light value.
   to be fought at 320 px and over the map panel for no gain.
 - Focus MUST stay in the text box, with `aria-activedescendant` naming the active row.
 
-## 7. Basemap attribution
+## 7. The address pin
+
+- The pin MUST carry its own geometry as an SVG path, and MUST be anchored on its tip
+  (`anchor: 'bottom'`). **MapLibre writes `transform` onto the marker element**, so a
+  CSS `rotate()` on it silently does nothing — a rotated-div teardrop rendered unrotated
+  and appeared to point south-west of the address.
+- A marker MUST NOT rely on any CSS transform. Colour and shadow are fine; shape and
+  position are not.
+
+## 8. Basemap attribution
 
 The basemap is OpenFreeMap serving OpenMapTiles data derived from OpenStreetMap, which is
 ODbL. **The credit MUST be rendered.** MapLibre's own control is disabled and its
 stylesheet is not shipped, so this is ours to draw; it is not optional and it is not
 decoration.
 
-## 8. Verifying a visual change
+## 9. Verifying a visual change
 
 A layout defect is invisible to an HTTP assertion. These MUST run on any change to
 `site.css`, `map.mjs`, or a template:

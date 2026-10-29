@@ -815,6 +815,78 @@ input[type="text"] {
   box-shadow: 0 0 0 1px #7a1a06, 1px -1px 3px rgb(0 0 0 / 45%);
 }
 
+/* MapLibre's own stylesheet, reduced to the rules that matter here.
+ *
+ * Measured on 2026-10-29: 7 of its 135 selectors match anything on `/map/`, because this
+ * project draws its own zoom buttons and its own marker and renders no MapLibre control.
+ * Shipping the whole 10 KB file for those put the page over its weight budget, so the
+ * rules below are copied verbatim from `maplibre-gl.css` (BSD-3-Clause, and
+ * `vendor/LICENSE.txt` still ships). The touch-action rules are kept because dropping them
+ * breaks pinch-zoom on a phone, which no desktop gate would have caught.
+ */
+.maplibregl-map { overflow: hidden; position: relative; -webkit-tap-highlight-color: rgb(0 0 0 / 0); }
+.maplibregl-canvas { position: absolute; left: 0; top: 0; }
+.maplibregl-canvas-container.maplibregl-interactive { cursor: grab; user-select: none; }
+.maplibregl-canvas-container.maplibregl-interactive:active { cursor: grabbing; }
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate,
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate .maplibregl-canvas { touch-action: pan-x pan-y; }
+.maplibregl-canvas-container.maplibregl-touch-drag-pan,
+.maplibregl-canvas-container.maplibregl-touch-drag-pan .maplibregl-canvas { touch-action: pinch-zoom; }
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate.maplibregl-touch-drag-pan,
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate.maplibregl-touch-drag-pan .maplibregl-canvas { touch-action: none; }
+.maplibregl-ctrl-bottom-left,
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-top-left,
+.maplibregl-ctrl-top-right { position: absolute; pointer-events: none; z-index: 2; }
+.maplibregl-ctrl-top-left { top: 0; left: 0; }
+.maplibregl-ctrl-top-right { top: 0; right: 0; }
+.maplibregl-ctrl-bottom-left { bottom: 0; left: 0; }
+.maplibregl-ctrl-bottom-right { right: 0; bottom: 0; }
+
+/* Basemap attribution. ODbL requires it and the map had none: `attributionControl` is off
+   because MapLibre's control is styled by the stylesheet above, which is no longer shipped
+   whole, so the credit is ours to render. */
+.map-attrib {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  margin: 0;
+  padding: .15rem .4rem;
+  font-size: .68rem;
+  background: rgb(255 255 255 / 82%);
+  color: var(--ink);
+}
+.map-attrib a { color: var(--accent); }
+
+/* The suggestion list. In normal flow under the input, so there is no popover to keep
+   positioned at 320 px or over the map panel. Rows are 24px minimum for SC 2.5.8 even
+   though they are pointer targets rather than focusable: focus stays in the input and
+   `aria-activedescendant` names the active row. */
+.suggest {
+  list-style: none;
+  margin: .3rem 0 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.suggest[hidden] { display: none; }
+.suggest [role="option"] {
+  padding: .4rem .55rem;
+  min-height: 24px;
+  font-size: .9rem;
+  cursor: pointer;
+  border-top: 1px solid var(--rule);
+}
+.suggest [role="option"]:first-child { border-top: 0; }
+.suggest [role="option"].is-active,
+.suggest [role="option"]:hover {
+  background: var(--title-b);
+  color: #fff;
+}
+
 /* Back to the map, on every page that is not the map. A button rather than a link because
    it is the way out of a detail page, and the plain link beside it still reaches the lists. */
 .back { display: flex; flex-wrap: wrap; gap: .9rem; align-items: center; }

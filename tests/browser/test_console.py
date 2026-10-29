@@ -421,3 +421,113 @@ class TestTheMapActuallyFinishesLoading:
             f"loaded; requests were {loaded_map['tiles']}"
         )
         assert any(line.endswith("-> 200") for line in fetched), fetched
+
+
+@pytest.fixture(scope="module")
+def autocomplete(chrome, built_site):
+    """Type into the address box and record both the suggestions and every request made.
+
+    The recording is the point: suggestions are built from `lookup.json` alone so that the
+    submit-only promise in docs/phase-1-scope.md §6 still holds, and the only way to show
+    that is to watch the network while the keys go in.
+    """
+    with background_server(built_site) as base, Browser() as browser:
+        page = browser.page()
+        page.call("Page.enable")
+        page.call(
+            "Page.addScriptToEvaluateOnNewDocument",
+            source="""
+            window.__requests = [];
+            (function () {
+              const original = window.fetch;
+              window.fetch = function (...args) {
+                window.__requests.push(String((args[0] && args[0].url) || args[0]));
+                return original.apply(this, args);
+              };
+            })();
+            """,
+        )
+        page.navigate(base + "/")
+
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if not page.evaluate(
+                "document.getElementById('address-section').hasAttribute('hidden')"
+            ):
+                break
+            time.sleep(0.1)
+
+        probe = """(function () {
+            var input = document.getElementById('address-input');
+            var list = document.getElementById('address-suggest');
+            return JSON.stringify({
+                expanded: input.getAttribute('aria-expanded'),
+                active: input.getAttribute('aria-activedescendant'),
+                options: Array.prototype.map.call(
+                    list.querySelectorAll('[role="option"]'),
+                    function (option) { return option.textContent; }
+                ),
+            });
+        })()"""
+        reset = """(function () {
+            var input = document.getElementById('address-input');
+            input.value = '';
+            input.dispatchEvent(new Event('input'));
+        })()"""
+
+        seen = {}
+        for query in ("fort gr", "35", "112", "350 jay street"):
+            page.evaluate("document.getElementById('address-input').focus()")
+            page.evaluate(reset)
+            page.type_text(query)
+            time.sleep(0.6)
+            seen[query] = json.loads(page.evaluate(probe))
+
+        # Arrow then Enter, which is the whole point of the pattern.
+        page.evaluate(reset)
+        page.type_text("fort gr")
+        time.sleep(0.6)
+        page.press("ArrowDown")
+        time.sleep(0.2)
+        arrowed = json.loads(page.evaluate(probe))
+
+        requests = json.loads(page.evaluate("JSON.stringify(window.__requests)"))
+        yield {"seen": seen, "arrowed": arrowed, "requests": requests}
+
+
+class TestTheAddressBoxCompletesLocally:
+    def test_a_neighbourhood_suggests_a_district_and_a_board(self, autocomplete):
+        options = autocomplete["seen"]["fort gr"]["options"]
+        assert any("Council District 35" in option for option in options), options
+        assert any("Community Board 2" in option for option in options), options
+
+    def test_a_small_number_suggests_that_district(self, autocomplete):
+        options = autocomplete["seen"]["35"]["options"]
+        assert any(option.startswith("Council District 35") for option in options), options
+
+    def test_a_zip_prefix_suggests_whole_zips(self, autocomplete):
+        options = autocomplete["seen"]["112"]["options"]
+        assert options and all(option.startswith("ZIP 112") for option in options), options
+
+    def test_a_street_address_gets_no_local_guess(self, autocomplete):
+        """Only the geocoder can answer it, and it is not asked until submit."""
+        entry = autocomplete["seen"]["350 jay street"]
+        assert entry["options"] == []
+        assert entry["expanded"] == "false"
+
+    def test_arrowing_names_the_active_option(self, autocomplete):
+        """`aria-activedescendant` is how a screen reader is told which row is current;
+        focus itself stays in the text box."""
+        assert autocomplete["arrowed"]["active"] == "address-suggest-0"
+
+    def test_typing_never_reaches_the_geocoder(self, autocomplete):
+        """The promise in docs/phase-1-scope.md §6, now that there is a keystroke handler
+        at all: suggestions come from `lookup.json` and nothing else."""
+        offenders = [url for url in autocomplete["requests"] if GEOCODER_HOST in url]
+        assert not offenders, offenders
+
+    def test_only_our_own_origin_was_fetched(self, autocomplete):
+        """And the index is fetched once, not once per keystroke."""
+        external = [url for url in autocomplete["requests"] if url.startswith("http")]
+        assert not external, external
+        assert autocomplete["requests"].count("/data/lookup.json") == 1, autocomplete["requests"]

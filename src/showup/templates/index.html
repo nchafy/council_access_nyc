@@ -22,9 +22,18 @@
       autocomplete="off"
       autocorrect="off"
       spellcheck="false"
-      placeholder="350 Jay Street, or 11217, or Fort Greene, or 35">
+      placeholder="350 Jay Street, or 11217, or Fort Greene, or 35"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-expanded="false"
+      aria-controls="address-suggest">
     <button type="submit">Find</button>
   </form>
+ <!-- The listbox sits in normal flow rather than floating over the page: an absolutely
+      positioned popover has to be fought at 320 px and over the map panel, and this
+      pattern does not need it. Populated only from the index already in the browser. -->
+ <ul id="address-suggest" class="suggest" role="listbox"
+     aria-label="Matching districts, boards and ZIP codes" hidden></ul>
   <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
   <div id="address-results"></div>
 </section>

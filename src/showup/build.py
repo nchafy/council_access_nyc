@@ -80,7 +80,10 @@ class BuildError(RuntimeError):
 #: The vendored browser dependency, served from our own origin. `scripts/fetch_maplibre.py`
 #: puts these in the cache, pinned by checksum; the build only copies them.
 VENDOR_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "maplibre-gl"
-VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "maplibre-gl.css", "LICENSE.txt")
+#: `maplibre-gl.css` is fetched and pinned but deliberately not shipped — 7 of its 135
+#: selectors matched anything on `/map/`, and those rules are copied into `site.css`. The
+#: licence still travels with the code.
+VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
 
 
 def _copy_vendor(staging: Path) -> None:

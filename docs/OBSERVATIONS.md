@@ -901,3 +901,35 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   reader's zoom easing outward, not the city. | `move: true` is kept for closing the panel,
   the one case that does want the city back. Also bound the `zoomend` pan lock once instead
   of once per refit, which had been piling up identical listeners on every open and close.
+- 2026-10-29 | `address.js` suggestions | Asked for address autocomplete. Street-address
+  completion needs a request per keystroke, and `docs/phase-1-scope.md` §6 promises the
+  typed address is sent **on submit only**. Owner chose local-only: suggestions come from
+  `lookup.json`, already in the browser — 51 districts with neighbourhoods, 59 boards, 215
+  ZIPs — so typing touches no third party and the promise stands. A street address gets no
+  local guess and still goes to the geocoder on submit, where the **best match** is taken
+  rather than a list being offered. | refused: a per-keystroke geocoder call. Gated by
+  `TestTheAddressBoxCompletesLocally::test_typing_never_reaches_the_geocoder`, which
+  watches the network while the keys go in.
+- 2026-10-29 | `/map/` page weight | Adding the combobox put the page at 48,021 of 61,440
+  bytes, past the 75% headroom guard. `map.mjs` turned out to be 52 KB of which **23,640
+  bytes were comments**, much of it rationale this session had also written into
+  docs/design.md; compressing the duplicated blocks to a rule plus a pointer recovered
+  ~2.5 KB. The rest came from the vendored stylesheet: measured in the browser, **7 of
+  `maplibre-gl.css`'s 135 selectors match anything on `/map/`**, because the project draws
+  its own zoom buttons and its own marker and renders no MapLibre control. Those seven
+  rules are now copied into `site.css` and the 10 KB file is no longer shipped. | The
+  licence still ships. The touch-action rules were kept deliberately: dropping them breaks
+  pinch-zoom on a phone, which no gate here would catch.
+- 2026-10-29 | `map.html`, `attributionControl: false` | While removing that stylesheet:
+  the built site carried **no OpenStreetMap attribution anywhere** — zero matches across
+  `site/`, with MapLibre's own control disabled in `map.mjs`. OpenFreeMap serves
+  OpenMapTiles data derived from OpenStreetMap, which is ODbL, so the credit is required
+  rather than decorative. Now rendered as our own element, bottom-right of the map. | Found
+  by accident while counting bytes. Nothing in the gates knew to look for it.
+- 2026-10-29 | `tests/browser/harness.html` | `address.js` returns early when any element
+  it needs is missing, so adding `#address-suggest` to both templates and not to the
+  harness made it bail: four checks failed at once, including "section revealed", which has
+  nothing to do with suggestions. | A fixture that drifts from the templates does not fail
+  loudly, it silently stops testing. Guarded now by
+  `TestTheAddressHarnessMatchesTheRealMarkup`, which also asserts the early-return list in
+  the script still matches the element list the test knows about.

@@ -75,15 +75,9 @@ const KEPT_ROAD_LAYERS = new Set([
   'tunnel_motorway_inner',
 ]);
 
-//: Paint overrides applied to the basemap style after the roads come out. positron paints
-//: parks `rgb(230,233,229)` on a `rgb(242,243,240)` background — a 12/255 difference, which
-//: is why green space does not read on it at all. Greened here instead of switching to a
-//: raster basemap, because raster labels blur on a 2x display and vector ones do not.
-//: Layer-level overrides — zoom range, not paint. `landcover_wood` ships `minzoom: 10`, so at
-//: the city-wide zoom this map opens at (about 9.6) the wooded part of Central Park and
-//: Prospect Park is not drawn at all: only the `park` polygon is, and the woods appear as the
-//: reader crosses zoom 10. That is the "piecewise" rendering. Esri's raster has no such seam
-//: because its tiles are pre-drawn at every level.
+//: Paint overrides applied to the basemap style once the roads are out. positron is a
+//: pale grey canvas; this is the early-2000s satnav palette, whose values and measured
+//: contrast live in docs/design.md §2.
 const LAYER_OVERRIDES = {
   landcover_wood: { minzoom: 0 },
 };
@@ -287,28 +281,21 @@ function firstLabelLayerId(style) {
   return label && label.id;
 }
 
-/** Where the district fills go: above every land polygon, below the first road.
+/** Where the district overlay goes: above the roads, below the bridges.
  *
- * The fill has to sit above `landuse`, `landcover` and `building`, or those polygons paint
- * over the tint and the district comes out in unshaded patches — which is what inserting
- * beneath the water fill did, since water sits at index 2 of the style and the land
- * polygons at 3 to 8. Below the roads, so a road still reads over a selected district.
+ * The only slot that is above the land polygons and roads (below them they painted over
+ * the tint), below the water mask added last in this slot (which clips the overlay to the
+ * coastline), and below the bridges (so the mask does not swallow them). docs/design.md §4.
  */
-function fillInsertionId(style) {
-  const road = (style.layers || []).find(
-    (layer) => layer['source-layer'] === 'transportation'
+function overlayInsertionId(style) {
+  const bridge = (style.layers || []).find(
+    (layer) => layer['source-layer'] === 'transportation' && /bridge/.test(layer.id)
   );
-  return (road && road.id) || firstLabelLayerId(style);
+  return (bridge && bridge.id) || firstLabelLayerId(style);
 }
 
-/** The basemap's own water fill, to be drawn again above the district fills.
- *
- * The shipped geometry includes water areas — that is what stops the outline tracing
- * Jamaica Bay's marsh islands — so without this a district tints the harbour. Re-adding
- * the style's own water layer above the fills masks exactly the part that is water, and
- * keeps its colour in step with whatever the basemap does, because it is a copy rather
- * than a guess. Inserted below the roads, so bridges still cross it.
- */
+/** The basemap's water fill, drawn again above the overlay to clip it to the coastline.
+ *  A copy of the style's layer, so its colour tracks the basemap rather than drifting. */
 function waterMaskLayer(style) {
   const water = (style.layers || []).find(
     (layer) => layer['source-layer'] === 'water' && layer.type === 'fill'
@@ -421,20 +408,20 @@ async function main() {
   });
 
   const draw = () => {
-    // The stack, bottom to top: basemap land, district fills, a second copy of the
-    // basemap's water, roads, district boundaries, labels. Each of those positions is
-    // load-bearing — see `fillInsertionId` and `waterMaskLayer`.
+    // Bottom to top: basemap land, roads, district fills, district boundaries, a second
+    // copy of the water fill, bridges, labels. Successive inserts before one `beforeId`
+    // stack in call order, which is what puts the mask above the overlay it clips. Every
+    // position here is load-bearing — see `overlayInsertionId`.
     const style = basemap ? map.getStyle() : null;
-    const fillBeforeId = style ? fillInsertionId(style) : undefined;
-    const lineBeforeId = style ? firstLabelLayerId(style) : undefined;
+    const insertion = style ? overlayInsertionId(style) : undefined;
     for (const name of Object.keys(LAYERS)) {
-      addFillLayer(map, LAYERS[name], geometry[name], fillBeforeId);
+      addFillLayer(map, LAYERS[name], geometry[name], insertion);
+    }
+    for (const name of Object.keys(LAYERS)) {
+      addLineLayer(map, LAYERS[name], insertion);
     }
     const mask = style ? waterMaskLayer(style) : null;
-    if (mask && !map.getLayer(mask.id)) map.addLayer(mask, fillBeforeId);
-    for (const name of Object.keys(LAYERS)) {
-      addLineLayer(map, LAYERS[name], lineBeforeId);
-    }
+    if (mask && !map.getLayer(mask.id)) map.addLayer(mask, insertion);
     // Esri ships its labels as their own tile layer, so they go on last to sit above the
     // districts. A vector style needs no equivalent: `beforeId` above does the same job.
     if (map.getSource('esri-reference') && !map.getLayer('esri-reference')) {
@@ -506,16 +493,10 @@ function addFillLayer(map, layer, data, beforeId) {
         HOVERED,
         FILL,
       ],
-      // The resting fill is almost transparent on purpose. A district is identified by
-      // its boundary, not by its tint, and at 0.45 the overlay washed the basemap out.
-      // Hover and selection earn the opacity instead, and all three fade as the reader
-      // zooms in, where the streets matter more than the tint.
-      //
-      // `['zoom']` MUST be the top-level expression, or sit inside a top-level
-      // `interpolate`/`step`. Written as `['*', <state case>, <zoom interpolate>]` it put
-      // zoom one level down, which MapLibre rejects by **discarding the whole style and
-      // falling back** — a map with no basemap and nothing logged
-      // (docs/OBSERVATIONS.md, 2026-10-27).
+      // Almost transparent at rest: a district is read by its boundary, not its tint. All
+      // three states fade as the reader zooms in. `['zoom']` MUST stay the top level of
+      // the expression — nested, MapLibre discards the whole style silently
+      // (docs/design.md §4, docs/OBSERVATIONS.md 2026-10-27).
       'fill-opacity': [
         'interpolate',
         ['linear'],
@@ -577,7 +558,7 @@ class View {
 
   show(name) {
     if (!LAYERS[name]) return;
-    this.clear();
+    this.clear({ recenter: false });
     this.name = name;
     for (const other of Object.keys(LAYERS)) {
       const visibility = other === name ? 'visible' : 'none';
@@ -587,7 +568,13 @@ class View {
     say(`Showing ${this.layer.noun}s. Select one to open its page.`);
   }
 
-  clear() {
+  /** Drop the selection.
+   *
+   * `recenter` is the difference between dismissing the panel and replacing its contents.
+   * `select` and `selectMany` clear first, and returning to the city view on the way
+   * produced a zoom out and back in on every click from one district to the next.
+   */
+  clear({ recenter = true } = {}) {
     for (const id of this.many || []) {
       this.map.setFeatureState({ source: this.layer.source, id }, { selected: false });
     }
@@ -607,15 +594,14 @@ class View {
     if (card) closePanel(card);
     if (wasSplit) {
       this.map.resize();
-      // Closing is the one case that does want the city back: the reader dismissed the
-      // answer, so the frame returns to the question.
-      refit(this.map, { move: true });
+      // Only on a real dismissal. Replacing one selection with another keeps the frame.
+      refit(this.map, { move: recenter });
     }
   }
 
   /** Several features at once, with a card that names what they have in common. */
   selectMany(ids, title) {
-    this.clear();
+    this.clear({ recenter: false });
     if (!ids.length) {
       say(`${title} does not resolve to a ${this.layer.noun} in this dataset.`);
       return;
@@ -651,7 +637,7 @@ class View {
   }
 
   select(id) {
-    this.clear();
+    this.clear({ recenter: false });
     this.selected = id;
     this.map.setFeatureState({ source: this.layer.source, id }, { selected: true });
     this.fillCard(id);
@@ -690,7 +676,10 @@ class View {
     // half-hidden with no way to recover.
     this.map.resize();
     refit(this.map);
-    frameBounds(this.map, featureBounds[this.layer.source].get(String(id)));
+    // Pan, never zoom. Owner's decision, 2026-10-28: selecting a district is navigation,
+    // and re-fitting to each polygon kept taking away the zoom the reader had chosen.
+    // Searching still zooms, because a search is a question about one place.
+    panIntoView(this.map, featureBounds[this.layer.source].get(String(id)));
   }
 }
 
@@ -905,17 +894,12 @@ function dropPin(map, MapLibre, lon, lat) {
   pin = new MapLibre.Marker({ element }).setLngLat([lon, lat]).addTo(map);
 }
 
-/** Recompute the zoom floor and the pan box for the current frame, leaving the camera be.
- *
- * All three depend on the container: the city fit, the floor derived from it, and the box
- * derived from the floor. Recomputing one without the others is what left the city behind
- * the panel.
+/** Recompute the zoom floor and pan box for the current frame, leaving the camera be.
  *
  * Deriving them means briefly standing at the city fit, so the camera is saved and put
- * back. Both moves happen in one JavaScript turn and MapLibre renders on a frame, so only
- * the final camera is ever drawn — without the restore, every selection snapped out to the
- * whole city and then animated in from there, which is the "zoom restarts from a constant"
- * the owner reported. `move: true` is for the one case that does want the city view.
+ * back in the same JavaScript turn; only the final camera is ever drawn. Without that,
+ * every selection snapped out to the whole city first. `move: true` is for the one caller
+ * that does want the city view. docs/design.md §4.
  */
 function refit(map, { move = false } = {}) {
   if (!cityBounds) return;
@@ -1031,6 +1015,13 @@ function bindAddress(view) {
       return;
     }
 
+    // A board picked from the suggestion list: show the layer it lives on, then select it.
+    if (detail.board) {
+      if (view.name !== 'board') view.show('board');
+      view.select(String(detail.board));
+      return;
+    }
+
     if (view.name === 'council' && detail.district) {
       view.select(String(detail.district));
       panTo(view, detail);
@@ -1141,11 +1132,10 @@ function closePanel(card) {
   }, PANEL_SLIDE_MS);
 }
 
-//: The searched ZIP's own outline. Fetched on the first ZIP lookup and never before:
-//: `zips.geo.json` is 50 KB gzipped against the 145 KB the rest of the map's data costs,
-//: and a reader who never types a ZIP should not pay for it. Nothing is hit-tested against
-//: it — the crosswalk already answers which districts and boards a ZIP covers — so it is
-//: simplified far more coarsely than the district geometry.
+//: The searched ZIP's own outline, fetched on the first ZIP lookup and never before:
+//: 51 KB gzipped against the 145 KB the rest of the map's data costs. Nothing is
+//: hit-tested against it, so it is simplified far more coarsely than the districts
+//: (docs/OBSERVATIONS.md, 2026-10-28).
 const ZIP_SOURCE = 'zip-outline';
 const ZIP_URL = '/data/zips.geo.json';
 let zipGeometry = null;
@@ -1201,10 +1191,7 @@ function hideZipOutline(map) {
 /** Camera padding that accounts for the detail panel.
  *
  * The panel is `position: absolute` *over* the map, so the container's width never changes
- * when it opens — measured 2026-10-27: map stays 1440 px while the panel covers the right
- * 400 px. That is why recomputing the fit on its own did nothing for the reader: MapLibre
- * centres on the container, and 400 px of that container is behind the panel. Every camera
- * move is padded by the measured overlap instead.
+ * when it opens and MapLibre keeps centring on the full frame. Measured, not assumed.
  */
 function viewPadding(map) {
   const edge = 24;
@@ -1226,6 +1213,21 @@ function viewPadding(map) {
   // Never give away more than half the frame: past that the fit zooms out so far the city
   // is smaller than it was before the panel opened.
   return { ...flat, right: Math.min(overlap + edge, mapBox.width * 0.5) };
+}
+
+/** Bring a box into the visible part of the map without changing the zoom.
+ *
+ * Selecting a district is navigation, not a search: re-fitting each polygon kept taking
+ * away the zoom the reader chose. Owner's decision, 2026-10-28.
+ */
+function panIntoView(map, box) {
+  if (!box) return;
+  const target = map.cameraForBounds(box, {
+    padding: viewPadding(map),
+    maxZoom: map.getZoom(),
+  });
+  if (!target) return;
+  map.easeTo({ center: target.center, duration: CAMERA_MS });
 }
 
 /** Frame a box in whatever part of the map the panel is not covering. */

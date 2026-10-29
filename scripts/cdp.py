@@ -181,6 +181,10 @@ class Session:
         "Enter": (13, "\r"),
         "Escape": (27, ""),
         "Space": (32, " "),
+        # The combobox pattern is driven with these, so they have to be real keypresses
+        # rather than synthesised events.
+        "ArrowUp": (38, ""),
+        "ArrowDown": (40, ""),
     }
 
     @staticmethod

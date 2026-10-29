@@ -8,6 +8,7 @@ Grouped by the module under test, so a failure points at one file.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from showup.sources.districts import _parse_committees
 from showup.urls import safe_url
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Coarse on purpose: no guard here depends on resolution, and 0.001 costs ~35 s.
 COARSE = 0.004
@@ -592,3 +594,46 @@ class TestZipCrosswalkSkips:
         data = generate(council, community, zips, spacing=COARSE)
         assert "99999" not in data["zips"]
         assert "10001" in data["zips"]
+
+
+class TestTheAddressHarnessMatchesTheRealMarkup:
+    """`address.js` returns early if any element it needs is missing, so a harness fixture
+    that drifts from the templates does not fail loudly — it silently stops testing.
+
+    That happened on 2026-10-29: adding `#address-suggest` to both templates left the
+    harness without it, `address.js` bailed, and four checks failed at once including
+    "section revealed", which has nothing to do with suggestions.
+    """
+
+    #: Exactly the elements `address.js` refuses to start without.
+    REQUIRED = (
+        "address-form",
+        "address-input",
+        "address-status",
+        "address-results",
+        "address-section",
+        "address-suggest",
+    )
+
+    def test_the_guard_list_matches_the_script(self):
+        """If the script starts demanding another element, this test is the reminder."""
+        source = (REPO_ROOT / "src" / "showup" / "assets" / "address.js").read_text(
+            encoding="utf-8"
+        )
+        guard = source[source.index("if (!form") :]
+        guard = guard[: guard.index("return;")]
+        named = set(re.findall(r"!(\w+)", guard))
+        assert named == {"form", "input", "status", "results", "section", "listbox"}, named
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "tests/browser/harness.html",
+            "src/showup/templates/index.html",
+            "src/showup/templates/map.html",
+        ],
+    )
+    def test_every_required_element_is_present(self, path: str):
+        markup = (REPO_ROOT / path).read_text(encoding="utf-8")
+        missing = sorted(name for name in self.REQUIRED if f'id="{name}"' not in markup)
+        assert not missing, f"{path} is missing {missing}; address.js will return early"

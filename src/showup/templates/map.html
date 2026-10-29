@@ -1,7 +1,8 @@
 {% extends "layout.html" %}
 {# MapLibre's own stylesheet, from our origin. Without it the map's controls have no
    positioning. 10 KB gzipped, and this is the only page that loads it. #}
-{% block extra_head %}<link rel="stylesheet" href="/vendor/maplibre-gl.css">{% endblock %}
+{# MapLibre's stylesheet is not shipped: 7 of its 135 selectors matched anything here, and
+   the rules that did are copied into site.css. See the note there. #}
 {# The app shell: the viewport is the page, nothing scrolls, and the map takes whatever the
    header and footer do not. A map inside a scrolling page steals the wheel: scrolling the
    page zooms the map instead, which is why this is a route of its own. #}
@@ -55,12 +56,25 @@
           autocomplete="off"
           autocorrect="off"
           spellcheck="false"
-          placeholder="350 Jay Street, or 11217">
+          placeholder="350 Jay Street, or 11217"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="address-suggest">
         <button type="submit">Find</button>
       </form>
+ <!-- The listbox sits in normal flow rather than floating over the page: an absolutely
+      positioned popover has to be fought at 320 px and over the map panel, and this
+      pattern does not need it. Populated only from the index already in the browser. -->
+ <ul id="address-suggest" class="suggest" role="listbox"
+     aria-label="Matching districts, boards and ZIP codes" hidden></ul>
       <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
       <div id="address-results"></div>
     </div>
+    <p class="map-attrib">Basemap
+      <a href="https://openfreemap.org/" rel="noopener noreferrer">OpenFreeMap</a>, data
+      &copy; <a href="https://www.openstreetmap.org/copyright"
+      rel="noopener noreferrer">OpenStreetMap contributors</a></p>
     <p id="map-status" class="map-status">
       The map needs JavaScript and WebGL.
       <a href="/district/">All 51 districts</a> and <a href="/board/">all 59 boards</a> are

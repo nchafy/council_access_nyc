@@ -127,7 +127,25 @@ Dark mode re-steps `--rule` to `#333a42` rather than inverting the light value.
   no district, so the next citywide meeting moved to the landing page on 2026-10-27. This
   is the same decision as "the district is a filter, not the organising key."
 
-## 6. Verifying a visual change
+## 6. The address box completes locally
+
+- Suggestions MUST come from `lookup.json` alone. The typed address reaches the geocoder on
+  submit only (`docs/phase-1-scope.md` §6), and that promise survives autocomplete only
+  because typing stays local. Owner's decision, 2026-10-29.
+- A street address MUST get no local suggestion, and on submit MUST resolve to the
+  geocoder's best match — never a list of candidates to pick from.
+- The listbox MUST sit in normal flow, not as a popover: an absolutely positioned one has
+  to be fought at 320 px and over the map panel for no gain.
+- Focus MUST stay in the text box, with `aria-activedescendant` naming the active row.
+
+## 7. Basemap attribution
+
+The basemap is OpenFreeMap serving OpenMapTiles data derived from OpenStreetMap, which is
+ODbL. **The credit MUST be rendered.** MapLibre's own control is disabled and its
+stylesheet is not shipped, so this is ours to draw; it is not optional and it is not
+decoration.
+
+## 8. Verifying a visual change
 
 A layout defect is invisible to an HTTP assertion. These MUST run on any change to
 `site.css`, `map.mjs`, or a template:

@@ -944,3 +944,12 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   coordinate with no offset to get wrong: measured error 0.00 px on both axes. Nothing in
   CSS can win against a library that owns `transform` — a marker has to carry its own
   geometry. Gated by `test_the_pin_points_at_the_address`, verified by restoring the div.
+- 2026-10-29 | `map.mjs` `removePin` | The address pin outlived its lookup: clicking another
+  district or searching a ZIP left it on the map pointing at the previous question. It is
+  removed in `clear()` now, which every selection path already calls. The catch is
+  ordering — the address path used to drop the pin *before* selecting, and selecting
+  clears, so the naive fix erases the pin it just placed. The pin is dropped after the
+  selection in each branch instead. | Gated by `TestThePinBelongsToOneLookup`, which
+  asserts both halves: gone on another district, a ZIP and a close, and **back** on the
+  next address. Verified by deleting the `removePin()` call, which fails the three removal
+  cases and leaves the three appearance cases passing.

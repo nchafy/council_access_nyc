@@ -575,3 +575,80 @@ class TestTheAddressBoxCompletesLocally:
         external = [url for url in autocomplete["requests"] if url.startswith("http")]
         assert not external, external
         assert autocomplete["requests"].count("/data/lookup.json") == 1, autocomplete["requests"]
+
+
+@pytest.fixture(scope="module")
+def pin_lifecycle(chrome, built_site):
+    """Count the pins through a sequence of lookups.
+
+    The pin answers "where is this address". Every other kind of lookup makes it a
+    leftover pointing at a previous question, so it has to go — and it has to come back
+    when the next address arrives, which is the half that a naive fix breaks.
+    """
+    with background_server(built_site) as base, Browser() as browser:
+        page = browser.page()
+        page.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1280,
+            height=860,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        page.navigate(base + "/map/")
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if not page.evaluate("(document.getElementById('map-toggle') || {}).hidden !== false"):
+                break
+            time.sleep(0.25)
+
+        address = (
+            "document.dispatchEvent(new CustomEvent('showup:located',"
+            "{detail:{district:33, lon:-73.9870, lat:40.6926}, cancelable:true}))"
+        )
+        counts = {}
+
+        def run(label, script):
+            page.evaluate(script)
+            time.sleep(2.0)
+            counts[label] = page.evaluate("document.querySelectorAll('.map-pin').length")
+
+        run("address", address)
+        run(
+            "other district",
+            "document.dispatchEvent(new CustomEvent('showup:located',"
+            "{detail:{district:35}, cancelable:true}))",
+        )
+        run("address again", address)
+        run(
+            "zip",
+            "document.dispatchEvent(new CustomEvent('showup:located',"
+            "{detail:{zip:'11217', zcta:'11217', districts:[39,35,33],"
+            " boards:['306','302','308']}, cancelable:true}))",
+        )
+        run("address once more", address)
+        run("closed", "document.getElementById('map-card-close').click()")
+        yield counts
+
+
+class TestThePinBelongsToOneLookup:
+    def test_an_address_drops_a_pin(self, pin_lifecycle):
+        assert pin_lifecycle["address"] == 1
+
+    def test_selecting_another_district_takes_it_away(self, pin_lifecycle):
+        assert pin_lifecycle["other district"] == 0
+
+    def test_a_zip_lookup_takes_it_away(self, pin_lifecycle):
+        assert pin_lifecycle["zip"] == 0
+
+    def test_closing_the_panel_takes_it_away(self, pin_lifecycle):
+        assert pin_lifecycle["closed"] == 0
+
+    def test_the_next_address_still_gets_one(self, pin_lifecycle):
+        """Clearing on selection is only correct if the address path re-pins afterwards:
+        it drops the pin *after* selecting for exactly this reason."""
+        assert pin_lifecycle["address again"] == 1
+        assert pin_lifecycle["address once more"] == 1
+
+    def test_only_ever_one_pin(self, pin_lifecycle):
+        assert max(pin_lifecycle.values()) == 1, pin_lifecycle

@@ -580,6 +580,10 @@ class View {
     }
     this.many = null;
     hideZipOutline(this.map);
+    // The pin answers "where is this address". Selecting anything else, or looking up a
+    // ZIP, makes it a leftover pointing at a previous question, so it goes with the rest
+    // of the selection. The address path re-drops it *after* selecting, for that reason.
+    removePin();
     if (this.selected !== null) {
       this.map.setFeatureState(
         { source: this.layer.source, id: this.selected },
@@ -894,6 +898,13 @@ const PIN_W = 20;
 const PIN_H = 27;
 const PIN_PATH = 'M10 27C10 27 18 16 18 10A8 8 0 1 0 2 10C2 16 10 27 10 27Z';
 
+/** Take the pin away. Anything that is not "this address" invalidates it. */
+function removePin() {
+  if (!pin) return;
+  pin.remove();
+  pin = null;
+}
+
 function dropPin(map, MapLibre, lon, lat) {
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
   if (pin) {
@@ -1022,8 +1033,11 @@ function bindAddress(view) {
     const detail = event.detail || {};
     event.preventDefault();
 
-    // The pin marks the address itself; the highlight marks what contains it.
-    if (library) dropPin(view.map, library, detail.lon, detail.lat);
+    // The pin marks the address itself; the highlight marks what contains it. Dropped
+    // after the selection in each branch below, because selecting clears the old pin.
+    const pinHere = () => {
+      if (library) dropPin(view.map, library, detail.lon, detail.lat);
+    };
 
     // A ZIP covering several districts: highlight every one rather than making the reader
     // pick before they can see where any of them is.
@@ -1044,11 +1058,13 @@ function bindAddress(view) {
     if (detail.board) {
       if (view.name !== 'board') view.show('board');
       view.select(String(detail.board));
+      pinHere();
       return;
     }
 
     if (view.name === 'council' && detail.district) {
       view.select(String(detail.district));
+      pinHere();
       panTo(view, detail);
       return;
     }
@@ -1056,6 +1072,7 @@ function bindAddress(view) {
     const hit = featureAt(view, detail);
     if (hit !== null) {
       view.select(String(hit));
+      pinHere();
       panTo(view, detail);
       return;
     }

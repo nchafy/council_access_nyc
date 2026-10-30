@@ -143,6 +143,11 @@ let cityBounds = null;
 //: refitting the whole city. Built once, when the geometry arrives.
 const featureBounds = { council: new Map(), board: new Map() };
 
+//: Each feature's area-weighted centroid, which is not its bounding box's centre. District
+//: 35 runs north-west to south-east, so most of its bbox is other people's territory and
+//: centring the bbox left the district itself off to one side (owner, 2026-10-30).
+const featureCentres = { council: new Map(), board: new Map() };
+
 //: How far a framed feature is allowed to zoom. Well below MAX_ZOOM on purpose: fitting
 //: one district to the frame landed around z13.5, which reads as a street map of somewhere
 //: rather than as a district in its city. At 12 the surrounding districts stay in view.
@@ -683,7 +688,7 @@ class View {
     // Pan, never zoom. Owner's decision, 2026-10-28: selecting a district is navigation,
     // and re-fitting to each polygon kept taking away the zoom the reader had chosen.
     // Searching still zooms, because a search is a question about one place.
-    panIntoView(this.map, featureBounds[this.layer.source].get(String(id)));
+    panIntoView(this.map, featureCentres[this.layer.source].get(String(id)));
   }
 }
 
@@ -1116,13 +1121,59 @@ function panTo(view, detail) {
   });
 }
 
-/** One bounding box per feature, keyed by the same property `promoteId` uses. */
+/** The centroid of one ring, by the shoelace formula, with its signed area. */
+function ringCentroid(ring) {
+  let twiceArea = 0;
+  let x = 0;
+  let y = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    twiceArea += cross;
+    x += (ring[j][0] + ring[i][0]) * cross;
+    y += (ring[j][1] + ring[i][1]) * cross;
+  }
+  if (!twiceArea) return null;
+  return { point: [x / (3 * twiceArea), y / (3 * twiceArea)], area: Math.abs(twiceArea / 2) };
+}
+
+/** Every ring in a geometry, outer and inner alike. */
+function ringsOf(geometry) {
+  const rings = [];
+  const visit = (coordinates) => {
+    if (!Array.isArray(coordinates) || !coordinates.length) return;
+    if (Array.isArray(coordinates[0]) && typeof coordinates[0][0] === 'number') {
+      rings.push(coordinates);
+      return;
+    }
+    for (const part of coordinates) visit(part);
+  };
+  visit((geometry && geometry.coordinates) || []);
+  return rings;
+}
+
+/** A point to centre on: the largest ring's centroid.
+ *
+ * The largest ring, not all of them averaged: a district with an island would otherwise
+ * centre on the water between the two.
+ */
+function representativePoint(feature) {
+  let best = null;
+  for (const ring of ringsOf(feature.geometry)) {
+    const centroid = ringCentroid(ring);
+    if (centroid && (!best || centroid.area > best.area)) best = centroid;
+  }
+  return best && best.point;
+}
+
+/** One bounding box and one centre per feature, keyed by the property `promoteId` uses. */
 function indexBounds(source, key, collection) {
-  const index = featureBounds[source];
   for (const feature of (collection && collection.features) || []) {
     const id = feature.properties && feature.properties[key];
+    if (id === undefined || id === null) continue;
     const box = geometryBounds({ features: [feature] });
-    if (id !== undefined && id !== null && box) index.set(String(id), box);
+    if (box) featureBounds[source].set(String(id), box);
+    const centre = representativePoint(feature);
+    if (centre) featureCentres[source].set(String(id), centre);
   }
 }
 
@@ -1257,19 +1308,36 @@ function viewPadding(map) {
   return { ...flat, right: Math.min(overlap + edge, mapBox.width * 0.5) };
 }
 
-/** Bring a box into the visible part of the map without changing the zoom.
+/** Centre a point in the part of the map the panel leaves visible, without changing zoom.
  *
- * Selecting a district is navigation, not a search: re-fitting each polygon kept taking
- * away the zoom the reader chose. Owner's decision, 2026-10-28.
+ * Done in pixels at the current zoom, with the camera's padding explicitly zeroed for the
+ * move, because MapLibre's `padding` is **persistent camera state** that `refit` has
+ * already set through `fitBounds`. Two earlier attempts got this wrong in opposite
+ * directions and both pushed the district left (owner's reports, 2026-10-30):
+ *
+ * - `cameraForBounds(box, { padding }).center` eased to at the *current* zoom: that centre
+ *   carries the padding as a geographic shift sized for whatever zoom `cameraForBounds`
+ *   picked, so at any other zoom it is the wrong number of pixels.
+ * - The same arithmetic as below but leaving the map's padding in place, which applied it
+ *   a second time on top of the offset.
  */
-function panIntoView(map, box) {
-  if (!box) return;
-  const target = map.cameraForBounds(box, {
-    padding: viewPadding(map),
-    maxZoom: map.getZoom(),
+function panIntoView(map, point) {
+  if (!point) return;
+  const padding = viewPadding(map);
+  const frame = map.getContainer().getBoundingClientRect();
+  if (!frame.width || !frame.height) return;
+
+  // The middle of what the reader can actually see, in container pixels.
+  const targetX = (padding.left + (frame.width - padding.right)) / 2;
+  const targetY = (padding.top + (frame.height - padding.bottom)) / 2;
+
+  const at = map.project(point);
+  const centre = map.project(map.getCenter());
+  map.easeTo({
+    center: map.unproject([centre.x + (at.x - targetX), centre.y + (at.y - targetY)]),
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    duration: CAMERA_MS,
   });
-  if (!target) return;
-  map.easeTo({ center: target.center, duration: CAMERA_MS });
 }
 
 /** Frame a box in whatever part of the map the panel is not covering. */

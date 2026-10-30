@@ -953,3 +953,25 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   asserts both halves: gone on another district, a ZIP and a close, and **back** on the
   next address. Verified by deleting the `removePin()` call, which fails the three removal
   cases and leaves the three appearance cases passing.
+- 2026-10-30 | `map.mjs` `panIntoView` | Selecting a district put it hard against the left
+  edge. **Three separate causes, found in sequence**, each of which looked fine to every
+  gate. Measured by counting the selected fill's pixels in a screenshot — centroid against
+  the centre of the map the panel leaves free, at a 1280x820 viewport with the panel at
+  x=880, so the target is x=440:
+  1. `cameraForBounds(box, { padding }).center` eased to while keeping the current zoom.
+     That centre carries the padding as a *geographic* shift sized for the zoom
+     `cameraForBounds` picked, so at any other zoom it is the wrong number of pixels.
+     Error about **-240 px**.
+  2. Pixel arithmetic instead, but MapLibre's `padding` is **persistent camera state** and
+     `refit` sets it through `fitBounds` — so it was applied a second time on top of the
+     offset. Errors by zoom step: +20, -13, -37, **-163** px.
+  3. Centring the **bounding box**. District 35 runs north-west to south-east, so the
+     middle of its box is mostly other districts. Centring the area-weighted centroid of
+     its largest ring instead: +20, +3, +49, +4 px. The largest ring and not an average of
+     all of them, or a district with an island centres on the water between them.
+  | The residual at the widest zoom is clipping, not placement: the district is wider than
+  the frame, so the visible part is cut on one side and its centroid shifts with it. A
+  pixel-measuring gate was written and then **dropped**: the test fixture's geometry is
+  synthetic squares, so no fill of the expected colour is ever drawn and the gate measured
+  nothing. Replaced by three source assertions that pin the three mistakes
+  (`TestSelectingCentresOnWhatCanBeSeen`), with the numbers above as the evidence.

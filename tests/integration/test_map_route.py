@@ -172,6 +172,44 @@ class TestTheMapIsNeverTheOnlyWay:
         assert 'id="map-card-close"' in html
 
 
+class TestSelectingCentresOnWhatCanBeSeen:
+    """Three ways the selection pan has been got wrong, each pinned here.
+
+    All three looked correct to every browser gate — the district rendered, the map
+    loaded, nothing was logged — and all three put the district off to the left. The
+    measurements are in docs/OBSERVATIONS.md, 2026-10-30; these assertions stop the
+    specific mistakes coming back.
+    """
+
+    def _pan(self) -> str:
+        source = (REPO_ROOT / "src" / "showup" / "assets" / "map.mjs").read_text(encoding="utf-8")
+        start = source.index("function panIntoView(")
+        return source[start : source.index("\n}\n", start)]
+
+    def test_it_does_not_ask_camera_for_bounds_where_to_go(self):
+        """`cameraForBounds(box, {padding}).center` encodes the padding as a geographic
+        shift sized for the zoom it chose, so reusing it at another zoom mis-places the
+        district by the ratio between the two."""
+        assert "cameraForBounds" not in self._pan()
+
+    def test_it_zeroes_the_cameras_padding_for_the_move(self):
+        """MapLibre's `padding` is persistent camera state and `refit` sets it through
+        `fitBounds`. Doing the arithmetic in pixels *and* leaving the padding in place
+        applied it twice."""
+        pan = self._pan()
+        assert "padding: { top: 0, right: 0, bottom: 0, left: 0 }" in pan, pan
+
+    def test_selecting_centres_on_a_centroid_not_a_bounding_box(self):
+        """District 35 runs north-west to south-east, so the middle of its bounding box
+        is mostly other districts. The area-weighted centroid of the largest ring is the
+        point a reader would call its centre."""
+        source = (REPO_ROOT / "src" / "showup" / "assets" / "map.mjs").read_text(encoding="utf-8")
+        start = source.index("  fillCard(id) {")
+        body = source[start : source.index("\n  }\n", start)]
+        assert "panIntoView(this.map, featureCentres" in body, body[-400:]
+        assert "panIntoView(this.map, featureBounds" not in body
+
+
 class TestParticipatoryBudgetingIsOptional:
     """Both helpers answer None when no roster was loaded, so a caller without one
     renders no participatory-budgeting rows rather than empty ones."""

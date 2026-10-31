@@ -313,7 +313,9 @@ class TestBoardView:
         build_site(raw_dir, out, today=date(2026, 9, 22))
         page = " ".join((out / "board" / "302" / "index.html").read_text().split())
         assert "The City's dataset records the board office, not the meeting venue" in page
-        assert "<dd>350 Jay Street, 8th Floor, Brooklyn, NY 11201<br><small>" in page
+        # The address is a maps link now (owner, 2026-10-31), so the note follows the
+        # anchor rather than the bare text. The note is the point of this test.
+        assert "350 Jay Street, 8th Floor, Brooklyn, NY 11201</a><br><small>" in page
 
     def test_the_board_page_does_not_catalogue_what_is_missing(self, raw_dir, tmp_path):
         """Owner, 2026-10-07: absences nobody asked about are padding, not honesty.

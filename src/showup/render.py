@@ -7,12 +7,15 @@ of opting out. A link is emitted only for a URL that survived `urls.safe_url`.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
+from urllib.parse import urlencode
 
 from . import templates
 from .deadlines import accommodation_state, written_state
 from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
 from .sources.participatory_budgeting import PB_PROGRAMME_URL, Participation
+from .urls import safe_url
 
 __all__ = [
     "preview_payload",
@@ -23,6 +26,82 @@ __all__ = [
     "render_not_found",
     "render_references",
 ]
+
+
+#: A phone number as the City publishes it: "(718) 467-5574", sometimes with an extension.
+_PHONE_DIGITS = re.compile(r"\d")
+_PHONE_SHAPE = re.compile(r"^[\d\s()+.\-]+$")
+
+#: Deliberately strict. This is a constructed `mailto:`, so anything odd is dropped rather
+#: than escaped and hoped for.
+_EMAIL_SHAPE = re.compile(r"^[^\s<>@]+@[^\s<>@.]+(\.[^\s<>@.]+)+$")
+
+
+def _tel_href(phone: str | None) -> str | None:
+    """`tel:` for a published number, or None.
+
+    Not routed through `safe_url`: that function's contract is https-and-allowlisted-host,
+    which is the XSS boundary for *upstream* URLs, and widening it to cover schemes with no
+    host would weaken it for every caller. This builds its own and validates the shape.
+    """
+    if not phone or not _PHONE_SHAPE.match(phone.strip()):
+        return None
+    digits = "".join(_PHONE_DIGITS.findall(phone))
+    # Ten digits is a US number; eleven starting with 1 is the same number written long.
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10:
+        return None
+    return f"tel:+1{digits}"
+
+
+def _mailto_href(email: str | None) -> str | None:
+    """`mailto:` for a published address, or None."""
+    if not email:
+        return None
+    candidate = email.strip()
+    return f"mailto:{candidate}" if _EMAIL_SHAPE.match(candidate) else None
+
+
+def _maps_href(address: str | None) -> str | None:
+    """A Google Maps *search* for an address. Owner's decision, 2026-10-31.
+
+    A search query, not a place id: we do not know the board office's place id and would
+    be guessing one. The query is what we hold, so the query is what is sent.
+    """
+    if not address or not address.strip():
+        return None
+    query = urlencode({"api": "1", "query": address.strip()})
+    return safe_url(f"https://www.google.com/maps/search/?{query}")
+
+
+def _wikipedia_href(name: str, borough: str | None) -> str | None:
+    """Wikipedia's search-and-jump URL for a neighbourhood. Owner's decision, 2026-10-31.
+
+    **Not** `/wiki/<name>`. These names are free text from a City dataset, so a constructed
+    article path is a guess: it 404s for anything Wikipedia titles differently and, worse,
+    silently lands on the wrong article for a name that is ambiguous between boroughs.
+    `index.php?search=` jumps straight to the article when the title matches exactly and
+    shows results when it does not, so it is never wrong — only sometimes a search page.
+    The borough is appended because that is how Wikipedia disambiguates these.
+    """
+    label = name.strip()
+    if not label:
+        return None
+    query = f"{label}, {borough}" if borough else label
+    return safe_url(f"https://en.wikipedia.org/w/index.php?{urlencode({'search': query})}")
+
+
+#: The City writes these as "A, B, and C" and occasionally "A and B".
+_NEIGHBOURHOOD_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+")
+
+
+def neighbourhood_links(text: str | None, borough: str | None) -> list[dict]:
+    """One entry per neighbourhood, each with the Wikipedia search that finds it."""
+    if not text:
+        return []
+    names = [part.strip(" .") for part in _NEIGHBOURHOOD_SPLIT.split(text)]
+    return [{"name": name, "href": _wikipedia_href(name, borough)} for name in names if name]
 
 
 def _link(url: str | None, label: str, *, extra: str = "") -> str:
@@ -506,6 +585,13 @@ def render_board(
         title=board.label,
         board=board,
         districts=districts,
+        # Every contact field as something to act on: the neighbourhoods as Wikipedia
+        # searches, the office on a map, the phone dialable, the address mailable. Owner's
+        # decision, 2026-10-31.
+        covers=neighbourhood_links(board.neighborhoods, board.borough_name),
+        office_href=_maps_href(board.address),
+        phone_href=_tel_href(board.phone),
+        email_href=_mailto_href(board.email),
         tables=board_tables(districts, budget_requests),
         budget=_budget(budget_requests),
         register_url=BUDGET_REGISTER_URL,

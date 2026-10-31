@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from showup import render
 from showup.build import BuildError, build_site
 from showup.crosswalk import (
     CrosswalkError,
@@ -637,3 +638,89 @@ class TestTheAddressHarnessMatchesTheRealMarkup:
         markup = (REPO_ROOT / path).read_text(encoding="utf-8")
         missing = sorted(name for name in self.REQUIRED if f'id="{name}"' not in markup)
         assert not missing, f"{path} is missing {missing}; address.js will return early"
+
+
+class TestTheContactLinkBuilders:
+    """Constructed URLs, so each one is validated rather than trusted.
+
+    `safe_url` is deliberately not widened to cover `tel:` and `mailto:`: its contract is
+    https-and-allowlisted-host and it is the XSS boundary for upstream URLs, so these build
+    their own and check the shape.
+    """
+
+    @pytest.mark.parametrize(
+        ("published", "expected"),
+        [
+            ("(718) 467-5574", "tel:+17184675574"),
+            ("718-467-5574", "tel:+17184675574"),
+            ("1 (718) 467-5574", "tel:+17184675574"),
+            ("+1 718.467.5574", "tel:+17184675574"),
+            ("(718) 467-5574 ext. 12", None),
+            ("718-467-557", None),
+            ("call the office", None),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_a_phone_becomes_a_dialable_link_or_nothing(self, published, expected):
+        assert render._tel_href(published) == expected
+
+    @pytest.mark.parametrize(
+        ("published", "expected"),
+        [
+            ("brooklyncb8@gmail.com", "mailto:brooklyncb8@gmail.com"),
+            ("  cb8@example.gov  ", "mailto:cb8@example.gov"),
+            ("not an address", None),
+            ("two@@at.example", None),
+            ("spaces in@example.com", None),
+            ("nodot@example", None),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_an_email_becomes_a_mailto_or_nothing(self, published, expected):
+        assert render._mailto_href(published) == expected
+
+    def test_an_office_address_becomes_a_maps_search(self):
+        href = render._maps_href("1291 St. Marks Avenue, Brooklyn, NY 11213")
+        assert href is not None
+        assert href.startswith("https://www.google.com/maps/search/?api=1&query=")
+        assert "1291+St.+Marks+Avenue" in href
+
+    @pytest.mark.parametrize("blank", ["", "   ", None])
+    def test_a_blank_address_gets_no_map(self, blank):
+        assert render._maps_href(blank) is None
+
+    def test_a_neighbourhood_is_linked_by_search_never_by_a_guessed_path(self):
+        """A constructed `/wiki/<name>` would 404 on anything Wikipedia titles
+        differently and, worse, land on the wrong article for an ambiguous name."""
+        href = render._wikipedia_href("Crown Heights", "Brooklyn")
+        assert href is not None
+        assert "/w/index.php?search=" in href
+        assert "/wiki/" not in href
+        assert "Crown+Heights%2C+Brooklyn" in href
+
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_a_blank_neighbourhood_gets_no_link(self, blank):
+        assert render._wikipedia_href(blank, "Brooklyn") is None
+
+    def test_a_neighbourhood_without_a_borough_still_resolves(self):
+        href = render._wikipedia_href("Weeksville", None)
+        assert href is not None
+        assert "search=Weeksville" in href
+
+    @pytest.mark.parametrize(
+        ("published", "names"),
+        [
+            (
+                "Crown Heights, Prospect Heights, and Weeksville",
+                ["Crown Heights", "Prospect Heights", "Weeksville"],
+            ),
+            ("Fort Greene and Clinton Hill", ["Fort Greene", "Clinton Hill"]),
+            ("Astoria", ["Astoria"]),
+            ("", []),
+            (None, []),
+        ],
+    )
+    def test_the_covers_line_splits_the_way_the_city_writes_it(self, published, names):
+        assert [item["name"] for item in render.neighbourhood_links(published, "Brooklyn")] == names

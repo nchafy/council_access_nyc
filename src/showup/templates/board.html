@@ -1,14 +1,21 @@
 {% extends "layout.html" %}
 {% import "macros.html" as m %}
 {% macro website(url, label) %}{{ m.link(url, label) }}<br><small>The board's own site publishes its agendas, minutes and meeting location. No City dataset carries a board meeting calendar.</small>{% endmacro %}
-{% macro website_as_text(host) %}<span class="nolink">{{ host }}</span><br><small>Given as text, not a link: this board uses its own domain rather than a City one, unverifiable at build time.</small>{% endmacro %}
-{% macro office(address) %}{{ address }}<br><small>The City's dataset records the board office, not the meeting venue.</small>{% endmacro %}
+{# Linked whatever the domain. Owner's decision, 2026-10-31, reversing the earlier rule
+   that a board's own domain was rendered as text because it could not be verified at
+   build time; the note still says whose domain it is. #}
+{% macro website_as_text(host) %}{{ m.link("https://" ~ host, host) }}<br><small>The board's own domain, as the City's dataset publishes it. Not a City-run site.</small>{% endmacro %}
+{% macro office(address, href) %}{% if href %}{{ m.link(href, address) }}{% else %}{{ address }}{% endif %}<br><small>The City's dataset records the board office, not the meeting venue.</small>{% endmacro %}
+{# One Wikipedia search per neighbourhood. A name we could not build a search for stays as
+   text rather than becoming a dead link. #}
+{% macro covers_list(items) %}{% for item in items %}{% if not loop.first %}, {% endif %}{% if item.href %}{{ m.link(item.href, item.name) }}{% else %}{{ item.name }}{% endif %}{% endfor %}{% endmacro %}
 {% block body %}
 {% set rows = [] %}
-{% if board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
-{% if board.address %}{% do rows.append(("Office", office(board.address))) %}{% endif %}
-{% if board.phone %}{% do rows.append(("Phone", board.phone)) %}{% endif %}
-{% if board.email %}{% do rows.append(("Email", board.email)) %}
+{% if covers %}{% do rows.append(("Covers", covers_list(covers))) %}
+{% elif board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
+{% if board.address %}{% do rows.append(("Office", office(board.address, office_href))) %}{% endif %}
+{% if board.phone %}{% do rows.append(("Phone", m.link(phone_href, board.phone) if phone_href else board.phone)) %}{% endif %}
+{% if board.email %}{% do rows.append(("Email", m.link(email_href, board.email) if email_href else board.email)) %}
 {% elif board.email_suppressed %}{% do rows.append(("Email", m.email_suppressed(board.email_suppressed))) %}{% endif %}
 {% if board.website %}{% do rows.append(("Website", website(board.website, board.website.replace("https://", "").rstrip("/")))) %}
 {% elif board.website_unlinked %}{% do rows.append(("Website", website_as_text(board.website_unlinked))) %}{% endif %}

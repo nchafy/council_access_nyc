@@ -990,3 +990,22 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   the sheet's top edge, putting the district the reader asked for directly behind the
   sheet. It now accounts for the sheet's height when the layout is stacked. | A panel that
   changes which axis it steals needs the padding to change axis with it.
+- 2026-10-31 | `board.html` contact block | Owner asked for every contact field to be
+  actionable, which reverses three recorded refusals. Implemented, each with its reason:
+  **Covers** → one Wikipedia link per neighbourhood, built as
+  `en.wikipedia.org/w/index.php?search=<name>, <borough>` and **never** `/wiki/<name>`.
+  These names are free text from a City dataset, so a constructed article path is a guess
+  that 404s on anything Wikipedia titles differently and silently lands on the wrong
+  article for an ambiguous name. The search form jumps straight to the article when the
+  title matches — verified 302 → `/wiki/Crown_Heights,_Brooklyn`,
+  `/wiki/Prospect_Heights,_Brooklyn`, `/wiki/Weeksville,_Brooklyn`,
+  `/wiki/Fort_Greene,_Brooklyn` — and shows results when it does not, so it is never wrong.
+  **Office** → a Google Maps *search* for the address, not a place id we would be guessing.
+  **Phone** → `tel:`, **Email** → `mailto:`. **Website** → linked whatever the domain,
+  reversing the 2026-09-29 rule that a board's own domain was text because it could not be
+  verified at build time; the note now says whose domain it is instead.
+  | `safe_url` was deliberately **not** widened to cover `tel:` and `mailto:`. Its contract
+  is https-and-allowlisted-host and it is the XSS boundary for upstream URLs; schemes with
+  no host get their own builders, which validate the shape and drop anything odd rather
+  than escaping it and hoping. `en.wikipedia.org` and `www.google.com` are the first
+  non-government hosts in `ALLOWED_HOSTS`, and both are owner decisions rather than drift.

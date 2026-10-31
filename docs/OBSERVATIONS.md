@@ -1030,3 +1030,23 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   verified by appending a `}`. A second check — a lone `}` directly after another — was
   written and dropped as a false positive: a rule closing inside a media query produces
   exactly that shape legitimately.
+- 2026-10-31 | **Correction** to the 2026-10-30 `panIntoView` entry | That entry blamed
+  three causes and gave MapLibre's persistent `padding`, applied twice, as the second.
+  Isolating them one at a time against the new pixel gate shows **padding contributes
+  nothing measurable**: removing the explicit `padding: {0,0,0,0}` reset leaves the painted
+  centroid at cx 482 (z4) and 426 (z6), identical to correct. The real second cause was
+  centring the **bounding box** rather than the centroid, which is also what produced the
+  -163 px figure I had attributed to padding. | The mistake was changing two things in one
+  step and then measuring once. The zeroed padding stays as a defensive reset and its
+  comment now says so. Caught only because the gate made single-variable isolation cheap.
+- 2026-10-31 | `tests/browser/test_console.py` | The camera/layer gate now measures the
+  **rendered pixels of the real built site**, skipping when `site/` is absent — the
+  precedent `test_geo.py` set. It cannot use the browser fixtures: their geometry is
+  synthetic squares at latitude 40.5, longitude -73.5, which is open Atlantic off Jones
+  Beach, so the camera pans to water and there is no fill to measure. That is why the first
+  attempt at this gate measured zero and was deleted. Measured at 1280x820, district 35:
+  correct paints 192,377 px at four zoom steps and 20,064 at six; burying the fill under
+  the basemap's land polygons gives 78,206 and **0**. Floors sit between. | Two zooms,
+  because neither signal alone is enough: the layer-order bug is invisible in the centroid
+  and the centring bug is invisible in the pixel count. Both verified by reintroduction,
+  each failing 3 of the 4 assertions.

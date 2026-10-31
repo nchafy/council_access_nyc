@@ -1328,8 +1328,9 @@ function viewPadding(map) {
  * - `cameraForBounds(box, { padding }).center` eased to at the *current* zoom: that centre
  *   carries the padding as a geographic shift sized for whatever zoom `cameraForBounds`
  *   picked, so at any other zoom it is the wrong number of pixels.
- * - The same arithmetic as below but leaving the map's padding in place, which applied it
- *   a second time on top of the offset.
+ * The zeroed padding below is defensive, not load-bearing: isolating it on 2026-10-31
+ * showed removing it changes the measured result by nothing at all. The second fault was
+ * the bounding box, not the padding — see the correction in docs/OBSERVATIONS.md.
  */
 function panIntoView(map, point) {
   if (!point) return;

@@ -652,3 +652,145 @@ class TestThePinBelongsToOneLookup:
 
     def test_only_ever_one_pin(self, pin_lifecycle):
         assert max(pin_lifecycle.values()) == 1, pin_lifecycle
+
+
+#: The real built site, not the fixture one. The browser fixtures' geometry is synthetic
+#: squares at latitude 40.5, longitude -73.5 — open Atlantic off Jones Beach — so a camera
+#: or layer-order check against them measures water. `test_geo.py` sets the precedent for a
+#: test that needs real data and skips without it.
+REAL_SITE = REPO_ROOT / "site"
+
+#: Floors on the selected district's painted pixels, measured 2026-10-31 at 1280x820.
+#: Correct renders 192,377 at four zoom steps in and 20,064 at six; inserting the fill
+#: beneath the basemap's land polygons instead drops those to 78,206 and **0**. The floors
+#: sit between the two, which is what makes this gate able to see that bug at all.
+PAINTED_FLOOR = {4: 150_000, 6: 10_000}
+
+#: How far the painted centroid may sit from the middle of the visible map. Correct is
+#: +42 px at four steps and -14 px at six; centring the bounding box instead of the
+#: centroid put it -163 px out at six, because district 35 runs north-west to south-east
+#: and the middle of its box is mostly other districts.
+CENTROID_TOLERANCE_PX = 90
+
+
+def _painted_selection(browser, base, zoom_steps):
+    """Select district 35 at a zoom and measure the pixels the map painted for it."""
+    width, height = 1280, 820
+    page = browser.page()
+    page.call(
+        "Emulation.setDeviceMetricsOverride",
+        width=width,
+        height=height,
+        deviceScaleFactor=1,
+        mobile=False,
+    )
+    page.navigate(base + "/map/")
+
+    deadline = time.monotonic() + 40
+    while time.monotonic() < deadline:
+        if not page.evaluate("(document.getElementById('map-toggle') || {}).hidden !== false"):
+            break
+        time.sleep(0.25)
+
+    for _ in range(zoom_steps):
+        page.evaluate("document.querySelector('#map-zoom button').click()")
+        time.sleep(0.5)
+    time.sleep(1.0)
+    page.evaluate(
+        "document.dispatchEvent(new CustomEvent('showup:located',"
+        "{detail:{district:35}, cancelable:true}))"
+    )
+    time.sleep(3.5)
+
+    shot = page.call("Page.captureScreenshot", format="png")["data"]
+    # Read the DOM before navigating away: `browser.page()` returns the same tab.
+    panel_left = page.evaluate(
+        "Math.round(document.getElementById('map-card').getBoundingClientRect().left)"
+    )
+    frame_top = page.evaluate(
+        "Math.round(document.getElementById('map').getBoundingClientRect().top)"
+    )
+    frame_bottom = page.evaluate(
+        "Math.round(document.getElementById('map').getBoundingClientRect().bottom)"
+    )
+
+    # Measured on about:blank, where our own CSP does not forbid a `data:` image.
+    # Concatenated, not formatted: the script is full of braces and every formatting
+    # scheme wants them escaped.
+    args = ", ".join(
+        [
+            json.dumps("data:image/png;base64," + shot),
+            str(width),
+            str(height),
+            str(panel_left),
+            str(frame_top),
+            str(frame_bottom),
+        ]
+    )
+    measure = (
+        "(function (url, w, h, x1, y0, y1) {"
+        "  return new Promise(function (resolve) {"
+        "    var img = new Image();"
+        "    img.onload = function () {"
+        "      var canvas = document.createElement('canvas');"
+        "      canvas.width = w; canvas.height = h;"
+        "      var ctx = canvas.getContext('2d');"
+        "      ctx.drawImage(img, 0, 0);"
+        "      var data = ctx.getImageData(0, 0, w, h).data;"
+        "      var n = 0, sx = 0;"
+        "      for (var y = y0; y < y1; y++) {"
+        "        for (var x = 0; x < x1; x++) {"
+        "          var i = (y * w + x) * 4;"
+        "          var r = data[i], g = data[i + 1], b = data[i + 2];"
+        "          if (r > 180 && r - g > 45 && r - b > 45) { n++; sx += x; }"
+        "        }"
+        "      }"
+        "      resolve(JSON.stringify(n ? {n: n, cx: sx / n} : {n: 0}));"
+        "    };"
+        "    img.src = url;"
+        "  });"
+        "})(" + args + ")"
+    )
+
+    blank = browser.page()
+    blank.navigate("about:blank")
+    time.sleep(0.5)
+    found = json.loads(blank.evaluate(measure, await_promise=True))
+    return {"found": found, "free_centre": panel_left / 2}
+
+
+@pytest.fixture(scope="module")
+def real_map_pixels(chrome):
+    """What the real map actually painted for a selected district, at two zooms.
+
+    This is the only gate that looks at the rendered pixels. Bugs in this file's history
+    that every other gate passed: a silently rejected paint expression, land polygons
+    painting over the fill, a pin anchored on its middle, and three separate camera faults.
+
+    Two zooms because one is not enough — the layer-order bug is invisible in the centroid
+    and the centring bug is invisible in the pixel count.
+    """
+    if not (REAL_SITE / "data" / "districts.geo.json").is_file():
+        pytest.skip("no built site/ (run `make build`); the fixture geometry is in the ocean")
+
+    with background_server(REAL_SITE) as base, Browser() as browser:
+        yield {steps: _painted_selection(browser, base, steps) for steps in (4, 6)}
+
+
+class TestTheMapDrewTheSelection:
+    @pytest.mark.parametrize("steps", [4, 6])
+    def test_the_selected_district_is_actually_painted(self, real_map_pixels, steps):
+        """Catches a fill buried under the basemap's land polygons, which halved the
+        painted area at four steps and hid it completely at six."""
+        found = real_map_pixels[steps]["found"]
+        assert found["n"] >= PAINTED_FLOOR[steps], (steps, found)
+
+    @pytest.mark.parametrize("steps", [4, 6])
+    def test_it_is_centred_in_the_map_the_panel_leaves_visible(self, real_map_pixels, steps):
+        """At six steps the district fits the frame, so this is a real centring check."""
+        case = real_map_pixels[steps]
+        error = case["found"]["cx"] - case["free_centre"]
+        assert abs(error) < CENTROID_TOLERANCE_PX, (
+            f"at {steps} zoom steps the selected district's centroid is {error:.0f} px "
+            f"from the centre of the visible map: {case}"
+        )

@@ -70,19 +70,39 @@ class TestConnectSrc:
                     f"{source_file} fetches {url}, which connect-src {connect_src!r} forbids"
                 )
 
-    def test_connect_src_allows_nothing_but_self_and_the_geocoder(self):
+    #: Every external origin the policy may name, and why it is there. Each one was an owner
+    #: decision: the geocoder because an address cannot be resolved without it, the tile host
+    #: on 2026-10-22 in exchange for a basemap (product-brief.md §5). A third needs the same
+    #: deliberate decision, which is what this list exists to force.
+    ALLOWED_ORIGINS = (
+        "https://geosearch.planninglabs.nyc",
+        "https://tiles.openfreemap.org",
+    )
+
+    def test_connect_src_names_exactly_the_decided_hosts(self):
         connect_src = csp_directives().get("connect-src", [])
-        assert sorted(connect_src) == ["'self'", "https://geosearch.planninglabs.nyc"], (
-            f"connect-src is {connect_src!r}; zero third parties means exactly one host"
+        assert sorted(connect_src) == ["'self'", *sorted(self.ALLOWED_ORIGINS)], (
+            f"connect-src is {connect_src!r}; each external host is a recorded decision"
         )
 
-    def test_the_geocoder_is_the_only_external_host_anywhere(self):
+    def test_no_other_directive_names_an_external_host(self):
+        """The basemap needed `connect-src` and nothing else — measured 2026-10-22. If a
+        later change puts a host in `img-src` or `worker-src`, that is a widening nobody
+        asked for."""
         for directive_name, sources in csp_directives().items():
+            if directive_name == "connect-src":
+                continue
             for source_expression in sources:
-                if source_expression.startswith(("http://", "https://")):
-                    assert source_expression == "https://geosearch.planninglabs.nyc", (
-                        f"{directive_name} names {source_expression}, a second external origin"
-                    )
+                assert not source_expression.startswith(("http://", "https://")), (
+                    f"{directive_name} names {source_expression}; only connect-src may"
+                )
+
+    def test_every_named_origin_is_https(self):
+        for sources in csp_directives().values():
+            for source_expression in sources:
+                assert not source_expression.startswith("http://"), (
+                    f"{source_expression} is plaintext"
+                )
 
 
 class TestTheRestOfThePolicyIsStillClosed:

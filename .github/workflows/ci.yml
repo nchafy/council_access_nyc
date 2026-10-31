@@ -80,6 +80,11 @@ jobs:
       - name: Fetch and verify axe-core
         run: uv run python scripts/fetch_axe.py
 
+      # The map's vendored library, pinned the same way. The gates build a site, and the
+      # build refuses to produce a /map/ route whose library would 404.
+      - name: Fetch and verify MapLibre
+        run: uv run python scripts/fetch_maplibre.py
+
       # The browser fixture skips when Chrome is missing. That is right locally, where
       # not every contributor has one, and wrong here, where a skipped gate reports
       # success. Assert it exists as its own step so the job fails loudly if a runner

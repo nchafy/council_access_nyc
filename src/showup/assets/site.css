@@ -71,6 +71,275 @@ dd, a, .nolink { overflow-wrap: anywhere; }
 
 .nolink { color: var(--muted); }
 
+/* The map route is an app, not a document: the viewport is the page and nothing scrolls.
+   This is the whole reason it is a separate route — a map embedded in a scrolling page
+   swallows the wheel, so the reader scrolls and the map zooms instead. */
+.app,
+html:has(body.app) {
+  height: 100%;
+  overflow: hidden;
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+/* `margin: 0` is not cosmetic: the base rule centres these with `margin: 0 auto`, and an
+   auto inline margin on a column flex item makes it shrink to its content instead of
+   stretching. `main`'s children are all absolutely positioned, so that content is nothing
+   and the map collapsed to zero width. */
+.app header.site,
+.app footer.site {
+  flex: 0 0 auto;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: .5rem 1rem;
+}
+.app header.site .tagline { display: none; }
+.app footer.site {
+  border-top: 1px solid var(--rule);
+  font-size: .8rem;
+}
+/* The deferred-hearings caveat is dropped on the app page for height, but the sources
+   link is not: every page links what it is built from, and hiding its paragraph left it
+   zero-sized and unfocusable — caught by the keyboard gate, not by looking. */
+.app footer.site .caveat:not(.sources) { display: none; }
+.app footer.site p { margin: 0; }
+/* `min-height: 0` so a flex child may be shorter than its content instead of pushing the
+   footer off the viewport. */
+.app main {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.app .map { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* Cards float on the map. They are the only scrollable thing on the page, and they cap
+   their own height so one can never grow over the map it describes. */
+.cards {
+  position: absolute;
+  inset: 0;
+  padding: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  /* The container is a layout box only: clicks fall through to the map except on a card. */
+  pointer-events: none;
+  overflow: hidden;
+}
+.card {
+  pointer-events: auto;
+  width: min(22rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: .8rem .9rem;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgb(16 25 40 / 12%);
+}
+.card h2 { margin: 0 0 .3rem; font-size: 1rem; }
+.card dl { margin: 0 0 .4rem; }
+.card .card-search label { display: block; font-weight: 600; font-size: .9rem; }
+.card .card-search { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
+.card .card-search input { flex: 1 1 10rem; min-width: 0; min-height: 44px; font: inherit; }
+.card .card-search button { min-height: 44px; font: inherit; padding: 0 .9rem; }
+.card-selection[hidden] { display: none; }
+
+/* The detail panel. On a phone it is a bottom sheet over the lower half of the map; once
+   there is room it docks to the right and the map gives up the width — `.has-selection` on
+   the body is what moves the map, so the no-selection state stays a full-bleed map. */
+.detail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 62%;
+  overflow-y: auto;
+  z-index: 2;
+  padding: .85rem 1rem 1.1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--rule);
+  box-shadow: 0 -2px 8px rgb(16 25 40 / 10%);
+}
+.detail[hidden] { display: none; }
+
+/* The panel slides in from whichever edge it is docked to: up from the bottom while it
+   spans the width, in from the right once it docks beside the map. `is-open` is added a
+   frame after `hidden` comes off, so there is a start state to animate from, and removed
+   before the element is hidden again, so closing slides too (map.mjs, `openPanel`).
+
+   `transform` and `opacity` only — both are compositor properties, so the slide does not
+   relayout the panel's tables on every frame. */
+.detail {
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform 220ms ease-out, opacity 160ms ease-out;
+  will-change: transform;
+}
+.detail.is-open {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+
+.detail-head { display: flex; align-items: flex-start; gap: .5rem; }
+/* The global h2 carries a separator rule and 1rem above it. Inside a title bar that rule
+   lands on the bar itself, so both are dropped here rather than overridden per theme. */
+.detail-head h2 {
+  margin: 0;
+  padding-top: 0;
+  border-top: 0;
+  font-size: 1.05rem;
+  flex: 1 1 auto;
+}
+.detail-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.detail h3 {
+  margin: .9rem 0 .2rem;
+  font-size: .78rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.detail ul { margin: 0; padding-left: 1.1rem; }
+.detail li { margin: .1rem 0; }
+.detail-asof { margin: .9rem 0 0; font-size: .8rem; color: var(--muted); }
+
+@media (min-width: 52rem) {
+  .detail {
+    top: 0;
+    left: auto;
+    width: 25rem;
+    max-height: none;
+    border-top: 0;
+    border-left: 1px solid var(--rule);
+    box-shadow: -2px 0 8px rgb(16 25 40 / 8%);
+    /* Docked to the right edge, so it travels horizontally instead. */
+    transform: translateX(100%);
+  }
+  .detail.is-open { transform: translateX(0); }
+}
+body.has-selection .map { right: 0; }
+@media (min-width: 52rem) {
+  body.has-selection .map { right: 25rem; }
+  body.has-selection .cards { right: 25rem; }
+}
+
+.map-status { color: var(--muted); font-size: .88rem; margin: .5rem 0 0; }
+.map-selection:not([hidden]) { display: inline-block; margin: .2rem 0 0; font-weight: 600; }
+/* Pinned to the foot of the panel: it is the one thing the panel exists to offer, and a
+   long committee list otherwise pushes it below the fold. */
+.detail .map-selection {
+  position: sticky;
+  bottom: 0;
+  display: block;
+  margin: 1rem 0 0;
+  padding: .6rem 0 .2rem;
+  background: var(--bg);
+  box-shadow: 0 -6px 8px -6px rgb(16 25 40 / 18%);
+}
+
+/* The layer toggle. Two buttons rather than a select: both states are one press away, and
+   `aria-pressed` tells a screen reader which is on without a label of its own.
+   `:not([hidden])` is load-bearing on each of these groups — a `display` rule beats the
+   `hidden` attribute's UA `display: none`, which once left an empty link visible,
+   focusable and nameless. */
+.map-toggle:not([hidden]) { display: flex; gap: .4rem; flex-wrap: wrap; }
+.map-toggle button {
+  font: inherit;
+  font-size: .92rem;
+  min-height: 44px;
+  padding: 0 .9rem;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.map-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Floated bottom-left over the canvas. Stacked rather than side by side, which is what
+   every map control does, so the pair reads as one object. */
+.map-zoom:not([hidden]) {
+  position: absolute;
+  left: .75rem;
+  bottom: .75rem;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.map-zoom-button {
+  /* 44px square: a target a thumb can hit, and well past the 24px SC 2.5.8 minimum. */
+  width: 44px;
+  height: 44px;
+  font: inherit;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+.map-zoom-button:first-child { border-radius: 4px 4px 0 0; }
+.map-zoom-button:last-child { border-radius: 0 0 4px 4px; }
+
+/* MapLibre puts `tabindex="0"` on its canvas, so a keyboard user lands on the map and can
+   pan it with the arrow keys. Without this they land on it and see nothing. The offset is
+   negative because the ring would otherwise be clipped by the container's own edge. */
+.maplibregl-canvas:focus,
+.maplibregl-canvas:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+/* The landing page's one job: send the reader to the map or let them type an address. */
+.lede { font-size: 1.08rem; margin: .2rem 0 1rem; }
+.cta-row { margin: 0 0 1.2rem; }
+.cta {
+  display: inline-block;
+  min-height: 48px;
+  padding: .75rem 1.3rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 4px;
+}
+.cta:hover { text-decoration: underline; }
+
+/* Visible to a screen reader, not to the eye. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .neighborhoods { color: var(--muted); margin: 0 0 .8rem; }
 
 .why, .hint, .distinction, .gap {
@@ -134,6 +403,9 @@ input[type="text"]:focus-visible { outline: 3px solid var(--accent); outline-off
   border-radius: 6px;
 }
 
+/* One column at every width. Owner, 2026-10-27. A second column had been added above
+   34rem, which leaves 51 numbered rows in an order the reader has to work out — down then
+   across, or across then down — for a list whose only job is to be scanned to one entry. */
 .district-list {
   list-style: none;
   padding: 0;
@@ -242,10 +514,6 @@ footer.site p { margin: .4rem 0; }
   font-weight: 600;
 }
 
-@media (min-width: 34rem) {
-  .district-list { grid-template-columns: 1fr 1fr; gap: .1rem 1.4rem; }
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #e8eaed;
@@ -261,4 +529,422 @@ footer.site p { margin: .4rem 0; }
     --ok-ink: #a8dcb6;
   }
   .distinction, .designed-state, .refusal, .share { background: #1b1f24; }
+}
+
+/* ===========================================================================
+   Windows XP (Luna) theme. Owner's decision, 2026-10-27.
+
+   Appended as one block rather than threaded through the sheet above, so the
+   theme can be read, argued with or reverted as a single unit.
+
+   Every colour here was checked against WCAG 2.2 AA, which Luna itself was
+   not: #000 on #ECE9D8 is about 15:1, white on #0A246A about 12:1, and the
+   classic link blue #0000CC on white about 8.9:1. The one place the real Luna
+   fails — grey disabled text on grey chrome — does not appear, because nothing
+   on this site is disabled.
+   =========================================================================== */
+
+:root {
+  --ink: #000;
+  --muted: #3a3a3a;          /* darkened from Luna's grey, which fails AA */
+  --rule: #919b9c;           /* XP control border */
+  --bg: #fff;
+  --accent: #0000cc;         /* the era's link blue, darkened to clear AA */
+  --face: #ece9d8;           /* XP control face, the "bisque" */
+  --title-a: #0a246a;        /* title bar, dark end */
+  --title-b: #3a6ea5;        /* title bar, light end */
+  --sunken: #7f9db9;         /* input border */
+}
+
+body {
+  font-family: Tahoma, Verdana, Geneva, sans-serif;
+  font-size: 15px;
+  background: var(--face);
+}
+
+/* The site header as a title bar. */
+header.site {
+  background: linear-gradient(to bottom, var(--title-b), var(--title-a));
+  border-bottom: 1px solid #0a1a4a;
+  padding-top: .45rem;
+  padding-bottom: .45rem;
+}
+header.site .wordmark,
+header.site .wordmark a,
+header.site .tagline { color: #fff; }
+header.site .wordmark { font-weight: 700; text-shadow: 0 1px 1px rgb(0 0 0 / 45%); }
+/* White, not Luna's pale blue: #dfe8f5 on the gradient's light end measures 4.30:1, under
+   the 4.5 normal text needs. Distinguished by size rather than by colour. */
+header.site .tagline { color: #fff; font-size: .86rem; }
+
+/* Document surface: a white page inside the bisque frame. */
+main {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+.app main { background: none; border: 0; margin: 0; }
+
+footer.site { color: #1d1d1d; }
+
+a { color: var(--accent); text-decoration: underline; }
+
+/* Beveled controls. The gradient and the two-tone border are what read as XP;
+   the focus ring stays the site's 3px because Luna's dotted one fails the gate. */
+/* Square the base stylesheet's cards. Luna put 3px on a control and nothing anywhere
+   else; the 6-10px radii below it read as 2015 rather than 2001, and the pill-shaped
+   share badge has no era equivalent at all. Overridden here rather than edited in place,
+   because the base stylesheet still has to stand on its own without the theme. */
+.card,
+.board,
+.meeting,
+.request,
+.dataset,
+.distinction,
+.share,
+.lead-truth,
+.refusal,
+.staleness,
+.address-status.warn { border-radius: 0; }
+
+/* A record on a page is the same object as a group in the panel, so it gets the same
+   bevel: a light top-left edge against a dark bottom-right one. */
+.board,
+.meeting,
+.request,
+.dataset {
+  border: 1px solid var(--rule);
+  border-top-color: #fff;
+  border-left-color: #fff;
+  background: #fcfcfa;
+  box-shadow: inset -1px -1px 0 #fff, 1px 1px 0 #b8b4a2;
+}
+.board { border-left: 3px solid var(--title-b); }
+.share {
+  background: var(--face);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+button,
+.cta,
+.map-zoom-button,
+.map-toggle button,
+.detail-close {
+  font-family: inherit;
+  background: linear-gradient(to bottom, #fff 0%, var(--face) 45%, #d7d2bf 100%);
+  border: 1px solid #003c74;
+  border-radius: 3px;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px #fff;
+}
+button:active,
+.map-zoom-button:active,
+.map-toggle button:active {
+  background: linear-gradient(to bottom, #cdc9b4 0%, #e3dfcd 100%);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 25%);
+}
+.cta { color: #fff; background: linear-gradient(to bottom, var(--title-b), var(--title-a)); }
+.map-toggle button[aria-pressed="true"] {
+  background: linear-gradient(to bottom, var(--title-b), var(--title-a));
+  border-color: #0a1a4a;
+  color: #fff;
+}
+
+input[type="text"] {
+  font-family: inherit;
+  border: 1px solid var(--sunken);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 14%);
+  padding: .35rem .4rem;
+  background: #fff;
+}
+
+/* Group box: the fieldset-and-legend the panel uses instead of bullet lists. */
+.group {
+  margin: .7rem 0 0;
+  padding: .55rem .7rem .6rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fcfcfa;
+}
+.group legend {
+  padding: 0 .3rem;
+  font-weight: 700;
+  font-size: .82rem;
+  color: #0a2a5a;
+}
+.group-line { margin: .15rem 0; }
+
+/* A group whose data really has columns gets a table, so the column header is markup
+   rather than an em dash between a label and its value (docs/design.md §1). Column rules
+   only — no row striping, which would imply an order the data does not carry. */
+.group-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+.group-table caption {
+  margin: 0 0 .3rem;
+  text-align: left;
+  color: var(--muted);
+  font-size: .78rem;
+}
+.group-table th,
+.group-table td {
+  padding: .22rem .45rem .22rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+.group-table thead th {
+  border-bottom: 1px solid var(--rule);
+  font-weight: 700;
+  font-size: .74rem;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* The row header is the row's name, so it reads as content rather than as more chrome. */
+.group-table tbody th {
+  font-weight: 400;
+  padding-right: .6rem;
+}
+.group-table tbody tr + tr th,
+.group-table tbody tr + tr td {
+  border-top: 1px solid #e8e6dc;
+}
+.group-table th:last-child,
+.group-table td:last-child { padding-right: 0; }
+
+/* Below this the three-column participatory-budgeting table stops fitting the panel, so
+   every table collapses to stacked rows: the header row is dropped and each cell is
+   labelled by its `data-label` instead. Verified by `make reflow` at 320 px. */
+@media (max-width: 26rem) {
+  .group-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .group-table tbody tr { display: block; padding: .3rem 0; }
+  .group-table tbody tr + tr { border-top: 1px solid var(--rule); }
+  .group-table tbody th,
+  .group-table tbody td { display: block; border-top: 0; padding: 0 0 .1rem; }
+  .group-table tbody th { font-weight: 700; }
+  /* The header row is hidden here, so each cell names its own column. `attr()` keeps this
+     in the stylesheet: `style-src 'self'` would refuse the same label inline. */
+  .group-table tbody td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); }
+}
+
+/* Cards and the detail panel as dialog windows, title bar and all. */
+.card,
+.detail {
+  background: var(--face);
+  border: 1px solid #0a1a4a;
+  border-radius: 4px 4px 0 0;
+  box-shadow: 2px 2px 6px rgb(0 0 0 / 28%);
+}
+.detail-head {
+  margin: -.85rem -1rem .6rem;
+  padding: .3rem .4rem .3rem .6rem;
+  background: linear-gradient(to bottom, var(--title-b), var(--title-a));
+  border-radius: 3px 3px 0 0;
+  align-items: center;
+}
+.detail-head h2 { color: #fff; text-shadow: 0 1px 1px rgb(0 0 0 / 45%); }
+.detail-close { width: 24px; height: 24px; font-size: 1rem; }
+.detail .map-selection { background: var(--face); }
+
+/* The title-bar close box, as Luna drew it: a red square with a white glyph, inside the
+   bar rather than floating above it. Kept at 24px with a 44px hit area via padding, so it
+   still clears SC 2.5.8 without looking like a button from another decade. */
+.detail-close {
+  /* Lightest stop is #c8341a, not Luna's #e8785a: white on that measures 2.89:1 and the
+     glyph can sit over it. Every stop here clears 4.5:1. */
+  background: linear-gradient(to bottom, #c8341a 0%, #ad2a0e 55%, #8f1c06 100%);
+  border: 1px solid #7a1a06;
+  border-radius: 3px;
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  font-weight: 700;
+}
+.detail-close:active {
+  background: linear-gradient(to bottom, #a52208, #c8341a);
+}
+
+/* Clearance for the sticky "More details" link, which otherwise sits on top of the last
+   line of the last group. */
+#map-card-body { padding-bottom: .4rem; }
+.detail { padding-bottom: 0; }
+.detail .map-selection { margin-top: .6rem; padding: .55rem 0 .7rem; }
+
+/* Share bars for the boards covering a district. One series, so one hue and no legend:
+   the row header names each bar. The track carries no data and measures only 1.45:1
+   against the group background, so it gets a border rather than relying on fill alone. */
+.share-value { display: block; font-variant-numeric: tabular-nums; font-weight: 700; }
+.share-bar { display: block; width: 100%; min-width: 3.5rem; height: 9px; margin-top: .1rem; }
+.share-track { fill: #d8d4c2; stroke: #8f8a76; stroke-width: 1; }
+.share-fill { fill: #3a6ea5; }
+
+/* The glyph buttons were optically off-centre: a text button's line box is taller than the
+   glyph, so centring the box does not centre what is drawn. Grid places the glyph itself. */
+.map-zoom-button,
+.detail-close {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+/* The panel's own top border showed as a stray light line above the title bar. The head now
+   starts at the panel's inner edge, so the gradient is the top of the panel. */
+.detail { padding-top: 0; }
+.detail-head { margin: 0 -1rem .6rem; padding: .35rem .4rem .35rem .6rem; }
+
+/* The pin for a located address. MapLibre's own marker is an inline-styled SVG, which
+   `style-src 'self'` refuses, so this is a plain element with a class. */
+/* A teardrop, not a dot: the point of the drop marks the coordinate, so the marker reads
+   as "this address" rather than "somewhere around here". Three sides rounded and the
+   fourth square, rotated 45deg, is the shape without an image — `img-src 'self'` refuses
+   a data: URI, which is how MapLibre's own marker is drawn. */
+/* The pin's colours only. Its shape and its anchoring are geometry in map.mjs, because
+   MapLibre overwrites `transform` on a marker element and a CSS-rotated teardrop silently
+   rendered unrotated. `filter` is a paint property, so it survives. */
+.map-pin { display: block; filter: drop-shadow(1px 1px 2px rgb(0 0 0 / 45%)); }
+.map-pin path { fill: #e8431f; stroke: #fff; stroke-width: 2; }
+
+/* MapLibre's own stylesheet, reduced to the rules that matter here.
+ *
+ * Measured on 2026-10-29: 7 of its 135 selectors match anything on `/map/`, because this
+ * project draws its own zoom buttons and its own marker and renders no MapLibre control.
+ * Shipping the whole 10 KB file for those put the page over its weight budget, so the
+ * rules below are copied verbatim from `maplibre-gl.css` (BSD-3-Clause, and
+ * `vendor/LICENSE.txt` still ships). The touch-action rules are kept because dropping them
+ * breaks pinch-zoom on a phone, which no desktop gate would have caught.
+ */
+.maplibregl-map { overflow: hidden; position: relative; -webkit-tap-highlight-color: rgb(0 0 0 / 0); }
+.maplibregl-canvas { position: absolute; left: 0; top: 0; }
+.maplibregl-canvas-container.maplibregl-interactive { cursor: grab; user-select: none; }
+.maplibregl-canvas-container.maplibregl-interactive:active { cursor: grabbing; }
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate,
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate .maplibregl-canvas { touch-action: pan-x pan-y; }
+.maplibregl-canvas-container.maplibregl-touch-drag-pan,
+.maplibregl-canvas-container.maplibregl-touch-drag-pan .maplibregl-canvas { touch-action: pinch-zoom; }
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate.maplibregl-touch-drag-pan,
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate.maplibregl-touch-drag-pan .maplibregl-canvas { touch-action: none; }
+.maplibregl-ctrl-bottom-left,
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-top-left,
+.maplibregl-ctrl-top-right { position: absolute; pointer-events: none; z-index: 2; }
+.maplibregl-ctrl-top-left { top: 0; left: 0; }
+.maplibregl-ctrl-top-right { top: 0; right: 0; }
+.maplibregl-ctrl-bottom-left { bottom: 0; left: 0; }
+.maplibregl-ctrl-bottom-right { right: 0; bottom: 0; }
+
+/* Basemap attribution. ODbL requires it and the map had none: `attributionControl` is off
+   because MapLibre's control is styled by the stylesheet above, which is no longer shipped
+   whole, so the credit is ours to render. */
+.map-attrib {
+  position: absolute;
+  /* `.cards` disables pointer events so clicks reach the map; the credit's links need
+     them back. */
+  pointer-events: auto;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  margin: 0;
+  padding: .15rem .4rem;
+  font-size: .68rem;
+  background: rgb(255 255 255 / 82%);
+  color: var(--ink);
+}
+.map-attrib a { color: var(--accent); }
+
+/* The suggestion list. In normal flow under the input, so there is no popover to keep
+   positioned at 320 px or over the map panel. Rows are 24px minimum for SC 2.5.8 even
+   though they are pointer targets rather than focusable: focus stays in the input and
+   `aria-activedescendant` names the active row. */
+.suggest {
+  list-style: none;
+  margin: .3rem 0 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.suggest[hidden] { display: none; }
+.suggest [role="option"] {
+  padding: .4rem .55rem;
+  min-height: 24px;
+  font-size: .9rem;
+  cursor: pointer;
+  border-top: 1px solid var(--rule);
+}
+.suggest [role="option"]:first-child { border-top: 0; }
+.suggest [role="option"].is-active,
+.suggest [role="option"]:hover {
+  background: var(--title-b);
+  color: #fff;
+}
+
+/* Back to the map, on every page that is not the map. A button rather than a link because
+   it is the way out of a detail page, and the plain link beside it still reaches the lists. */
+.back { display: flex; flex-wrap: wrap; gap: .9rem; align-items: center; }
+.cta-back { min-height: 40px; padding: .5rem 1rem; font-size: .95rem; }
+
+/* Flat, not a gradient. Measured: the panel and its head are flush (main top 43, panel 43,
+   head 44 — the 1px border), so the "line" above the title was the gradient's light stop
+   banding across a 58px bar, not a gap. A flat bar cannot read as an artifact. */
+.detail-head {
+  background: var(--title-a);
+  border-bottom: 1px solid #06143c;
+  border-radius: 0;
+}
+
+
+/* Phone layout. Measured on 2026-10-30 at 390x780: the control card took the top 215 px
+   and the detail sheet 371 px of 780, so the map was reduced to slivers and the reader
+   could not see what had been highlighted. Everything below buys the map back height.
+
+   `max-width`, so none of it reaches the docked layout at 52rem. */
+@media (max-width: 51.99rem) {
+  .app .cards { padding: .4rem; gap: .4rem; }
+
+  /* The label is two lines at this width. It stays in the accessibility tree — the input
+     still has a name — and the placeholder carries the hint on screen. */
+  .app .card .card-search label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .app .card-controls { padding: .45rem .5rem; }
+  .app .card .card-search { margin: .4rem 0 0; }
+  .app .map-toggle button { padding: .3rem .5rem; font-size: .85rem; }
+
+  /* Lower than the old 62%: the sheet is a summary with a link onward, and the map is the
+     thing it is summarising. */
+  .detail { max-height: 46%; bottom: 1.45rem; }
+
+  /* Stays on the right: the zoom buttons are bottom-left, and the sheet stops above this
+     strip, because the basemap credit is a licence term and not a nicety that may be
+     covered (docs/design.md §8). */
+
+  /* With a sheet up, the controls are in the way of the thing they produced. Compacting
+     them still left only 124 px of map between the two, so they go; the sheet's close
+     button brings them back, and that is one tap. The basemap credit and `#map-status`
+     were moved out of this card to survive it — the first is a licence term, the second
+     is the live region that announces a selection. */
+  body.has-selection .card-controls { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* WCAG 2.3.3. Last in the file so it also overrides the docked rule above, which is
+     inside a min-width query and would otherwise win on source order. */
+  .detail,
+  .detail.is-open {
+    transform: none;
+    transition: none;
+  }
 }

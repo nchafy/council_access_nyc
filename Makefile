@@ -8,7 +8,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open \
-	axe axe-fetch a11y console perf reflow gates
+	axe axe-fetch a11y console perf reflow gates maplibre-fetch
 
 PORT ?= 8000
 ROOT ?= site
@@ -26,7 +26,10 @@ fetch: ## refresh the upstream cache (~9 min cold; skips fresh sources)
 fetch-calendar: ## refresh just the daily-changing calendar
 	uv run showup fetch --only calendar --force
 
-build: ## build the static site into site/
+maplibre-fetch: ## download the pinned MapLibre into .cache/ (verified, idempotent)
+	uv run python scripts/fetch_maplibre.py
+
+build: maplibre-fetch ## build the static site into site/
 	uv run showup build
 
 serve: build ## build, then serve locally with the real security headers

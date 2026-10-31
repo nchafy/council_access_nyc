@@ -11,28 +11,58 @@ import shutil
 from datetime import date, datetime
 from pathlib import Path
 
-from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
+from .crosswalk import (
+    CROSSWALK_PATH,
+    CrosswalkError,
+    load_boards_to_districts,
+    load_zip_boards,
+    load_zip_zcta,
+    load_zips,
+)
 from .crosswalk import load as load_crosswalk
 from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
-from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
+from .model import (
+    BOARD_COUNT,
+    COUNCIL_KEY,
+    COUNCIL_KEY_WATER,
+    DISTRICT_COUNT,
+    District,
+    DistrictBoard,
+    Manifest,
+    Member,
+)
 from .render import (
+    preview_payload,
     render_board,
     render_district,
     render_index,
+    render_listing,
+    render_map,
     render_not_found,
     render_references,
 )
-from .sources.boards import load_boards
+from .sources.boards import JOINT_INTEREST_AREAS, load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
 from .sources.members import current_by_district, load_members
+from .sources.participatory_budgeting import (
+    ParticipatoryBudgetingError,
+    load_participation,
+)
 
 __all__ = ["SHORTLIST_SIZE", "BuildError", "build_site"]
 
 #: Owner's decision: five. Phase 1 orders the shortlist chronologically, so it ranks nothing.
 SHORTLIST_SIZE = 5
+
+#: The ZIP outline overlay: 178 modified ZCTAs, simplified far more coarsely than the
+#: districts because nothing resolves against it. ~11 m, which is still finer than the
+#: ~110 m lattice the crosswalk itself samples at, so it is not the weak link.
+ZCTA_FLOOR = 170
+ZCTA_TOLERANCE_DEG = 0.0001
+ZCTA_PRECISION = 4
 
 #: Below these the parse is broken rather than thin, and `_check_floor` refuses the build.
 FLOORS = {
@@ -45,6 +75,33 @@ FLOORS = {
 
 class BuildError(RuntimeError):
     """A source failed its floor or invariant. The build must not continue."""
+
+
+#: The vendored browser dependency, served from our own origin. `scripts/fetch_maplibre.py`
+#: puts these in the cache, pinned by checksum; the build only copies them.
+VENDOR_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "maplibre-gl"
+#: `maplibre-gl.css` is fetched and pinned but deliberately not shipped — 7 of its 135
+#: selectors matched anything on `/map/`, and those rules are copied into `site.css`. The
+#: licence still travels with the code.
+VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
+
+
+def _copy_vendor(staging: Path) -> None:
+    """Copy the pinned MapLibre files into `site/vendor/`.
+
+    Fails the build rather than shipping a map route whose library 404s. The licence travels
+    with the code because BSD-3-Clause asks it to.
+    """
+    missing = [name for name in VENDOR_FILES if not (VENDOR_CACHE / name).is_file()]
+    if missing:
+        raise BuildError(
+            f"no vendored MapLibre in {VENDOR_CACHE} (missing {', '.join(missing)}). "
+            "Run `make maplibre-fetch` once; it is pinned by checksum and cached."
+        )
+    vendor = staging / "vendor"
+    vendor.mkdir(parents=True, exist_ok=True)
+    for name in VENDOR_FILES:
+        shutil.copy2(VENDOR_CACHE / name, vendor / name)
 
 
 def _check_floor(name: str, count: int) -> None:
@@ -203,6 +260,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     _check_floor("calendar", len(meetings))
 
     districts, _, boards_by_code = _load_districts(raw, day)
+    repo_root = Path(__file__).resolve().parents[2]
+    boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
 
     budget_requests_file = cache_path(raw, "budget-requests")
     try:
@@ -214,6 +273,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         (entry.publication.isoformat() for entry in budget_requests.values()), None
     )
 
+    # Both rosters, or neither. The floors live in the parser, which refuses a short
+    # roster rather than returning one: a half-read roster would render a participating
+    # district as unlisted, which is a wrong answer rather than a missing one.
+    try:
+        participation = load_participation(cache_path(raw, "participatory-budgeting"))
+    except ParticipatoryBudgetingError as error:
+        raise BuildError(str(error)) from error
     ahead = upcoming(meetings, day, SHORTLIST_SIZE)
     window_end = max((m.date for m in meetings), default=None)
 
@@ -228,6 +294,9 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
             window_end=window_end,
+            meetings=ahead,
+            today=day,
+            now=now,
         ),
         encoding="utf-8",
     )
@@ -239,7 +308,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     district_root = staging / "district"
     district_root.mkdir()
     (district_root / "index.html").write_text(
-        render_index(
+        render_listing(
             districts,
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
@@ -253,13 +322,17 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         page_dir.mkdir()
         (page_dir / "index.html").write_text(
             render_district(
-                district, ahead, built_at=now, window_end=window_end, today=day, now=now
+                district,
+                ahead,
+                built_at=now,
+                window_end=window_end,
+                today=day,
+                now=now,
+                participation=participation,
             ),
             encoding="utf-8",
         )
 
-    repo_root = Path(__file__).resolve().parents[2]
-    boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
     board_root = staging / "board"
     board_root.mkdir()
     boards_written = 0
@@ -280,7 +353,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     if boards_written != BOARD_COUNT:
         raise BuildError(f"wrote {boards_written} board pages, expected {BOARD_COUNT}")
     (board_root / "index.html").write_text(
-        render_index(
+        render_listing(
             districts,
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
@@ -293,19 +366,58 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     # does the point-in-polygon against this.
     data_dir = staging / "data"
     data_dir.mkdir()
-    council_polygons = load_features(cache_path(raw, "council-geometry"), "coundist")
+    council_polygons = load_features(cache_path(raw, "council-geometry"), COUNCIL_KEY_WATER)
     if len(council_polygons) != DISTRICT_COUNT:
         raise BuildError(
             f"district geometry has {len(council_polygons)} features, expected {DISTRICT_COUNT}"
         )
     (data_dir / "districts.geo.json").write_text(
-        json.dumps(to_geojson(council_polygons, "coundist"), separators=(",", ":")),
+        json.dumps(to_geojson(council_polygons, COUNCIL_KEY), separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    # The board layer of the map. Joint interest areas — parks, airports, Rikers — are
+    # community districts with no board, so they are excluded here exactly as the crosswalk
+    # excludes them; drawing them would imply there is somebody to call.
+    board_polygons = load_features(
+        cache_path(raw, "community-geometry"), "boro_cd", exclude=set(JOINT_INTEREST_AREAS)
+    )
+    if len(board_polygons) != BOARD_COUNT:
+        raise BuildError(
+            f"board geometry has {len(board_polygons)} features, expected {BOARD_COUNT}"
+        )
+    # The map's detail panel. Summaries of what the two page types say, so selecting a
+    # polygon can answer without a page load; the panel links through for the rest.
+    preview = preview_payload(
+        districts,
+        sorted(boards_by_code.values(), key=lambda b: b.code),
+        ahead,
+        budget_requests,
+        built_at=now,
+        today=day,
+        now=now,
+        participation=participation,
+        boards_to_districts=boards_to_districts,
+    )
+    if len(preview["districts"]) != DISTRICT_COUNT or len(preview["boards"]) != BOARD_COUNT:
+        raise BuildError(
+            f"preview covers {len(preview['districts'])} districts and "
+            f"{len(preview['boards'])} boards, expected {DISTRICT_COUNT} and {BOARD_COUNT}"
+        )
+    (data_dir / "preview.json").write_text(
+        json.dumps(preview, separators=(",", ":")), encoding="utf-8"
+    )
+
+    (data_dir / "boards.geo.json").write_text(
+        json.dumps(to_geojson(board_polygons, "boro_cd"), separators=(",", ":")),
         encoding="utf-8",
     )
 
     # A district number, neighbourhood, board name or ZIP resolves from this, so typing
     # one never reaches the geocoder.
     zips = load_zips(repo_root / CROSSWALK_PATH)
+    zip_boards = load_zip_boards(repo_root / CROSSWALK_PATH)
+    zip_zcta = load_zip_zcta(repo_root / CROSSWALK_PATH)
     lookup = {
         "districts": [{"n": d.number, "hoods": d.neighborhoods or ""} for d in districts],
         "boards": [
@@ -313,13 +425,40 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             for b in sorted(boards_by_code.values(), key=lambda b: b.code)
         ],
         "zips": {code: [n for n, _ in pairs] for code, pairs in sorted(zips.items())},
+        # The same ZIP against the board layer, so a ZIP resolves whichever layer is on.
+        "zip_boards": {code: [c for c, _ in pairs] for code, pairs in sorted(zip_boards.items())},
+        # Which polygon to outline for a typed ZIP: the City publishes *modified* ZCTAs,
+        # so several real ZIPs share one shape.
+        "zip_zcta": dict(sorted(zip_zcta.items())),
     }
     (data_dir / "lookup.json").write_text(
         json.dumps(lookup, separators=(",", ":")), encoding="utf-8"
     )
 
+    # The searched ZIP's own outline, fetched by the browser only when a ZIP is typed.
+    # Coarser than the district geometry on purpose: nothing is hit-tested against it (the
+    # crosswalk already answers which districts a ZIP covers), it is drawn as a dashed hint,
+    # and at the shipped tolerance it is 50 KB gzipped against 125 KB at district precision.
+    zcta_polygons = load_features(cache_path(raw, "zip-geometry"), "modzcta")
+    if len(zcta_polygons) < ZCTA_FLOOR:
+        raise BuildError(f"ZIP geometry has {len(zcta_polygons)} features, floor is {ZCTA_FLOOR}")
+    (data_dir / "zips.geo.json").write_text(
+        json.dumps(
+            to_geojson(
+                zcta_polygons,
+                "modzcta",
+                tolerance=ZCTA_TOLERANCE_DEG,
+                precision=ZCTA_PRECISION,
+            ),
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+
     assets_src = Path(__file__).parent / "assets"
     shutil.copytree(assets_src, staging / "assets")
+
+    _copy_vendor(staging)
 
     headers = Path(__file__).resolve().parents[2] / "_headers"
     if headers.exists():
@@ -347,12 +486,24 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "rows": BOARD_COUNT,
         },
     }
+    pb_file = cache_path(raw, "participatory-budgeting")
+    manifest_sources[manifest_key("participatory-budgeting")] = {
+        "fetched_at": _mtime(pb_file),
+        "max_age_hours": 24 * 7,
+        "rows": len(participation.open_cycle),
+    }
     if budget_requests_file.exists():
         manifest_sources[manifest_key("budget-requests")] = {
             "fetched_at": _mtime(budget_requests_file),
             "max_age_hours": 24 * 30,
             "rows": budget_request_rows,
         }
+
+    map_root = staging / "map"
+    map_root.mkdir()
+    (map_root / "index.html").write_text(
+        render_map(built_at=now, window_end=window_end), encoding="utf-8"
+    )
 
     references_root = staging / "references"
     references_root.mkdir()
@@ -392,6 +543,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "budget_requests": budget_request_rows,
         "budget_publication": budget_publication,
         "zip_codes": len(zips),
+        "pb_open_cycle": len(participation.open_cycle),
+        "pb_latest_results": (participation.results.cycle if participation.results else None),
         "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [
             d.number for d in districts if d.member and d.member.seat_status == "vacant"

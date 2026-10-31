@@ -9,13 +9,26 @@ surface, and that is a cost to weigh, not a reason to refuse.
 | Class | Reaches the reader? | Policy |
 |---|---|---|
 | **Build-time** (Jinja, a PDF parser, a geo library) | No | **Allowed.** Meet the checklist below. |
-| **Browser** (a framework, an analytics snippet, a hosted font, a CDN script) | Yes | **Still refused.** |
+| **Browser, served by a third party** (a CDN script, an analytics snippet, a hosted font) | Yes, and they see the request | **Refused.** |
+| **Map tiles from a third party** | Yes — the host sees which area is viewed | **Allowed since 2026-10-22**, for `tiles.openfreemap.org` only, by the owner decision in `product-brief.md` §5. No other third-party fetch is. `esri-light-gray` is wired but not reachable: adding `server.arcgisonline.com` to the CSP is a second, separate decision, and the licensing of Esri's keyless endpoints for this use is unconfirmed. |
+| **Browser, vendored and served from our origin** (MapLibre) | Yes, but nobody else sees it | **Allowed since 2026-10-21.** Checklist below, plus three extra rules. |
 
-Browser dependencies stay out because "zero third parties" is a promise made to readers and
-enforced by the CSP (`default-src 'none'`, `connect-src` limited to the geocoder). It is a
-privacy guarantee, not a dependency preference. A build-time library never touches a reader;
-a browser one puts a third party between us and them. If you want to change that promise,
-change it deliberately in `product-brief.md` — not as a side effect of adding a library.
+The promise to the reader is that **no third party sees their request**, enforced by the CSP
+(`default-src 'none'`, `connect-src` limited to the geocoder). That is a privacy guarantee, not
+a dependency preference. A library we vendor and serve ourselves does not break it; a CDN script
+or a tile host does. The first two rows have never moved. The third was opened deliberately in
+`product-brief.md` §5 for the map — which is still the way to move this line, rather than as a
+side effect of adding a library.
+
+### Three extra rules for a browser dependency
+
+1. **Vendored, never hot-linked.** Bytes are fetched at build time, pinned by checksum, and
+   served from our own origin. No `src` pointing anywhere else, ever.
+2. **It must not need a CSP directive.** A library that only works once the policy is loosened
+   is refused here, because the loosening is the real cost. MapLibre was measured against the
+   unchanged policy before it was accepted.
+3. **It must be load-gated.** R40 caps reader-facing weight. A browser dependency loads on
+   demand, after first paint, only on the route that needs it.
 
 ## Checklist for adding one
 
@@ -44,9 +57,11 @@ change it deliberately in `product-brief.md` — not as a side effect of adding 
 | ruff | >=0.6 | MIT | dev | lint + format |
 | websocket-client | 1.9.2 (`>=1.9.2`, pinned in `uv.lock`) | Apache-2.0 | dev | Replaces the 127-line hand-written RFC 6455 client inside `scripts/cdp.py` — frame headers, client masking, 16- and 64-bit lengths, continuation reassembly, ping/pong; the most error-prone code in the repo and the least specific to this project |
 | axe-core | 4.13.0 | MPL-2.0 | dev, fetched | R39's accessibility gate; not committed, see `vendor` note in `scripts/fetch_axe.py` |
+| maplibre-gl | 6.15.0 | BSD-3-Clause | **browser, vendored** | The M3 district map. Replaces hand-rolling pan, zoom, projection and hit-testing over 51 polygons in WebGL. 449 KB gzipped across three files, so it is loaded on demand and never on first paint. Pinned by tarball sha512 plus a sha256 per extracted file in `scripts/fetch_maplibre.py`; not committed. Published 2026-10-18, so rule 3 is comfortable. npm runs at no point, so the `prepare` script in its `package.json` never executes — rule 5 holds for the same reason it does for axe-core |
 
-No runtime entry reaches a reader: all of them run at build time only, and `site/` is plain
-pre-rendered HTML with no third-party bytes in it.
+One entry reaches a reader — `maplibre-gl`, on the map route only, served from `site/vendor/`.
+Every other entry runs at build time. `site/` still contains **no third-party bytes**: nothing
+in it is fetched from anyone else's host at read time.
 
 ## The HTML parser, and why it is not selectolax or lxml
 

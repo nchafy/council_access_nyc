@@ -1,0 +1,106 @@
+{% extends "layout.html" %}
+{# MapLibre's own stylesheet, from our origin. Without it the map's controls have no
+   positioning. 10 KB gzipped, and this is the only page that loads it. #}
+{# MapLibre's stylesheet is not shipped: 7 of its 135 selectors matched anything here, and
+   the rules that did are copied into site.css. See the note there. #}
+{# The app shell: the viewport is the page, nothing scrolls, and the map takes whatever the
+   header and footer do not. A map inside a scrolling page steals the wheel: scrolling the
+   page zooms the map instead, which is why this is a route of its own. #}
+{% block body_class %}app{% endblock %}
+{% block body %}
+<h1 class="visually-hidden">Map of council districts and community boards</h1>
+
+<!-- The basemap, here rather than in the module so changing it is a one-line diff.
+     OpenFreeMap publishes liberty, bright, positron, dark and fiord; `map.mjs` strips the
+     road layers out of whichever is named. positron is the desaturated one, and the
+     districts and their selection read on top of it, which they do not on liberty's orange
+     highways or fiord's navy. Screenshots of each are in screenshots/style-*.png.
+
+     `esri-light-gray` is also available by name — Esri's Light Gray Canvas, the basemap
+     howfar.nyc uses, rendered in screenshots/esri-lightgray.png. Choosing it takes TWO
+     changes, not one, and the second is the point: `connect-src` in `_headers` and
+     `ALLOWED_ORIGINS` in tests/unit/test_csp.py must both name
+     `https://server.arcgisonline.com`. It is a commercial Esri service and nobody here has
+     confirmed the keyless endpoints are licensed for this use, so widening the policy for
+     it has to be somebody's decision rather than a default. -->
+<div id="map" class="map"
+     data-basemap="https://tiles.openfreemap.org/styles/positron"></div>
+
+<!-- Bottom-left over the canvas, not in a card: a map control belongs on the map. The
+     visible glyph is a symbol, so each button carries an aria-label — "+" is not a name.
+     `−` is U+2212 MINUS SIGN, not a hyphen, so it matches the plus optically. -->
+<div class="map-zoom" hidden id="map-zoom">
+  <button type="button" id="map-zoom-in" class="map-zoom-button" aria-label="Zoom in">+</button>
+  <button type="button" id="map-zoom-out" class="map-zoom-button" aria-label="Zoom out">−</button>
+</div>
+
+<!-- Cards float on the map. Each is hidden until it has something to say, so the map is
+     never covered by an empty box. -->
+<div class="cards">
+  <div class="card card-controls">
+    <div class="map-toggle" id="map-toggle" hidden role="group" aria-label="Which boundaries to show">
+      <button type="button" data-layer="council" aria-pressed="true">Council districts</button>
+      <button type="button" data-layer="board" aria-pressed="false">Community boards</button>
+    </div>
+    <!-- Shipped hidden and revealed by address.js, which is also what gates it on the
+         script having run: the box cannot work without it. The fallback below stays
+         visible either way. -->
+    <div id="address-section" hidden>
+      <form class="card-search" id="address-form" action="#" method="get" autocomplete="off">
+        <label for="address-input">Address, ZIP, neighbourhood or district number</label>
+        <input
+          id="address-input"
+          name="q"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="350 Jay Street, or 11217"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="address-suggest">
+        <button type="submit">Find</button>
+      </form>
+ <!-- The listbox sits in normal flow rather than floating over the page: an absolutely
+      positioned popover has to be fought at 320 px and over the map panel, and this
+      pattern does not need it. Populated only from the index already in the browser. -->
+ <ul id="address-suggest" class="suggest" role="listbox"
+     aria-label="Matching districts, boards and ZIP codes" hidden></ul>
+      <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
+      <div id="address-results"></div>
+    </div>
+  </div>
+
+  {# Siblings of the control card, never children of it. A phone hides that card while a
+     sheet is open, and these two must survive it: the credit is an ODbL licence term, and
+     `#map-status` is the live region that announces what was selected. #}
+  <p class="map-attrib">Basemap
+    <a href="https://openfreemap.org/" rel="noopener noreferrer">OpenFreeMap</a>, data
+    &copy; <a href="https://www.openstreetmap.org/copyright"
+    rel="noopener noreferrer">OpenStreetMap contributors</a></p>
+  <p id="map-status" class="map-status">
+    The map needs JavaScript and WebGL.
+    <a href="/district/">All 51 districts</a> and <a href="/board/">all 59 boards</a> are
+    listed without it.
+  </p>
+</div>
+
+<!-- The detail panel. A sibling of the cards, not one of them, because when something is
+     selected it docks beside the map and the map gives up the width — a floating card cannot
+     do that. Revealed by the module, so it never shows an empty heading. -->
+<aside class="detail" id="map-card" aria-labelledby="map-card-title" hidden>
+  <div class="detail-head">
+    <h2 id="map-card-title"></h2>
+    <button type="button" id="map-card-close" class="detail-close" aria-label="Close details">
+      ×
+    </button>
+  </div>
+  <div id="map-card-body"></div>
+  <a id="map-selection" class="map-selection" href="/"></a>
+  <p class="detail-asof" id="map-card-asof"></p>
+</aside>
+{% endblock %}
+{% block extra_script %}<script src="/assets/address.js" defer></script>
+<script type="module" src="/assets/map.mjs"></script>{% endblock %}

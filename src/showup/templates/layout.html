@@ -7,13 +7,18 @@
 <meta name="description" content="City Council hearings and deadlines, council districts, and community boards.">
 <meta name="referrer" content="no-referrer">
 <link rel="stylesheet" href="/assets/site.css">
+{% block extra_head %}{% endblock +%}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock +%}">
 <a class="skip" href="#main">Skip to content</a>
 <header class="site">
   <p class="wordmark"><a href="/">Show Up NYC</a></p>
   <p class="tagline">City Council hearings and deadlines, council districts, and community boards.</p>
 </header>
+{# Full-bleed content sits outside `main`, which is capped at 44rem for reading. Putting
+   the map here rather than widening it with `100vw` keeps it clear of the horizontal
+   overflow that would break the reflow gate. #}
+{% block full_bleed %}{% endblock +%}
 <main id="main">
 {% block body %}{% endblock +%}
 </main>
@@ -22,7 +27,7 @@
     Data fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}. {% if window_end %}Meetings scheduled through {{ window_end.strftime("%-d %B %Y") }}.{% else %}No forward window could be determined from the calendar.{% endif +%}
   </p>
   <p class="caveat">Hearings are deferred or moved without notice.</p>
-  <p class="caveat"><a href="/references/">Sources and freshness windows</a>.</p>
+  <p class="caveat sources"><a href="/references/">Sources and freshness windows</a>.</p>
 </footer>
 <script src="/assets/site.js" defer></script>
 {% block extra_script %}{% endblock +%}

@@ -13,9 +13,20 @@
 # /manifest.json. Omitting it broke local address resolution and the staleness notice
 # (docs/OBSERVATIONS.md, 2026-09-23). tests/unit/test_csp.py now checks this list
 # against every URL the frontend fetches.
+#
+# server.arcgisonline.com serves the basemap: Esri's Light Gray Canvas, chosen 2026-10-26
+# over OpenFreeMap's positron for its park colours and its labelling at lower zoom. Raster
+# tiles, and MapLibre fetches those, so connect-src is the only directive needed — img-src,
+# worker-src and blob: were each measured unnecessary on 2026-10-22 and the same holds here.
+# Esri sends `Access-Control-Allow-Origin: *`.
+#
+# Two things this line carries. It withdrew the "no third party sees a reader's request"
+# promise, recorded as an owner decision in product-brief.md §5. And it is a *commercial*
+# Esri service whose keyless endpoints nobody here has confirmed are licensed for this use;
+# the owner chose them knowing that. Attribution is set on the source in map.mjs.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc https://tiles.openfreemap.org; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Strict-Transport-Security: max-age=31536000; includeSubDomains

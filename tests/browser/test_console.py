@@ -103,9 +103,14 @@ class TestLocalResolutionStaysLocal:
         assert any("/data/lookup.json" in url for url in requested)
 
     def test_the_geometry_is_not_fetched_for_a_district_number(self, network_trace):
-        """132 KB gzipped; only a street address needs it."""
+        """226 KB gzipped across both layers; only a street address needs any of it.
+
+        This held, then briefly did not: with the map on the landing page every visit
+        fetched both layers. Moving the map to `/map/` put the promise back, which is a
+        second reason that route exists.
+        """
         _, requested = network_trace
-        assert not [url for url in requested if "districts.geo.json" in url]
+        assert not [url for url in requested if ".geo.json" in url]
 
 
 @pytest.fixture(scope="module")
@@ -211,7 +216,439 @@ class TestErrorMessagesBlameTheRightThing:
         if not (real_site / "data" / "districts.geo.json").exists():
             pytest.skip("site/ not built from real data — run `make fetch && make build`")
         with background_server(real_site) as base_url, Browser() as browser:
-            landed, status = _submit_address(browser.page(), base_url, "350 Jay Street")
-        assert re.fullmatch(r"/district/\d{1,2}/", landed), (
-            f"a real street address landed on {landed!r} with status {status!r}"
+            page = browser.page()
+            landed, status = _submit_address(page, base_url, "350 Jay Street", settle_seconds=12.0)
+            selection = page.evaluate(
+                "(() => { const a = document.getElementById('map-selection');"
+                " return a && !a.hidden ? a.getAttribute('href') : null; })()"
+            )
+        # A street address highlights on the map rather than navigating, so the page stays
+        # put and the selection link is the resolved district. With no map loaded the old
+        # behaviour still applies, which is why either outcome passes.
+        resolved = selection if landed == "/" else landed
+        assert resolved and re.fullmatch(r"/district/\d{1,2}/", resolved), (
+            f"a real street address left path {landed!r}, selection {selection!r}, "
+            f"status {status!r}"
         )
+
+
+@pytest.fixture(scope="module")
+def loaded_map(chrome, built_site):
+    """`/map/` after the geometry has had time to arrive, with the panel opened."""
+    with background_server(built_site) as base, Browser() as browser:
+        page = browser.page()
+        # Wrap `fetch` before the module runs, so the basemap's own requests are visible.
+        # MapLibre reports a rejected style by falling back silently, and the only
+        # external evidence is that no vector tile is ever fetched.
+        page.call("Page.enable")
+        page.call(
+            "Page.addScriptToEvaluateOnNewDocument",
+            source="""
+            window.__tiles = [];
+            (function () {
+              const original = window.fetch;
+              window.fetch = function (...args) {
+                const url = String((args[0] && args[0].url) || args[0]);
+                return original.apply(this, args).then(
+                  (response) => {
+                    window.__tiles.push(url + ' -> ' + response.status);
+                    return response;
+                  },
+                  (error) => {
+                    window.__tiles.push(url + ' -> threw');
+                    throw error;
+                  },
+                );
+              };
+            })();
+            """,
+        )
+        page.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1440,
+            height=900,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        page.navigate(base + "/map/")
+
+        deadline = time.monotonic() + 30
+        state = {}
+        while time.monotonic() < deadline:
+            state = json.loads(
+                page.evaluate(
+                    """JSON.stringify({
+                        status: (document.getElementById('map-status') || {}).textContent || '',
+                        toggleHidden: (document.getElementById('map-toggle') || {}).hidden,
+                    })"""
+                )
+            )
+            if not state.get("toggleHidden"):
+                break
+            time.sleep(0.25)
+
+        # Wait for a vector tile rather than sleeping: the tile host's latency is not ours
+        # to assume, and a fixed sleep turns this gate into a coin toss.
+        tile_deadline = time.monotonic() + 25
+        while time.monotonic() < tile_deadline:
+            if json.loads(page.evaluate("JSON.stringify(window.__tiles)")) and any(
+                ".pbf" in line
+                for line in json.loads(page.evaluate("JSON.stringify(window.__tiles)"))
+            ):
+                break
+            time.sleep(0.25)
+
+        # Re-dispatch until the panel opens. The listener is bound at the end of module
+        # start-up, so a single dispatch can land before anything is listening.
+        open_deadline = time.monotonic() + 15
+        while time.monotonic() < open_deadline:
+            page.evaluate(
+                """document.dispatchEvent(new CustomEvent('showup:located',
+                    {detail: {district: 35, lon: -73.9549, lat: 40.6736}, cancelable: true}))"""
+            )
+            time.sleep(0.05)
+            opening = page.evaluate(
+                "getComputedStyle(document.getElementById('map-card')).transform"
+            )
+            time.sleep(1.0)
+            if page.evaluate("!document.getElementById('map-card').hidden") is True:
+                break
+        time.sleep(1.0)
+        after = json.loads(
+            page.evaluate(
+                """(() => {
+                    const card = document.getElementById('map-card');
+                    const box = card.hidden ? null : card.getBoundingClientRect();
+                    const frame = document.getElementById('map').getBoundingClientRect();
+                    return JSON.stringify({
+                        cardOpen: !card.hidden,
+                        groups: document.querySelectorAll('#map-card-body .group').length,
+                        tables: document.querySelectorAll('#map-card-body .group-table').length,
+                        headers: [...document.querySelectorAll('#map-card-body th[scope="col"]')]
+                            .map((th) => th.textContent),
+                        pins: document.querySelectorAll('.map-pin').length,
+                        panelLeft: box ? Math.round(box.left) : null,
+                        frameWidth: Math.round(frame.width),
+                    });
+                })()"""
+            )
+        )
+        # Where the pin's drawn tip is, against where MapLibre put the coordinate. The
+        # resolved transform matrix already includes `translate(-50%, -100%)` for a bottom
+        # anchor, so the coordinate is at (e + width/2, f + height).
+        pin_geometry = json.loads(
+            page.evaluate(
+                """(function () {
+                    var pin = document.querySelector('.map-pin');
+                    if (!pin) return JSON.stringify({present: false});
+                    var nums = (getComputedStyle(pin).transform.match(/-?[\\d.]+/g) || [])
+                        .map(Number);
+                    var box = pin.getBoundingClientRect();
+                    var frame = document.getElementById('map').getBoundingClientRect();
+                    var width = box.width;
+                    var height = box.height;
+                    return JSON.stringify({
+                        present: true,
+                        tag: pin.tagName.toLowerCase(),
+                        pointX: nums[4] + width / 2,
+                        pointY: nums[5] + height,
+                        tipX: box.left - frame.left + width / 2,
+                        tipY: box.top - frame.top + height,
+                    });
+                })()"""
+            )
+        )
+
+        tiles = json.loads(page.evaluate("JSON.stringify(window.__tiles)"))
+
+        # The slide, sampled rather than described: a transform read 50 ms after the class
+        # lands is the only evidence that the panel travels instead of snapping.
+        probe = """(() => {
+            const card = document.getElementById('map-card');
+            return JSON.stringify({
+                hidden: card.hidden,
+                isOpen: card.classList.contains('is-open'),
+                transform: getComputedStyle(card).transform,
+            });
+        })()"""
+        page.evaluate("document.getElementById('map-card-close').click()")
+        time.sleep(0.05)
+        closing = json.loads(page.evaluate(probe))
+        time.sleep(0.9)
+        shut = json.loads(page.evaluate(probe))
+
+        yield {
+            **state,
+            **after,
+            "tiles": tiles,
+            "openingTransform": opening,
+            "pin": pin_geometry,
+            "closing": closing,
+            "shut": shut,
+        }
+
+
+class TestTheMapActuallyFinishesLoading:
+    """A thrown exception inside the draw path leaves a canvas, no console error the
+    console gate recognises, and a dead map. That happened on 2026-10-27 — a wrong key
+    into `LAYERS` aborted `draw()`, every gate stayed green, and the only symptom was a
+    status line still reading "Loading the map…". These assert the end state instead.
+    """
+
+    def test_the_status_line_stops_saying_loading(self, loaded_map):
+        assert "Loading" not in loaded_map["status"], loaded_map["status"]
+
+    def test_the_layer_toggle_is_revealed(self, loaded_map):
+        """Revealed only once both layers are drawn, so it stands in for "draw finished"."""
+        assert loaded_map["toggleHidden"] is False
+
+    def test_selecting_opens_the_panel(self, loaded_map):
+        assert loaded_map["cardOpen"]
+
+    def test_the_panel_renders_its_groups_and_tables(self, loaded_map):
+        assert loaded_map["groups"] >= 4
+        assert loaded_map["tables"] >= 3
+
+    def test_every_table_column_is_announced(self, loaded_map):
+        """Real `th scope=col` cells are the whole reason the panel uses a table rather
+        than an em dash between a label and its value."""
+        assert "Cycle" in loaded_map["headers"]
+        assert "Committee" in loaded_map["headers"]
+
+    def test_an_address_drops_exactly_one_pin(self, loaded_map):
+        assert loaded_map["pins"] == 1
+
+    def test_the_panel_slid_in_rather_than_snapping(self, loaded_map):
+        """Sampled 50 ms after opening: a non-identity translate means it is travelling.
+
+        An identity matrix here would mean `hidden` and the class were set in the same
+        frame, which gives the browser no start state and skips the animation.
+        """
+        assert loaded_map["openingTransform"] not in ("none", "matrix(1, 0, 0, 1, 0, 0)"), (
+            loaded_map["openingTransform"]
+        )
+
+    def test_closing_slides_before_it_hides(self, loaded_map):
+        """`hidden` must not land until the slide is done, or the panel vanishes instead
+        of leaving. It still has to end up hidden, so it leaves the tab order."""
+        assert loaded_map["closing"]["hidden"] is False
+        assert loaded_map["closing"]["isOpen"] is False
+        assert loaded_map["shut"]["hidden"] is True
+
+    def test_the_pin_points_at_the_address(self, loaded_map):
+        """The tip marks the coordinate, not the middle of the teardrop.
+
+        This regressed invisibly once: `.map-pin` was a div rotated 45deg in CSS, and
+        MapLibre writes its own `transform` onto a marker element, so the rotation never
+        applied. The shape rendered unrotated with its sharp corner down and to the left,
+        and that corner is what a reader takes for the address.
+        """
+        pin = loaded_map["pin"]
+        assert pin["present"], "no pin was dropped for a geocoded address"
+        assert abs(pin["tipX"] - pin["pointX"]) < 1.0, pin
+        assert abs(pin["tipY"] - pin["pointY"]) < 1.0, pin
+
+    def test_the_pin_carries_its_own_geometry(self, loaded_map):
+        """An SVG path, so no CSS transform has to survive MapLibre writing over it."""
+        assert loaded_map["pin"]["tag"] == "svg"
+
+    def test_the_basemap_really_drew(self, loaded_map):
+        """An invalid paint expression makes MapLibre discard the whole style and fall
+        back, with nothing logged: on 2026-10-27 a `['*', <case>, <zoom interpolate>]`
+        fill-opacity left a map with district outlines and no basemap at all, and every
+        gate including the console check stayed green. A fetched vector tile is the
+        evidence that the real style survived.
+        """
+        fetched = [line for line in loaded_map["tiles"] if ".pbf" in line]
+        assert fetched, (
+            "no vector tile was fetched, so the basemap style was rejected or never "
+            f"loaded; requests were {loaded_map['tiles']}"
+        )
+        assert any(line.endswith("-> 200") for line in fetched), fetched
+
+
+@pytest.fixture(scope="module")
+def autocomplete(chrome, built_site):
+    """Type into the address box and record both the suggestions and every request made.
+
+    The recording is the point: suggestions are built from `lookup.json` alone so that the
+    submit-only promise in docs/phase-1-scope.md §6 still holds, and the only way to show
+    that is to watch the network while the keys go in.
+    """
+    with background_server(built_site) as base, Browser() as browser:
+        page = browser.page()
+        page.call("Page.enable")
+        page.call(
+            "Page.addScriptToEvaluateOnNewDocument",
+            source="""
+            window.__requests = [];
+            (function () {
+              const original = window.fetch;
+              window.fetch = function (...args) {
+                window.__requests.push(String((args[0] && args[0].url) || args[0]));
+                return original.apply(this, args);
+              };
+            })();
+            """,
+        )
+        page.navigate(base + "/")
+
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if not page.evaluate(
+                "document.getElementById('address-section').hasAttribute('hidden')"
+            ):
+                break
+            time.sleep(0.1)
+
+        probe = """(function () {
+            var input = document.getElementById('address-input');
+            var list = document.getElementById('address-suggest');
+            return JSON.stringify({
+                expanded: input.getAttribute('aria-expanded'),
+                active: input.getAttribute('aria-activedescendant'),
+                options: Array.prototype.map.call(
+                    list.querySelectorAll('[role="option"]'),
+                    function (option) { return option.textContent; }
+                ),
+            });
+        })()"""
+        reset = """(function () {
+            var input = document.getElementById('address-input');
+            input.value = '';
+            input.dispatchEvent(new Event('input'));
+        })()"""
+
+        seen = {}
+        for query in ("fort gr", "35", "112", "350 jay street"):
+            page.evaluate("document.getElementById('address-input').focus()")
+            page.evaluate(reset)
+            page.type_text(query)
+            time.sleep(0.6)
+            seen[query] = json.loads(page.evaluate(probe))
+
+        # Arrow then Enter, which is the whole point of the pattern.
+        page.evaluate(reset)
+        page.type_text("fort gr")
+        time.sleep(0.6)
+        page.press("ArrowDown")
+        time.sleep(0.2)
+        arrowed = json.loads(page.evaluate(probe))
+
+        requests = json.loads(page.evaluate("JSON.stringify(window.__requests)"))
+        yield {"seen": seen, "arrowed": arrowed, "requests": requests}
+
+
+class TestTheAddressBoxCompletesLocally:
+    def test_a_neighbourhood_suggests_a_district_and_a_board(self, autocomplete):
+        options = autocomplete["seen"]["fort gr"]["options"]
+        assert any("Council District 35" in option for option in options), options
+        assert any("Community Board 2" in option for option in options), options
+
+    def test_a_small_number_suggests_that_district(self, autocomplete):
+        options = autocomplete["seen"]["35"]["options"]
+        assert any(option.startswith("Council District 35") for option in options), options
+
+    def test_a_zip_prefix_suggests_whole_zips(self, autocomplete):
+        options = autocomplete["seen"]["112"]["options"]
+        assert options and all(option.startswith("ZIP 112") for option in options), options
+
+    def test_a_street_address_gets_no_local_guess(self, autocomplete):
+        """Only the geocoder can answer it, and it is not asked until submit."""
+        entry = autocomplete["seen"]["350 jay street"]
+        assert entry["options"] == []
+        assert entry["expanded"] == "false"
+
+    def test_arrowing_names_the_active_option(self, autocomplete):
+        """`aria-activedescendant` is how a screen reader is told which row is current;
+        focus itself stays in the text box."""
+        assert autocomplete["arrowed"]["active"] == "address-suggest-0"
+
+    def test_typing_never_reaches_the_geocoder(self, autocomplete):
+        """The promise in docs/phase-1-scope.md §6, now that there is a keystroke handler
+        at all: suggestions come from `lookup.json` and nothing else."""
+        offenders = [url for url in autocomplete["requests"] if GEOCODER_HOST in url]
+        assert not offenders, offenders
+
+    def test_only_our_own_origin_was_fetched(self, autocomplete):
+        """And the index is fetched once, not once per keystroke."""
+        external = [url for url in autocomplete["requests"] if url.startswith("http")]
+        assert not external, external
+        assert autocomplete["requests"].count("/data/lookup.json") == 1, autocomplete["requests"]
+
+
+@pytest.fixture(scope="module")
+def pin_lifecycle(chrome, built_site):
+    """Count the pins through a sequence of lookups.
+
+    The pin answers "where is this address". Every other kind of lookup makes it a
+    leftover pointing at a previous question, so it has to go — and it has to come back
+    when the next address arrives, which is the half that a naive fix breaks.
+    """
+    with background_server(built_site) as base, Browser() as browser:
+        page = browser.page()
+        page.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1280,
+            height=860,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        page.navigate(base + "/map/")
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if not page.evaluate("(document.getElementById('map-toggle') || {}).hidden !== false"):
+                break
+            time.sleep(0.25)
+
+        address = (
+            "document.dispatchEvent(new CustomEvent('showup:located',"
+            "{detail:{district:33, lon:-73.9870, lat:40.6926}, cancelable:true}))"
+        )
+        counts = {}
+
+        def run(label, script):
+            page.evaluate(script)
+            time.sleep(2.0)
+            counts[label] = page.evaluate("document.querySelectorAll('.map-pin').length")
+
+        run("address", address)
+        run(
+            "other district",
+            "document.dispatchEvent(new CustomEvent('showup:located',"
+            "{detail:{district:35}, cancelable:true}))",
+        )
+        run("address again", address)
+        run(
+            "zip",
+            "document.dispatchEvent(new CustomEvent('showup:located',"
+            "{detail:{zip:'11217', zcta:'11217', districts:[39,35,33],"
+            " boards:['306','302','308']}, cancelable:true}))",
+        )
+        run("address once more", address)
+        run("closed", "document.getElementById('map-card-close').click()")
+        yield counts
+
+
+class TestThePinBelongsToOneLookup:
+    def test_an_address_drops_a_pin(self, pin_lifecycle):
+        assert pin_lifecycle["address"] == 1
+
+    def test_selecting_another_district_takes_it_away(self, pin_lifecycle):
+        assert pin_lifecycle["other district"] == 0
+
+    def test_a_zip_lookup_takes_it_away(self, pin_lifecycle):
+        assert pin_lifecycle["zip"] == 0
+
+    def test_closing_the_panel_takes_it_away(self, pin_lifecycle):
+        assert pin_lifecycle["closed"] == 0
+
+    def test_the_next_address_still_gets_one(self, pin_lifecycle):
+        """Clearing on selection is only correct if the address path re-pins afterwards:
+        it drops the pin *after* selecting for exactly this reason."""
+        assert pin_lifecycle["address again"] == 1
+        assert pin_lifecycle["address once more"] == 1
+
+    def test_only_ever_one_pin(self, pin_lifecycle):
+        assert max(pin_lifecycle.values()) == 1, pin_lifecycle

@@ -65,7 +65,10 @@ literally.
 
 ## 3. Explicitly not in Phase 1
 
-Cut for now, each recoverable later: the map (no MapLibre, tiles, choropleth or rendered geometry);
+Cut for now, each recoverable later: tiles and any choropleth (the **map itself landed
+2026-10-22 as a full-screen route at `/map/`** — MapLibre vendored and self-hosted, council
+districts and community boards behind a toggle, uniform fill, no basemap, no third-party
+request);
 all analysis (no shortlist ranking, salience, vote parsing, dissent figures, `bloc_concentration`,
 agenda-item classification or PDF parsing); transcripts and participation data (all of J4's measured
 half); per-committee and per-hearing pages; `.ics` files; search by subject and the citywide browse
@@ -137,7 +140,7 @@ A CI grep fails the build if a geocoder call site omits `private=true`.
 
 - **Open-source dependencies are allowed** (owner, 2026-09-30) and pinned via lockfile; the checklist
   is `docs/dependencies.md`. Two rules survive: no install-time code execution (why Playwright was
-  refused, not why dependencies were), and **no browser dependency** — "zero third parties" is a
+  refused, not why dependencies were), and **no browser dependency** — a two-host CSP allowlist is a
   CSP-enforced promise to readers, not a dependency preference.
 - GitHub Actions pinned to commit SHAs, not tags; `permissions:` least privilege (`contents: read` by
   default).

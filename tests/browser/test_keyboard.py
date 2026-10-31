@@ -31,6 +31,7 @@ PER_PAGE_CHECKS = (
 
 FRONT_PAGE_CHECKS = (
     "script really was disabled",
+    "both index pages are reachable from the landing page without JavaScript",
     "all 51 districts are reachable as plain links",
     "all 59 boards are reachable as plain links",
     "the address box stays hidden without JavaScript",

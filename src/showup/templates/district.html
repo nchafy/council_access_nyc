@@ -43,23 +43,16 @@
 </section>
 {% endif %}
 
-{% if district.member is none or not district.member.committees %}
-<section class="committees">
-  <h2>Committees</h2>
-  <p class="designed-state">No committee assignments are published on this
-  district's page. The Council publishes a
-  <a href="https://council.nyc.gov/committees/" rel="noopener noreferrer">committees
-  list</a>.</p>
-</section>
-{% else %}
-<section class="committees">
-  <h2>Committee assignments</h2>
-  <ul class="committee-list">
-{% for committee in district.member.committees %}
-    <li>{{ committee.name }}{% if committee.role and committee.role != "Member" %} <span class="role">({{ committee.role }})</span>{% endif %}</li>
+{# The tabular groups, defined once in `render.district_tables` and rendered here by the
+   same spec the map panel reads from preview.json: participatory budgeting, committees,
+   and the community boards covering this district. #}
+{% for spec in tables %}
+{{ m.group(spec) }}
 {% endfor %}
-  </ul>
-</section>
+{% if district.member is not none and not district.member.committees %}
+<p class="designed-state">No committee assignments are published on this district's page.
+The Council publishes a
+<a href="https://council.nyc.gov/committees/" rel="noopener noreferrer">committees list</a>.</p>
 {% endif %}
 
 {% if not cards %}
@@ -110,10 +103,6 @@
 {% else %}
 <section class="boards">
   <h2>Community {% if district.boards|length > 1 %}boards{% else %}board{% endif %}</h2>
-  <p class="why">
-    {%+ if district.boards|length > 1 %}This council district overlaps {{ district.boards|length }} community boards, listed by how much of the district each covers.{% else %}This council district falls almost entirely inside one community board.{% endif %} A community board meets on a <strong>standing monthly
-    cadence</strong>, unlike Council committees.
-  </p>
 {% for board in district.boards %}
 {{ m.board_card(board) }}
 {% endfor %}
@@ -163,5 +152,8 @@
   </p>
 </section>
 
-<p class="back"><a href="/">All districts and boards</a></p>
+<p class="back">
+  <a class="cta cta-back" href="/map/">Back to the map</a>
+  <a href="/">All districts and boards</a>
+</p>
 {% endblock %}

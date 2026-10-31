@@ -313,6 +313,7 @@ def _run_checks(base: str, site: Path) -> None:
         "uvw5-9znb",
         "ruf7-3wgc",
         "vn4m-mk4t",
+        "mkqi-d8x3",
         "872g-cjhh",
         "5crt-au7u",
         "pri4-ifjk",

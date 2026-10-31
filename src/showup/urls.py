@@ -34,6 +34,14 @@ ALLOWED_HOSTS = frozenset(
         "www.statenislandusa.com",
         "statenislandusa.com",
         "communityprofiles.planning.nyc.gov",
+        # Not government, and both are owner decisions (2026-10-31) rather than drift.
+        # Wikipedia is linked by *search*, never by a guessed article path, and Google
+        # Maps by a search query — neither asserts that a particular page exists.
+        "en.wikipedia.org",
+        "www.google.com",
+        # The Council's own app host. It serves the participatory budgeting idea map,
+        # which is the only source naming the districts in the cycle that is open now.
+        "rnd.council.nyc.gov",
     }
 )
 

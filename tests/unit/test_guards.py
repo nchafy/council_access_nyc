@@ -8,11 +8,13 @@ Grouped by the module under test, so a failure points at one file.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 
+from showup import render
 from showup.build import BuildError, build_site
 from showup.crosswalk import (
     CrosswalkError,
@@ -29,6 +31,7 @@ from showup.sources.districts import _parse_committees
 from showup.urls import safe_url
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Coarse on purpose: no guard here depends on resolution, and 0.001 costs ~35 s.
 COARSE = 0.004
@@ -166,21 +169,21 @@ class TestGeoGuards:
                     "type": "FeatureCollection",
                     "features": [
                         {
-                            "properties": {"coundist": "1"},
+                            "properties": {"coun_dist": "1"},
                             "geometry": {"type": "Point", "coordinates": [0, 0]},
                         }
                     ],
                 }
             )
         )
-        assert load_features(path, "coundist") == []
+        assert load_features(path, "coun_dist") == []
 
     def test_a_feature_with_no_key_is_dropped(self, tmp_path):
         path = tmp_path / "g.geojson"
-        payload = _squares("coundist", ["1"])
+        payload = _squares("coun_dist", ["1"])
         payload["features"][0]["properties"] = {}
         path.write_text(json.dumps(payload))
-        assert load_features(path, "coundist") == []
+        assert load_features(path, "coun_dist") == []
 
     def test_a_row_with_no_candidate_polygons_is_skipped(self):
         # Latitudes above every polygon: the row filter short-circuits.
@@ -592,3 +595,132 @@ class TestZipCrosswalkSkips:
         data = generate(council, community, zips, spacing=COARSE)
         assert "99999" not in data["zips"]
         assert "10001" in data["zips"]
+
+
+class TestTheAddressHarnessMatchesTheRealMarkup:
+    """`address.js` returns early if any element it needs is missing, so a harness fixture
+    that drifts from the templates does not fail loudly — it silently stops testing.
+
+    That happened on 2026-10-29: adding `#address-suggest` to both templates left the
+    harness without it, `address.js` bailed, and four checks failed at once including
+    "section revealed", which has nothing to do with suggestions.
+    """
+
+    #: Exactly the elements `address.js` refuses to start without.
+    REQUIRED = (
+        "address-form",
+        "address-input",
+        "address-status",
+        "address-results",
+        "address-section",
+        "address-suggest",
+    )
+
+    def test_the_guard_list_matches_the_script(self):
+        """If the script starts demanding another element, this test is the reminder."""
+        source = (REPO_ROOT / "src" / "showup" / "assets" / "address.js").read_text(
+            encoding="utf-8"
+        )
+        guard = source[source.index("if (!form") :]
+        guard = guard[: guard.index("return;")]
+        named = set(re.findall(r"!(\w+)", guard))
+        assert named == {"form", "input", "status", "results", "section", "listbox"}, named
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "tests/browser/harness.html",
+            "src/showup/templates/index.html",
+            "src/showup/templates/map.html",
+        ],
+    )
+    def test_every_required_element_is_present(self, path: str):
+        markup = (REPO_ROOT / path).read_text(encoding="utf-8")
+        missing = sorted(name for name in self.REQUIRED if f'id="{name}"' not in markup)
+        assert not missing, f"{path} is missing {missing}; address.js will return early"
+
+
+class TestTheContactLinkBuilders:
+    """Constructed URLs, so each one is validated rather than trusted.
+
+    `safe_url` is deliberately not widened to cover `tel:` and `mailto:`: its contract is
+    https-and-allowlisted-host and it is the XSS boundary for upstream URLs, so these build
+    their own and check the shape.
+    """
+
+    @pytest.mark.parametrize(
+        ("published", "expected"),
+        [
+            ("(718) 467-5574", "tel:+17184675574"),
+            ("718-467-5574", "tel:+17184675574"),
+            ("1 (718) 467-5574", "tel:+17184675574"),
+            ("+1 718.467.5574", "tel:+17184675574"),
+            ("(718) 467-5574 ext. 12", None),
+            ("718-467-557", None),
+            ("call the office", None),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_a_phone_becomes_a_dialable_link_or_nothing(self, published, expected):
+        assert render._tel_href(published) == expected
+
+    @pytest.mark.parametrize(
+        ("published", "expected"),
+        [
+            ("brooklyncb8@gmail.com", "mailto:brooklyncb8@gmail.com"),
+            ("  cb8@example.gov  ", "mailto:cb8@example.gov"),
+            ("not an address", None),
+            ("two@@at.example", None),
+            ("spaces in@example.com", None),
+            ("nodot@example", None),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_an_email_becomes_a_mailto_or_nothing(self, published, expected):
+        assert render._mailto_href(published) == expected
+
+    def test_an_office_address_becomes_a_maps_search(self):
+        href = render._maps_href("1291 St. Marks Avenue, Brooklyn, NY 11213")
+        assert href is not None
+        assert href.startswith("https://www.google.com/maps/search/?api=1&query=")
+        assert "1291+St.+Marks+Avenue" in href
+
+    @pytest.mark.parametrize("blank", ["", "   ", None])
+    def test_a_blank_address_gets_no_map(self, blank):
+        assert render._maps_href(blank) is None
+
+    def test_a_neighbourhood_is_linked_by_search_never_by_a_guessed_path(self):
+        """A constructed `/wiki/<name>` would 404 on anything Wikipedia titles
+        differently and, worse, land on the wrong article for an ambiguous name."""
+        href = render._wikipedia_href("Crown Heights", "Brooklyn")
+        assert href is not None
+        assert "/w/index.php?search=" in href
+        assert "/wiki/" not in href
+        assert "Crown+Heights%2C+Brooklyn" in href
+
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_a_blank_neighbourhood_gets_no_link(self, blank):
+        assert render._wikipedia_href(blank, "Brooklyn") is None
+
+    def test_a_neighbourhood_without_a_borough_still_resolves(self):
+        href = render._wikipedia_href("Weeksville", None)
+        assert href is not None
+        assert "search=Weeksville" in href
+
+    @pytest.mark.parametrize(
+        ("published", "names"),
+        [
+            (
+                "Crown Heights, Prospect Heights, and Weeksville",
+                ["Crown Heights", "Prospect Heights", "Weeksville"],
+            ),
+            ("Fort Greene and Clinton Hill", ["Fort Greene", "Clinton Hill"]),
+            ("Astoria", ["Astoria"]),
+            ("", []),
+            (None, []),
+        ],
+    )
+    def test_the_covers_line_splits_the_way_the_city_writes_it(self, published, names):
+        assert [item["name"] for item in render.neighbourhood_links(published, "Brooklyn")] == names

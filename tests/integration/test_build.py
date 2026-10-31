@@ -18,7 +18,7 @@ from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
 from showup.model import Committee, District, DistrictBoard, Member, Office
-from showup.render import render_district, render_index
+from showup.render import render_district, render_index, render_listing
 from showup.sources.calendar import parse_calendar, upcoming
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -169,24 +169,54 @@ class TestIndex:
             for code in ("301", "302")
         ]
 
-    def test_lists_every_district(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
+    def _districts(self):
+        return [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
+
+    def test_the_landing_page_is_a_map_button_and_an_address_box(self):
+        """Owner's decision 2026-10-22. The lists moved to `render_listing`."""
         html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
+        )
+        assert 'href="/map/"' in html
+        assert 'id="address-input"' in html
+        assert "<select" not in html
+        assert 'href="/district/1/"' not in html
+
+    def test_the_landing_page_still_reaches_both_lists(self):
+        """R6's location-free path: one link each, rather than 110 of them."""
+        html = render_index(
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
+        )
+        assert 'href="/district/"' in html
+        assert 'href="/board/"' in html
+
+    def test_the_listing_pages_list_every_district(self):
+        html = render_listing(
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
         )
         for n in (1, 25, 51):
             assert f'href="/district/{n}/"' in html
         assert "<select" in html
 
-    def test_offers_both_views(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
-        html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+    def test_the_listing_pages_offer_both_views(self):
+        html = render_listing(
+            self._districts(),
+            self._boards(),
+            built_at=datetime(2026, 9, 22, 9, 0),
+            window_end=None,
         )
         assert 'id="district-select"' in html
         assert 'id="board-select"' in html
         assert 'href="/board/302/"' in html
-        assert "most local unit" in html
 
 
 class TestCrosswalk:
@@ -283,7 +313,9 @@ class TestBoardView:
         build_site(raw_dir, out, today=date(2026, 9, 22))
         page = " ".join((out / "board" / "302" / "index.html").read_text().split())
         assert "The City's dataset records the board office, not the meeting venue" in page
-        assert "<dd>350 Jay Street, 8th Floor, Brooklyn, NY 11201<br><small>" in page
+        # The address is a maps link now (owner, 2026-10-31), so the note follows the
+        # anchor rather than the bare text. The note is the point of this test.
+        assert "350 Jay Street, 8th Floor, Brooklyn, NY 11201</a><br><small>" in page
 
     def test_the_board_page_does_not_catalogue_what_is_missing(self, raw_dir, tmp_path):
         """Owner, 2026-10-07: absences nobody asked about are padding, not honesty.
@@ -325,7 +357,9 @@ class TestBoardView:
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         board_page = (out / "board" / "302" / "index.html").read_text()
-        assert "of this board" in board_page
+        # The denominator moved from a phrase on every row to the column header, which is
+        # where it belongs once the shares are a table.
+        assert "Share of board" in board_page
         district_page = (out / "district" / "35" / "index.html").read_text()
         assert "of this council district" in district_page
 
@@ -494,6 +528,30 @@ class TestShippedData:
             assert code.isdigit() and len(code) == 5
             assert districts and all(1 <= n <= 51 for n in districts)
 
+    def test_an_unreadable_pb_roster_fails_closed(self, raw_dir, tmp_path):
+        """A roster that cannot be read must stop the build, not render 51 districts as
+        "not taking part" — a wrong answer is worse than a missing page."""
+        (raw_dir / "participatory_budgeting.json").write_text("{", encoding="utf-8")
+        with pytest.raises(BuildError, match=r"participatory_budgeting\.json"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_pb_roster_below_the_floor_fails_closed(self, raw_dir, tmp_path):
+        """The floor is enforced in the parser, so it surfaces here as a BuildError."""
+        payload = json.loads((raw_dir / "participatory_budgeting.json").read_text())
+        payload["idea_map_html"] = '<div data-district="1"></div>'
+        (raw_dir / "participatory_budgeting.json").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="floor is"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_thin_zip_geometry_fails_closed(self, raw_dir, tmp_path):
+        """The ZIP outline is only a hint, but a half-read file would draw the wrong
+        boundary for a ZIP, which is worse than drawing none."""
+        payload = json.loads((raw_dir / "modzcta.geojson").read_text())
+        payload["features"] = payload["features"][:3]
+        (raw_dir / "modzcta.geojson").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="ZIP geometry has 3 features"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
     def test_a_wrong_district_count_fails_closed(self, raw_dir, tmp_path):
         (raw_dir / "districts.geojson").write_text(
             json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"
@@ -581,8 +639,10 @@ class TestReferencesPage:
 
     def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        # Six of the eight: the two geometry files are not in this fixture's cache.
-        assert page.count("<dt>Fetched</dt>") == 6
+        # Nine of the ten. The fixture now caches the ZIP geometry too, because the build
+        # ships a ZIP outline overlay; only the shoreline-clipped council file is absent,
+        # since nothing in a build reads it (it is the crosswalk's denominator).
+        assert page.count("<dt>Fetched</dt>") == 9
 
     def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
         """Deleting a disclosure paragraph may relocate a citation, never lose one."""

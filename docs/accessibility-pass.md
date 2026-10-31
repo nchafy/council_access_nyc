@@ -11,11 +11,11 @@ All five run in CI on every commit.
 
 | Gate | Command | What it proves |
 |---|---|---|
-| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 115 pre-rendered pages |
-| Keyboard + accessibility tree | `make a11y` | 148 checks over 11 page types, 0 failures |
+| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 116 pre-rendered pages; **12 `color-contrast` incomplete**, one per page, which are the XP theme's gradients — resolved by computing the ratios, see §7 |
+| Keyboard + accessibility tree | `make a11y` | 161 checks over 12 page types, 0 failures |
 | Console and CSP | `make console` | 0 complaints — no page logs an error or trips its own policy |
-| Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 115 |
-| Weight and cold load | `make perf` | 12.8 KB heaviest page vs 60 KB; 865 ms p95 vs 3000 ms |
+| Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 116 |
+| Weight and cold load | `make perf` | 25.4 KB heaviest page (`/map/`) vs 60 KB; geometry 226 KB vs 300 KB; the map library 439 KB vs its own 500 KB budget |
 
 `make a11y` presses real `Tab` keys in a real browser and reads Chrome's accessibility tree: skip
 link, focus into `<main>`, DOM order, reachability, ≥2px ring, `Shift+Tab`; landmarks, accessible
@@ -128,9 +128,33 @@ Both 2026-09-23:
 | Gap | State |
 |---|---|
 | No real screen-reader pass (§4) | The largest gap, and the one open Phase 1 item |
+| Overlapping text passes every gate | Found 2026-10-22: the map panel rendered on top of the `h1` at 390 px and axe, a11y, console, reflow and perf were all green. Only a screenshot shows it. `make shot` is load-bearing, not decorative |
 | `make shot` still clamps at 500px | macOS minimum Chrome window width. No longer a gap in coverage — `make reflow` measures 320px and 390px over CDP, which the window size cannot reach — but the screenshots are still not phone-width |
 | `make gates` dies partway, roughly one run in two | A different gate each time, always `CDPError: lost the channel to Chrome: [Errno 54] Connection reset by peer`. Every gate passes run on its own, and CI is unaffected because it runs them as one pytest session (`make browser`, 85 passed). Observed 2026-10-20; not diagnosed |
 | Slow 3G measures 4.3–5.1 s, over 3 s | Reported, not gated — dominated by that profile's 2000 ms round trip, not our bytes. Reasoning in `perf-budget.json` |
 | No accessibility statement page (R41, a SHOULD) | Deferred with publishing; needs a working feedback address |
 | No readability gate on procedural copy (R41) | Deferred with publishing |
 | `/favicon.ico` 404s on every page load | Shipping one is an open owner decision (§7.3); `scripts/console_check.py` names it as an expected browser probe |
+
+## 7. The XP theme's contrast, computed
+
+axe cannot compute a contrast ratio against a gradient, so every page with the title bar
+reports one `color-contrast` **incomplete** — not a pass and not a failure, axe declining to
+decide. The ratios were computed against both gradient stops instead, which is the only
+honest way to clear them. Luna's own palette failed twice and both were changed rather than
+accepted:
+
+| Pair | Ratio | Verdict |
+|---|---|---|
+| Wordmark white on the title bar's light end `#3a6ea5` | 5.31:1 | pass |
+| Wordmark white on the dark end `#0a246a` | 14.25:1 | pass |
+| Tagline `#dfe8f5` on the light end — **Luna's own value** | **4.30:1** | **failed**, changed to white |
+| Ink `#000` on the control face `#ece9d8` | 17.21:1 | pass |
+| Muted `#3a3a3a` on the control face | 9.32:1 | pass |
+| Link `#0000cc` on white | 11.22:1 | pass |
+| Legend `#0a2a5a` on the group box | 13.70:1 | pass |
+| Button ink on the bevel's darkest stop `#d7d2bf` | 13.86:1 | pass |
+| Close glyph white on `#e8785a` — **Luna's own value** | **2.89:1** | **failed**, darkened to `#c8341a` |
+
+Re-run the computation on any change to these colours. A gradient stop is invisible to the
+gate, so the only thing standing behind these numbers is that somebody worked them out.

@@ -2,15 +2,16 @@
 {% import "macros.html" as m %}
 {% block body %}
 <section class="intro">
-  <h1>Districts and boards</h1>
+  {# The visible title is the wordmark in the header; this is here because a page needs
+     exactly one h1 and the accessibility gate checks for one. #}
+  <h1 class="visually-hidden">Council districts and community boards</h1>
+  <p class="cta-row"><a class="cta" href="/map/">Open the map</a></p>
 </section>
 
+{# Shipped hidden and revealed by address.js: the box cannot work without the script, and a
+   form that does nothing is worse than no form. The browse line below needs no script. #}
 <section class="picker" id="address-section" hidden>
   <h2>Address lookup</h2>
-  <p class="why">
-    The typed address goes to the City's address lookup only when Find is pressed,
-    with logging switched off, and never enters the page URL.
-  </p>
   <form id="address-form" action="#" method="get" autocomplete="off">
     <label for="address-input">Address, ZIP, neighbourhood or district number</label>
     <input
@@ -21,72 +22,48 @@
       autocomplete="off"
       autocorrect="off"
       spellcheck="false"
-      placeholder="350 Jay Street, or 11217, or Fort Greene, or 35">
+      placeholder="350 Jay Street, or 11217, or Fort Greene, or 35"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-expanded="false"
+      aria-controls="address-suggest">
     <button type="submit">Find</button>
   </form>
+ <!-- The listbox sits in normal flow rather than floating over the page: an absolutely
+      positioned popover has to be fought at 320 px and over the map panel, and this
+      pattern does not need it. Populated only from the index already in the browser. -->
+ <ul id="address-suggest" class="suggest" role="listbox"
+     aria-label="Matching districts, boards and ZIP codes" hidden></ul>
   <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
   <div id="address-results"></div>
 </section>
 
-<section class="picker">
-  <h2>City Council district</h2>
-  <p class="why">
-    The district's Council Member, the next five Council meetings with addresses,
-    and the written-testimony window. <strong>51 districts.</strong>
+{# Citywide, so it belongs on the landing page rather than on any district: Council and
+   committee meetings are held for the whole city. Rendered at build time, so it needs no
+   script. #}
+{% if next_meeting %}
+<fieldset class="group">
+  <legend>Next City Council meeting — citywide</legend>
+  <p class="group-line"><strong>{{ next_meeting.committee }}</strong></p>
+  <p class="group-line">
+    {{ next_meeting.day }}{% if next_meeting.start_time %} · {{ next_meeting.start_time }}{% endif +%}
+    {% if next_meeting.mode %} · {{ next_meeting.mode }}{% endif +%}
+    {% if next_meeting.time_state_label %} · {{ next_meeting.time_state_label }}{% endif +%}
   </p>
-  <form id="district-form" action="/district/" method="get">
-    <label for="district-select">Council district</label>
-    <select id="district-select" name="district">
-      <option value="">Select a council district…</option>
-{% for d in districts %}
-    <option value="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</option>
+  {% if next_meeting.venue_name %}<p class="group-line">{{ next_meeting.venue_name }}</p>{% endif %}
+  {% if next_meeting.venue_address %}<p class="group-line">{{ next_meeting.venue_address }}</p>{% endif %}
+{% for href, label in next_meeting.links %}
+  <p class="group-line">{{ m.link(href, label) }}</p>
 {% endfor %}
-    </select>
-    <button type="submit">Go</button>
-  </form>
-</section>
+  <p class="group-line"><a href="/map/">See every district on the map</a></p>
+</fieldset>
+{% endif %}
 
-<section class="picker">
-  <h2>Community board</h2>
-  <p class="why">
-    The most local unit of City government: it reviews zoning, sets local budget
-    priorities, meets on a standing monthly cadence, and
-    <strong>seats members of the public on its committees</strong>.
-    <strong>59 boards.</strong>
-  </p>
-  <form id="board-form" action="/board/" method="get">
-    <label for="board-select">Community board</label>
-    <select id="board-select" name="board">
-      <option value="">Select a community board…</option>
-{% for b in boards %}
-    <option value="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</option>
-{% endfor %}
-    </select>
-    <button type="submit">Go</button>
-  </form>
-  <p class="hint">
-    City lookups:
-    {{ m.link("https://council.nyc.gov/districts/", "Council district lookup") }} ·
-    {{ m.link("https://communityprofiles.planning.nyc.gov/", "Community district profiles") }}.
-  </p>
-</section>
-
-<section class="all-districts">
-  <h2>All 51 council districts</h2>
-  <ul class="district-list">
-{% for d in districts %}
-    <li><a href="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</a></li>
-{% endfor %}
-  </ul>
-</section>
-
-<section class="all-districts">
-  <h2>All 59 community boards</h2>
-  <ul class="district-list">
-{% for b in boards %}
-    <li><a href="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</a></li>
-{% endfor %}
-  </ul>
-</section>
+{# R6's location-free path and R39's no-JavaScript one. The full lists live on the two index
+   pages rather than here, so this is the one link each that reaches them. #}
+<p class="browse">
+  <a href="/district/">All {{ districts|length }} council districts</a> ·
+  <a href="/board/">All {{ boards|length }} community boards</a>
+</p>
 {% endblock %}
 {% block extra_script %}<script src="/assets/address.js" defer></script>{% endblock %}

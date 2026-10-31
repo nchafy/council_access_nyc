@@ -844,6 +844,9 @@ input[type="text"] {
    whole, so the credit is ours to render. */
 .map-attrib {
   position: absolute;
+  /* `.cards` disables pointer events so clicks reach the map; the credit's links need
+     them back. */
+  pointer-events: auto;
   right: 0;
   bottom: 0;
   z-index: 3;
@@ -897,6 +900,44 @@ input[type="text"] {
   border-radius: 0;
 }
 
+
+/* Phone layout. Measured on 2026-10-30 at 390x780: the control card took the top 215 px
+   and the detail sheet 371 px of 780, so the map was reduced to slivers and the reader
+   could not see what had been highlighted. Everything below buys the map back height.
+
+   `max-width`, so none of it reaches the docked layout at 52rem. */
+@media (max-width: 51.99rem) {
+  .app .cards { padding: .4rem; gap: .4rem; }
+
+  /* The label is two lines at this width. It stays in the accessibility tree — the input
+     still has a name — and the placeholder carries the hint on screen. */
+  .app .card .card-search label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .app .card-controls { padding: .45rem .5rem; }
+  .app .card .card-search { margin: .4rem 0 0; }
+  .app .map-toggle button { padding: .3rem .5rem; font-size: .85rem; }
+
+  /* Lower than the old 62%: the sheet is a summary with a link onward, and the map is the
+     thing it is summarising. */
+  .detail { max-height: 46%; bottom: 1.45rem; }
+
+  /* Stays on the right: the zoom buttons are bottom-left, and the sheet stops above this
+     strip, because the basemap credit is a licence term and not a nicety that may be
+     covered (docs/design.md §8). */
+
+  /* With a sheet up, the controls are in the way of the thing they produced. Compacting
+     them still left only 124 px of map between the two, so they go; the sheet's close
+     button brings them back, and that is one tap. The basemap credit and `#map-status`
+     were moved out of this card to survive it — the first is a licence term, the second
+     is the live region that announces a selection. */
+  body.has-selection .card-controls { display: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   /* WCAG 2.3.3. Last in the file so it also overrides the docked rule above, which is

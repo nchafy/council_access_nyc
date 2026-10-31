@@ -71,17 +71,20 @@
       <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
       <div id="address-results"></div>
     </div>
-    <p class="map-attrib">Basemap
-      <a href="https://openfreemap.org/" rel="noopener noreferrer">OpenFreeMap</a>, data
-      &copy; <a href="https://www.openstreetmap.org/copyright"
-      rel="noopener noreferrer">OpenStreetMap contributors</a></p>
-    <p id="map-status" class="map-status">
-      The map needs JavaScript and WebGL.
-      <a href="/district/">All 51 districts</a> and <a href="/board/">all 59 boards</a> are
-      listed without it.
-    </p>
   </div>
 
+  {# Siblings of the control card, never children of it. A phone hides that card while a
+     sheet is open, and these two must survive it: the credit is an ODbL licence term, and
+     `#map-status` is the live region that announces what was selected. #}
+  <p class="map-attrib">Basemap
+    <a href="https://openfreemap.org/" rel="noopener noreferrer">OpenFreeMap</a>, data
+    &copy; <a href="https://www.openstreetmap.org/copyright"
+    rel="noopener noreferrer">OpenStreetMap contributors</a></p>
+  <p id="map-status" class="map-status">
+    The map needs JavaScript and WebGL.
+    <a href="/district/">All 51 districts</a> and <a href="/board/">all 59 boards</a> are
+    listed without it.
+  </p>
 </div>
 
 <!-- The detail panel. A sibling of the cards, not one of them, because when something is

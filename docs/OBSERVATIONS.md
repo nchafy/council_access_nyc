@@ -975,3 +975,18 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   synthetic squares, so no fill of the expected colour is ever drawn and the gate measured
   nothing. Replaced by three source assertions that pin the three mistakes
   (`TestSelectingCentresOnWhatCanBeSeen`), with the numbers above as the evidence.
+- 2026-10-31 | `/map/` at 390x780 | The phone layout hid the map it was built around:
+  measured, the control card took the top 176 px and the detail sheet 371 px of a 598 px
+  map area, leaving **124 px** of visible map. Compacting the card (label moved to the
+  accessibility tree only, tighter padding) and capping the sheet at 46% was not enough on
+  its own, so the control card is hidden entirely while a sheet is open — the sheet's close
+  button brings it back in one tap. Clear map now **300 px**, half the area. | Two things
+  broke on the way and both were invisible to the gates: the basemap credit and
+  `#map-status` were **children of that card**, so hiding it removed an ODbL licence term
+  and the live region that announces a selection. Both are siblings now.
+- 2026-10-31 | `map.mjs` `viewPadding` | The same fix exposed a second bug: `viewPadding`
+  only knew about the right-docked panel and returned flat padding on a phone, so the
+  selection was centred on the container's middle — which at 390x780 is within a pixel of
+  the sheet's top edge, putting the district the reader asked for directly behind the
+  sheet. It now accounts for the sheet's height when the layout is stacked. | A panel that
+  changes which axis it steals needs the padding to change axis with it.

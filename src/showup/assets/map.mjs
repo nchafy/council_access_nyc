@@ -1295,17 +1295,27 @@ function viewPadding(map) {
   const mapBox = map.getContainer().getBoundingClientRect();
   if (!mapBox.width) return flat;
 
-  // `offsetWidth`, not a client rect: the panel is mid-slide for 220 ms after it opens and
-  // a rect includes the transform, which would make the camera padding animate along with
-  // it. Docked-vs-stacked is the stylesheet's own breakpoint for the same reason — at
-  // narrow widths the panel sits under the map and steals no horizontal room.
+  // `offsetWidth`/`offsetHeight`, not a client rect: the panel is mid-slide for 220 ms
+  // after it opens and a rect includes the transform, which would make the camera padding
+  // animate along with it. Docked-vs-stacked is the stylesheet's own breakpoint, for the
+  // same reason.
   const docked = window.matchMedia('(min-width: 52rem)').matches;
-  const overlap = docked ? card.offsetWidth : 0;
-  if (overlap < 40) return flat;
 
-  // Never give away more than half the frame: past that the fit zooms out so far the city
-  // is smaller than it was before the panel opened.
-  return { ...flat, right: Math.min(overlap + edge, mapBox.width * 0.5) };
+  if (docked) {
+    const overlap = card.offsetWidth;
+    if (overlap < 40) return flat;
+    // Never give away more than half the frame: past that the fit zooms out so far that
+    // the city is smaller than it was before the panel opened.
+    return { ...flat, right: Math.min(overlap + edge, mapBox.width * 0.5) };
+  }
+
+  // Stacked under the map on a phone, where it steals height rather than width. Returning
+  // flat padding here centred the selection on the container's middle, which at 390x780
+  // is within a pixel of the sheet's top edge — so the district the reader had just asked
+  // for was behind the sheet (measured 2026-10-31).
+  const covered = card.offsetHeight;
+  if (covered < 40) return flat;
+  return { ...flat, bottom: Math.min(covered + edge, mapBox.height * 0.6) };
 }
 
 /** Centre a point in the part of the map the panel leaves visible, without changing zoom.

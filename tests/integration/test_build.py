@@ -543,6 +543,13 @@ class TestShippedData:
         with pytest.raises(BuildError, match="floor is"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
 
+    def test_a_broken_board_calendar_fails_closed(self, raw_dir, tmp_path):
+        """A thin calendar ingest stops the build rather than quietly emptying 21 board
+        pages: a board page with no calendar reads as "this board holds no meetings"."""
+        (raw_dir / "board_meetings.json").write_text(json.dumps({"feeds": {}}), encoding="utf-8")
+        with pytest.raises(BuildError, match="floor is"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
     def test_a_thin_zip_geometry_fails_closed(self, raw_dir, tmp_path):
         """The ZIP outline is only a hint, but a half-read file would draw the wrong
         boundary for a ZIP, which is worse than drawing none."""
@@ -639,10 +646,9 @@ class TestReferencesPage:
 
     def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        # Nine of the ten. The fixture now caches the ZIP geometry too, because the build
-        # ships a ZIP outline overlay; only the shoreline-clipped council file is absent,
-        # since nothing in a build reads it (it is the crosswalk's denominator).
-        assert page.count("<dt>Fetched</dt>") == 9
+        # Ten of the eleven. Only the shoreline-clipped council file is absent, since
+        # nothing in a build reads it — it is the crosswalk's denominator.
+        assert page.count("<dt>Fetched</dt>") == 10
 
     def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
         """Deleting a disclosure paragraph may relocate a citation, never lose one."""

@@ -11,6 +11,7 @@ from dataclasses import replace
 
 import pytest
 
+from showup import fetch as fetch_module
 from showup.fetch import SOURCES, FetchError, fetch_all, fetch_one
 
 CALENDAR = next(s for s in SOURCES if s.name == "calendar")
@@ -657,3 +658,83 @@ class TestDistrictScrapeRetry:
         assert any("failed twice: [7]" in m for m in messages)
         source = next(s for s in SOURCES if s.name == "districts")
         assert "of 51 district pages" in source.invariant(json.dumps(pages).encode())
+
+
+class TestTheBoardCalendarFetcher:
+    """`_fetch_board_meetings` with `_get` substituted, and its invariant.
+
+    These are 23 independent third-party sites, several already dead or behind Cloudflare
+    when the registry was built, so one failing board must not stop the rest.
+    """
+
+    @staticmethod
+    def _registry():
+        return json.loads(fetch_module.BOARD_FEEDS_PATH.read_text(encoding="utf-8"))
+
+    def test_the_registry_on_disk_is_readable_and_sized(self):
+        feeds = self._registry()["feeds"]
+        assert len(feeds) == 23
+        for code, entry in feeds.items():
+            assert entry["kind"] in {"tribe", "gcal-ics", "other-ics", "other-json"}, code
+            assert entry["url"].startswith("https://"), code
+
+    def test_it_fetches_every_feed_and_records_the_kind(self, monkeypatch):
+        asked = []
+
+        def fake_get(url, **_kwargs):
+            asked.append(url)
+            return b'{"events": []}'
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        body = fetch_module._fetch_board_meetings(lambda _m: None)
+        payload = json.loads(body)
+        assert len(payload["feeds"]) == 23
+        assert len(asked) == 23
+        assert all(entry["body"] is not None for entry in payload["feeds"].values())
+
+    def test_a_tribe_url_asks_for_a_window(self, monkeypatch):
+        """The plugin's default "upcoming" returns empty on several of these even where it
+        holds events, so a start date is passed explicitly."""
+        asked = []
+        monkeypatch.setattr(
+            fetch_module, "_get", lambda url, **_k: asked.append(url) or b'{"events": []}'
+        )
+        fetch_module._fetch_board_meetings(lambda _m: None)
+        tribe = [u for u in asked if "wp-json/tribe" in u]
+        assert tribe
+        assert all("start_date=" in u and "per_page=" in u for u in tribe)
+
+    def test_one_dead_board_does_not_stop_the_others(self, monkeypatch):
+        def fake_get(url, **_kwargs):
+            if "brooklyncb8" in url or "u0jm9q72" in url:
+                raise fetch_module.FetchError("gone")
+            return b'{"events": []}'
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        payload = json.loads(fetch_module._fetch_board_meetings(lambda _m: None))
+        failed = [c for c, e in payload["feeds"].items() if e["body"] is None]
+        assert failed, "expected the stubbed failure to be recorded"
+        assert all("error" in payload["feeds"][c] for c in failed)
+        assert len(payload["feeds"]) == 23
+
+    def test_the_invariant_counts_boards_that_answered(self):
+        feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 114)}
+        assert fetch_module._board_meetings(json.dumps({"feeds": feeds}).encode()) is None
+
+    def test_the_invariant_refuses_a_mostly_dead_sweep(self):
+        feeds = {str(c): {"kind": "tribe", "body": None} for c in range(101, 124)}
+        feeds["101"]["body"] = "{}"
+        problem = fetch_module._board_meetings(json.dumps({"feeds": feeds}).encode())
+        assert problem is not None
+        assert "floor is" in problem
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            (b"{oh no", "not valid JSON"),
+            (b"[]", "expected a JSON object"),
+            (b'{"feeds": []}', "no feeds in the payload"),
+        ],
+    )
+    def test_the_invariant_refuses_a_malformed_payload(self, body, expected):
+        assert expected in fetch_module._board_meetings(body)

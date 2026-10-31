@@ -105,6 +105,12 @@ def write_raw_cache(raw: Path, calendar_html: str, district_page_html: dict[int,
         FIXTURES / "participatory_budgeting.json", cache_path(raw, "participatory-budgeting")
     )
 
+    # Real trimmed samples of all three feed shapes — Google Calendar ICS, a board's own
+    # ICS, The Events Calendar's REST response and one bespoke JSON — plus synthetic tribe
+    # feeds to clear the ingest floors, and one dead feed so the "absent, not zero" path is
+    # exercised rather than assumed.
+    shutil.copy2(FIXTURES / "board_meetings.json", cache_path(raw, "board-meetings"))
+
     # Synthetic squares, one per district: the build only counts features here, and
     # real-geometry accuracy is tests/unit/test_geo.py::TestSimplifiedGeometryAgrees.
     features = []

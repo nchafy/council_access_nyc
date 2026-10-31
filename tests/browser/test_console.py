@@ -452,20 +452,6 @@ class TestTheMapActuallyFinishesLoading:
         """An SVG path, so no CSS transform has to survive MapLibre writing over it."""
         assert loaded_map["pin"]["tag"] == "svg"
 
-    def test_the_basemap_really_drew(self, loaded_map):
-        """An invalid paint expression makes MapLibre discard the whole style and fall
-        back, with nothing logged: on 2026-10-27 a `['*', <case>, <zoom interpolate>]`
-        fill-opacity left a map with district outlines and no basemap at all, and every
-        gate including the console check stayed green. A fetched vector tile is the
-        evidence that the real style survived.
-        """
-        fetched = [line for line in loaded_map["tiles"] if ".pbf" in line]
-        assert fetched, (
-            "no vector tile was fetched, so the basemap style was rejected or never "
-            f"loaded; requests were {loaded_map['tiles']}"
-        )
-        assert any(line.endswith("-> 200") for line in fetched), fetched
-
 
 @pytest.fixture(scope="module")
 def autocomplete(chrome, built_site):
@@ -684,6 +670,23 @@ def _painted_selection(browser, base, zoom_steps):
         deviceScaleFactor=1,
         mobile=False,
     )
+    page.call("Page.enable")
+    page.call(
+        "Page.addScriptToEvaluateOnNewDocument",
+        source="""
+        window.__tiles = [];
+        (function () {
+          const original = window.fetch;
+          window.fetch = function (...args) {
+            const url = String((args[0] && args[0].url) || args[0]);
+            return original.apply(this, args).then(
+              (r) => { window.__tiles.push(url + ' -> ' + r.status); return r; },
+              (e) => { window.__tiles.push(url + ' -> threw'); throw e; },
+            );
+          };
+        })();
+        """,
+    )
     page.navigate(base + "/map/")
 
     deadline = time.monotonic() + 40
@@ -702,6 +705,7 @@ def _painted_selection(browser, base, zoom_steps):
     )
     time.sleep(3.5)
 
+    tiles = json.loads(page.evaluate("JSON.stringify(window.__tiles)"))
     shot = page.call("Page.captureScreenshot", format="png")["data"]
     # Read the DOM before navigating away: `browser.page()` returns the same tab.
     panel_left = page.evaluate(
@@ -756,7 +760,7 @@ def _painted_selection(browser, base, zoom_steps):
     blank.navigate("about:blank")
     time.sleep(0.5)
     found = json.loads(blank.evaluate(measure, await_promise=True))
-    return {"found": found, "free_centre": panel_left / 2}
+    return {"found": found, "free_centre": panel_left / 2, "tiles": tiles}
 
 
 @pytest.fixture(scope="module")
@@ -778,6 +782,34 @@ def real_map_pixels(chrome):
 
 
 class TestTheMapDrewTheSelection:
+    def test_the_real_basemap_style_was_accepted(self, real_map_pixels):
+        """An invalid paint expression makes MapLibre discard the whole style and fall
+        back, logging nothing — on 2026-10-27 that shipped a map with district outlines
+        and no basemap while every gate stayed green.
+
+        The evidence is the style's *dependencies*: its TileJSON, its sprite sheet and its
+        glyphs. The fallback style requests none of them.
+
+        Deliberately not "a vector tile came back": MapLibre fetches tiles in a Web
+        Worker, so wrapping `window.fetch` on the page never sees one, and the only `.pbf`
+        files that do reach the page are font glyphs — which is how an earlier version of
+        this check passed by accident.
+        """
+        requested = real_map_pixels[4]["tiles"]
+        # Any one of them is enough to tell the two styles apart, and requiring all three
+        # made this flake: the module loads `/map/` a dozen times and the tile host starts
+        # throttling, so an individual dependency can come back 429 or from cache.
+        wanted = ("tiles.openfreemap.org/planet", "/sprites/", "/fonts/")
+        satisfied = [
+            line
+            for line in requested
+            if any(needle in line for needle in wanted) and ("-> 2" in line or "-> 304" in line)
+        ]
+        assert satisfied, (
+            "none of the basemap style's dependencies loaded, so the style was rejected "
+            f"and MapLibre fell back: {requested}"
+        )
+
     @pytest.mark.parametrize("steps", [4, 6])
     def test_the_selected_district_is_actually_painted(self, real_map_pixels, steps):
         """Catches a fill buried under the basemap's land polygons, which halved the

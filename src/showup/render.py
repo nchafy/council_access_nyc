@@ -539,6 +539,10 @@ BP_SITES = {
 
 BUDGET_REGISTER_URL = "https://data.cityofnewyork.us/d/vn4m-mk4t"
 
+#: How many calendar entries a board page lists before it stops. The feeds carry up to
+#: 340; a page is not a calendar application.
+CALENDAR_SHOWN = 6
+
 #: Five, matching the meeting shortlist. One board filed 134, and the register is linked.
 REQUESTS_SHOWN = 5
 _EXPLANATION_CHARS = 260
@@ -577,6 +581,7 @@ def render_board(
     built_at: datetime,
     window_end: date | None,
     budget_requests: BoardBudgetRequests | None = None,
+    calendar: list | None = None,
 ) -> str:
     """The community board view. No dataset publishes board agendas or a venue, so the
     page states that rather than implying a calendar."""
@@ -593,6 +598,17 @@ def render_board(
         phone_href=_tel_href(board.phone),
         email_href=_mailto_href(board.email),
         tables=board_tables(districts, budget_requests),
+        calendar=[
+            {
+                "day": entry.day.strftime("%a %-d %B %Y"),
+                "start_time": entry.start_time,
+                "title": entry.title,
+                "location": entry.location,
+                "url": safe_url(entry.url) if entry.url else None,
+            }
+            for entry in (calendar or [])[:CALENDAR_SHOWN]
+        ],
+        calendar_total=len(calendar or []),
         budget=_budget(budget_requests),
         register_url=BUDGET_REGISTER_URL,
         bp_url=BP_SITES.get(board.borough_name),

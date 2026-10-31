@@ -1050,3 +1050,30 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   because neither signal alone is enough: the layer-order bug is invisible in the centroid
   and the centring bug is invisible in the pixel count. Both verified by reintroduction,
   each failing 3 of the 4 assertions.
+- 2026-10-31 | `sources/board_meetings.py` | **Supersedes the refusal in
+  `docs/board-meeting-sources.json`.** The City still publishes no board meeting calendar,
+  but 23 of 59 boards publish their own, in three shapes: a public Google Calendar ICS (8),
+  The Events Calendar's WordPress REST API (13, including all 12 boards on the City's own
+  `cityofnewyork.us` network), and two bespoke files. Explicit dates alone give **1,424
+  upcoming meetings across 19 boards** with committee names, times and **venues** — the
+  venue being the thing this project had recorded as unobtainable. Verified independently
+  on four boards before building. | These are *calendars*, not meeting lists: board 303's
+  next entry is "OFFICE CLOSED: Independence Day", others carry film screenings and
+  cancellations. The page is headed "From the board's calendar" for that reason, and
+  filtering by keyword was refused as guessing. Recurring entries are **not** expanded yet;
+  45 live RRULEs would add more, so the figure undercounts, which is the safe direction.
+- 2026-10-31 | `board_meetings.py` `_ics_when` | Google writes these times in UTC with a
+  trailing `Z`. Converting with `moment.replace(hour=moment.hour - offset)` raises outright
+  for anything before 05:00Z — hour goes negative — which killed **all six** ICS feeds at
+  once with "hour must be in 0..23". `timedelta` instead. | Also: The Events Calendar caps
+  a page at 50 however large a `per_page` you ask for, so 50 is the ceiling, not a choice.
+- 2026-10-31 | `test_console.py` basemap gate | The gate written on 2026-10-27 to prove the
+  basemap style survived was **passing by accident for four days**. It asserted that some
+  `.pbf` came back 200; the only `.pbf` files reaching the page are **font glyphs**, because
+  MapLibre fetches map tiles in a Web Worker where a page-level `fetch` wrapper cannot see
+  them. On the fixture site, whose geometry is in the Atlantic, no tile is requested at all.
+  It now asserts the style's *dependencies* — TileJSON, sprite sheet, glyphs — which the
+  fallback style never requests, against the real built site. | Requiring all three flaked
+  under load: the module loads `/map/` a dozen times and the tile host starts throttling.
+  Any one of them distinguishes the real style from the fallback, so one is what it asks
+  for. A gate that cannot fail is worse than no gate, and this one could not.

@@ -32,6 +32,33 @@
 {{ m.dl(rows) }}
 </section>
 
+{# The board's own calendar. Called a calendar and not a meeting list on purpose: these
+   feeds carry office closures, film screenings and cancellations alongside meetings, and
+   filtering by keyword would be guessing. The entries are quoted as the board wrote them. #}
+{% if calendar %}
+<section class="meetings">
+  <h2>From the board's calendar</h2>
+  <p class="why">
+    The next {{ calendar|length }} of {{ calendar_total }} entries the board publishes.
+    The City runs no board meeting calendar, so this is the board's own, and it lists
+    whatever the board puts in it.
+  </p>
+{% for entry in calendar %}
+  <article class="meeting">
+    <h3>{% if entry.url %}{{ m.link(entry.url, entry.title) }}{% else %}{{ entry.title }}{% endif %}</h3>
+{{ m.dl([
+  ("When", entry.day ~ (", " ~ entry.start_time if entry.start_time else "")),
+  ("Where", entry.location),
+]) }}
+  </article>
+{% endfor %}
+  <p class="hint">
+    Quoted from the board's calendar. Nothing in it records whether a meeting takes
+    testimony, whether it is remote, or when a comment window closes.
+  </p>
+</section>
+{% endif %}
+
 {% if cadence_rows %}
 <section class="meetings">
   <h2>Meeting times</h2>

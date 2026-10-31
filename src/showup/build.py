@@ -42,6 +42,7 @@ from .render import (
     render_not_found,
     render_references,
 )
+from .sources.board_meetings import BoardMeetingsError, load_board_meetings
 from .sources.boards import JOINT_INTEREST_AREAS, load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
@@ -280,6 +281,14 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         participation = load_participation(cache_path(raw, "participatory-budgeting"))
     except ParticipatoryBudgetingError as error:
         raise BuildError(str(error)) from error
+    # The boards' own calendars. Fails the build if the whole ingest thins out, but a
+    # single dead board website is absent rather than fatal — these are 23 third-party
+    # sites and several were already dead when the registry was made.
+    try:
+        board_calendars = load_board_meetings(cache_path(raw, "board-meetings"), on_or_after=day)
+    except BoardMeetingsError as error:
+        raise BuildError(str(error)) from error
+
     ahead = upcoming(meetings, day, SHORTLIST_SIZE)
     window_end = max((m.date for m in meetings), default=None)
 
@@ -346,6 +355,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
                 built_at=now,
                 window_end=window_end,
                 budget_requests=budget_requests.get(code),
+                calendar=board_calendars.get(code, []),
             ),
             encoding="utf-8",
         )
@@ -539,6 +549,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "districts_with_gaps": sum(1 for d in districts if d.missing),
         "boards_linked": sum(len(d.boards) for d in districts),
         "board_pages": len(boards_by_code),
+        "boards_with_a_calendar": len(board_calendars),
+        "board_calendar_entries": sum(len(v) for v in board_calendars.values()),
         "boards_with_budget_requests": len(budget_requests),
         "budget_requests": budget_request_rows,
         "budget_publication": budget_publication,

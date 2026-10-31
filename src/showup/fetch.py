@@ -19,6 +19,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .model import BOARD_COUNT, DISTRICT_COUNT
+from .sources.board_meetings import BOARD_FEED_FLOOR
 from .sources.boards import JOINT_INTEREST_AREAS
 from .sources.participatory_budgeting import (
     IDEA_MAP_URL,
@@ -319,6 +320,64 @@ def _geospatial(dataset: str) -> Callable[..., bytes]:
     return fetch
 
 
+#: The boards' own calendars, as discovered by measurement and committed in
+#: `crosswalks/board_meeting_feeds.json`. Not a City dataset: the City publishes none.
+BOARD_FEEDS_PATH = Path(__file__).resolve().parents[2] / "crosswalks" / "board_meeting_feeds.json"
+
+#: The Events Calendar caps a page at 50 however much you ask for, so this is the real
+#: ceiling rather than an aspiration. A board page shows a handful.
+TRIBE_PAGE = 50
+
+
+def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
+    """Every board feed we hold, stored raw so the build parses offline.
+
+    One failing board is recorded as a failure and the rest continue: these are 23
+    independent third-party sites, several of which were already dead or behind Cloudflare
+    when the list was made, so insisting on all of them would mean never refreshing any.
+    """
+    registry = json.loads(BOARD_FEEDS_PATH.read_text(encoding="utf-8"))
+    feeds = registry.get("feeds") or {}
+    out: dict[str, dict] = {}
+    answered = 0
+
+    for code, entry in sorted(feeds.items()):
+        url = str(entry.get("url") or "")
+        kind = str(entry.get("kind") or "")
+        if kind == "tribe":
+            # Ask for a window rather than the default "upcoming", which some of these
+            # return empty even where the plugin holds events.
+            url = f"{url.split('?')[0]}?per_page={TRIBE_PAGE}&start_date={date.today().isoformat()}"
+        try:
+            body = _get(url, tries=2, timeout=60).decode("utf-8", errors="replace")
+        except FetchError as error:
+            log(f"    board {code} ({kind}) failed: {error}")
+            out[code] = {"kind": kind, "url": url, "body": None, "error": str(error)[:200]}
+            continue
+        out[code] = {"kind": kind, "url": url, "body": body}
+        answered += 1
+
+    log(f"    {answered} of {len(feeds)} board feeds answered")
+    stamp = datetime.now().isoformat(timespec="seconds")
+    return json.dumps({"fetched_at": stamp, "feeds": out}).encode()
+
+
+def _board_meetings(body: bytes) -> str | None:
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        return f"not valid JSON ({error})"
+    if not isinstance(payload, dict):
+        return f"expected a JSON object, got {type(payload).__name__}"
+    feeds = payload.get("feeds")
+    if not isinstance(feeds, dict):
+        return "no feeds in the payload"
+    answered = sum(1 for entry in feeds.values() if isinstance(entry, dict) and entry.get("body"))
+    if answered < BOARD_FEED_FLOOR:
+        return f"{answered} of {len(feeds)} board feeds answered, floor is {BOARD_FEED_FLOOR}"
+    return None
+
+
 PRESS_API = "https://council.nyc.gov/press/wp-json/wp/v2/posts"
 
 
@@ -524,6 +583,18 @@ SOURCES: tuple[Source, ...] = (
         label="ZIP code boundaries",
         dataset="pri4-ifjk",
         url="https://data.cityofnewyork.us/d/pri4-ifjk",
+    ),
+    Source(
+        name="board-meetings",
+        filename="board_meetings.json",
+        fetch=_fetch_board_meetings,
+        invariant=_board_meetings,
+        min_bytes=100_000,
+        max_age_hours=24,
+        why="the boards' own calendars; the City publishes no board meeting calendar",
+        label="Community board calendars",
+        dataset="23 board websites: Google Calendar, The Events Calendar, two bespoke",
+        url="https://www.nyc.gov/site/cau/community-boards/community-boards.page",
     ),
     Source(
         name="participatory-budgeting",

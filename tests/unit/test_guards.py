@@ -724,3 +724,22 @@ class TestTheContactLinkBuilders:
     )
     def test_the_covers_line_splits_the_way_the_city_writes_it(self, published, names):
         assert [item["name"] for item in render.neighbourhood_links(published, "Brooklyn")] == names
+
+
+class TestTheStylesheetParses:
+    """A stray brace silently discards everything after it.
+
+    On 2026-10-31 removing a dead `@media` block left its closing `}` behind. The braces
+    went one out of balance, the CSS parser dropped the whole Windows XP theme, and the
+    site rendered in the base stylesheet's colours. `make axe` caught it as 12 contrast
+    violations; the console, a11y and reflow gates all stayed green, and the only visible
+    symptom was that the site looked wrong. Counting braces is cheaper than any of that.
+    """
+
+    @pytest.mark.parametrize("name", ["site.css"])
+    def test_braces_balance(self, name: str):
+        text = (REPO_ROOT / "src" / "showup" / "assets" / name).read_text(encoding="utf-8")
+        assert text.count("{") == text.count("}"), (
+            f"{name} has {text.count('{')} opening and {text.count('}')} closing braces; "
+            "an unbalanced sheet drops every rule after the stray one"
+        )

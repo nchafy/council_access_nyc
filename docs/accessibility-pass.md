@@ -158,3 +158,38 @@ accepted:
 
 Re-run the computation on any change to these colours. A gradient stop is invisible to the
 gate, so the only thing standing behind these numbers is that somebody worked them out.
+
+## 8. The dark theme's contrast, computed
+
+Added 2026-10-31, with the dark variant itself. Until then `prefers-color-scheme: dark`
+had no effect at all: the block that set a dark palette sat *above* the XP theme, which
+resets `--ink` and `--bg` in `:root` unconditionally, so a dark-mode reader got black text
+on bisque. The dark block is now last in `site.css`, which is the only thing that can beat
+an unconditional `:root`.
+
+Luna had no dark mode, so none of this is a reproduction. The shapes are kept — bevels,
+group boxes, gradient title bars — and the surfaces are re-stepped. Every figure is
+computed from the sRGB relative-luminance formula, not judged by eye.
+
+| Pair | Ratio | Needs | |
+|---|---|---|---|
+| `--ink` `#e8eaed` on `--bg` `#1f2124` | 13.39:1 | 4.5:1 | text |
+| `--ink` on `--panel` `#2a2d31` | 11.48:1 | 4.5:1 | text on a record |
+| `--ink` on `--face` `#35383d` | 9.76:1 | 4.5:1 | text on a control |
+| `--muted` `#b6bcc4` on `--bg` | 8.44:1 | 4.5:1 | secondary text |
+| `--muted` on `--panel` | 7.23:1 | 4.5:1 | secondary text |
+| `--accent` `#9cc3ff` on `--bg` | 8.96:1 | 4.5:1 | links |
+| `--accent` on `--panel` | 7.68:1 | 4.5:1 | links |
+| `--rule` `#7d858d` on `--panel` | 3.70:1 | 3.0:1 | SC 1.4.11, borders |
+| `--rule` on `--face` | 3.14:1 | 3.0:1 | SC 1.4.11, borders |
+| `--rule` on `--bg` | 4.31:1 | 3.0:1 | SC 1.4.11, borders |
+| `--sunken` `#8fa9c4` on `--bg` | 6.64:1 | 3.0:1 | input border |
+| `#fff` on `--title-a` `#0a246a` | 14.25:1 | 4.5:1 | title bars, unchanged |
+
+`--rule` is the one that needed working at. A border is non-text contrast under SC 1.4.11
+and needs 3:1; the first pick, `#5a6066`, managed **2.17:1** against the panel and was
+replaced.
+
+**Known gap.** `make axe` runs in the browser's default scheme only, so none of the dark
+theme is covered by an automated pass — these ratios are the whole of its evidence. A
+dark-mode axe run would be a real addition to the gates.

@@ -514,23 +514,6 @@ footer.site p { margin: .4rem 0; }
   font-weight: 600;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #e8eaed;
-    --muted: #9aa4b0;
-    --rule: #333a42;
-    --bg: #14171a;
-    --accent: #7fb0ff;
-    --warn-bg: #3a2f14;
-    --warn-ink: #f0d79a;
-    --urgent-bg: #3d1f20;
-    --urgent-ink: #f3b4b4;
-    --ok-bg: #1a3322;
-    --ok-ink: #a8dcb6;
-  }
-  .distinction, .designed-state, .refusal, .share { background: #1b1f24; }
-}
-
 /* ===========================================================================
    Windows XP (Luna) theme. Owner's decision, 2026-10-27.
 
@@ -554,6 +537,10 @@ footer.site p { margin: .4rem 0; }
   --title-a: #0a246a;        /* title bar, dark end */
   --title-b: #3a6ea5;        /* title bar, light end */
   --sunken: #7f9db9;         /* input border */
+  --raised: #fff;            /* the lit edge of a bevel, top-left */
+  --sunk: #b8b4a2;           /* the shaded edge, bottom-right */
+  --panel: #fcfcfa;          /* a record's own face, slightly off the page */
+  --attrib-bg: rgb(255 255 255 / 82%);
 }
 
 body {
@@ -617,10 +604,10 @@ a { color: var(--accent); text-decoration: underline; }
 .request,
 .dataset {
   border: 1px solid var(--rule);
-  border-top-color: #fff;
-  border-left-color: #fff;
-  background: #fcfcfa;
-  box-shadow: inset -1px -1px 0 #fff, 1px 1px 0 #b8b4a2;
+  border-top-color: var(--raised);
+  border-left-color: var(--raised);
+  background: var(--panel);
+  box-shadow: inset -1px -1px 0 var(--raised), 1px 1px 0 var(--sunk);
 }
 .board { border-left: 3px solid var(--title-b); }
 .share {
@@ -635,11 +622,11 @@ button,
 .map-toggle button,
 .detail-close {
   font-family: inherit;
-  background: linear-gradient(to bottom, #fff 0%, var(--face) 45%, #d7d2bf 100%);
+  background: linear-gradient(to bottom, var(--raised) 0%, var(--face) 45%, var(--sunk) 100%);
   border: 1px solid #003c74;
   border-radius: 3px;
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px #fff;
+  box-shadow: inset 0 0 0 1px var(--raised);
 }
 button:active,
 .map-zoom-button:active,
@@ -659,7 +646,7 @@ input[type="text"] {
   border: 1px solid var(--sunken);
   box-shadow: inset 1px 1px 2px rgb(0 0 0 / 14%);
   padding: .35rem .4rem;
-  background: #fff;
+  background: var(--bg);
 }
 
 /* Group box: the fieldset-and-legend the panel uses instead of bullet lists. */
@@ -668,7 +655,7 @@ input[type="text"] {
   padding: .55rem .7rem .6rem;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: #fcfcfa;
+  background: var(--panel);
 }
 .group legend {
   padding: 0 .3rem;
@@ -853,7 +840,7 @@ input[type="text"] {
   margin: 0;
   padding: .15rem .4rem;
   font-size: .68rem;
-  background: rgb(255 255 255 / 82%);
+  background: var(--attrib-bg);
   color: var(--ink);
 }
 .map-attrib a { color: var(--accent); }
@@ -946,5 +933,55 @@ input[type="text"] {
   .detail.is-open {
     transform: none;
     transition: none;
+  }
+}
+
+/* ===========================================================================
+   The XP theme after dark. Owner's decision, 2026-10-31.
+   
+   Before this the site had a dark block that never applied: it sat above the XP theme,
+   which resets `--ink` and `--bg` in `:root` unconditionally, so `prefers-color-scheme:
+   dark` rendered black text on bisque. It is last in the file for that reason — the theme
+   above it is not inside a query, so only source order can beat it.
+   
+   Luna itself had no dark mode, so this is not a reproduction of anything: it keeps the
+   shapes — the bevels, the group boxes, the gradient title bars — and re-steps the
+   surfaces. The title bars stay the Luna blues, which are already dark enough to carry
+   white text (14.25:1).
+   
+   Every ratio below is computed, not judged, and recorded in
+   docs/accessibility-pass.md §8. `--rule` is the one that needed work: borders are
+   non-text contrast under SC 1.4.11 and need 3:1, and the first pick managed 2.17:1
+   against the panel.
+   =========================================================================== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8eaed;            /* 13.39:1 on --bg, 11.48:1 on --panel */
+    --muted: #b6bcc4;          /* 8.44:1 on --bg, 7.23:1 on --panel */
+    --bg: #1f2124;
+    --face: #35383d;           /* control face; --ink is 9.76:1 on it */
+    --panel: #2a2d31;          /* a record's face */
+    --rule: #7d858d;           /* 3.70:1 on --panel, 3.14:1 on --face, 4.31:1 on --bg */
+    --accent: #9cc3ff;         /* 8.96:1 on --bg, 7.68:1 on --panel */
+    --sunken: #8fa9c4;         /* input border, 6.64:1 on --bg */
+    --raised: #565b61;         /* the bevel's lit edge is a grey here, never white */
+    --sunk: #15171a;
+    --attrib-bg: rgb(31 33 36 / 86%);
+  }
+
+  /* These three carry their own light fills in the base stylesheet. */
+  .distinction,
+  .designed-state,
+  .share { background: var(--panel); }
+
+  /* State fills, re-stepped rather than inverted: a light wash on a dark page reads as a
+     highlight instead of a warning. */
+  :root {
+    --warn-bg: #3a2f14;
+    --warn-ink: #f0d79a;
+    --urgent-bg: #3d1f20;
+    --urgent-ink: #f3b4b4;
+    --ok-bg: #1a3322;
+    --ok-ink: #a8dcb6;
   }
 }

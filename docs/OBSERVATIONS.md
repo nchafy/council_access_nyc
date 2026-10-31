@@ -1009,3 +1009,24 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   no host get their own builders, which validate the shape and drop anything odd rather
   than escaping it and hoping. `en.wikipedia.org` and `www.google.com` are the first
   non-government hosts in `ALLOWED_HOSTS`, and both are owner decisions rather than drift.
+- 2026-10-31 | `site.css` dark theme | `prefers-color-scheme: dark` had **no effect at
+  all**: the dark block sat above the XP theme, whose `:root` resets `--ink` and `--bg`
+  unconditionally, so a dark-mode reader got black text on bisque. Confirmed in the browser
+  before touching it — body computed `rgb(236, 233, 216)` with black ink under emulated
+  dark. The dark block is now last in the file, which is the only thing that beats an
+  unconditional `:root`, and the three roles the theme hard-coded (`--raised` bevel
+  highlight, `--sunk` bevel shadow, `--panel` record face) are variables so one block can
+  flip them. Ratios computed and recorded in docs/accessibility-pass.md §8; `--rule` needed
+  two attempts because a border is non-text contrast under SC 1.4.11 and the first pick
+  managed 2.17:1. | Luna had no dark mode, so this reproduces nothing: the shapes stay and
+  the surfaces are re-stepped. `make axe` runs in the default scheme only, so these
+  computed ratios are the whole of the dark theme's evidence.
+- 2026-10-31 | `site.css` | Removing that dead block left its closing `}` behind. One
+  stray brace put the sheet out of balance, the parser **discarded the entire XP theme**,
+  and the site silently rendered in the base stylesheet's colours — header gradient gone,
+  `--accent` back to `#0b4fa8`. `make axe` caught it as 12 contrast violations on 12 pages;
+  `console`, `a11y` and `reflow` all stayed green. | Guarded now by
+  `TestTheStylesheetParses::test_braces_balance`, which counts braces and cost nothing;
+  verified by appending a `}`. A second check — a lone `}` directly after another — was
+  written and dropped as a false positive: a rule closing inside a media query produces
+  exactly that shape legitimately.

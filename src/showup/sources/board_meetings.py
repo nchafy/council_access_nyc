@@ -254,6 +254,10 @@ def parse_feed(
         from .board_html import parse_html
 
         return parse_html(str(code), body, on_or_after=on_or_after)
+    if kind == "nyc-pdf":
+        from .board_pdf import parse_pdf
+
+        return parse_pdf(str(code), body, on_or_after=on_or_after)
     if kind in ("gcal-ics", "other-ics"):
         return parse_ics(body, on_or_after=on_or_after)
     try:

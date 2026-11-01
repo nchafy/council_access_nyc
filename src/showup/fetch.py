@@ -27,6 +27,7 @@ from .sources.participatory_budgeting import (
     is_results_release,
     participation_from_payload,
 )
+from .urls import safe_url
 
 __all__ = ["SOURCES", "FetchError", "cache_path", "fetch_all", "fetch_one", "manifest_key"]
 
@@ -340,6 +341,74 @@ BOARD_SOURCES_PATH = (
 TRIBE_PAGE = 50
 
 
+#: How many of a board's linked PDFs to read. These pages link an archive — Bronx CB11
+#: lists every month through June 2027 — and the parsers drop anything already past, so
+#: this only has to be large enough to cover what is still ahead. Four months is well past
+#: the furthest any board schedules, and bounds a fetch that is otherwise unbounded.
+BOARD_PDF_LIMIT = 4
+
+#: A PDF big enough to be a calendar. Below this the link resolved to an error page that
+#: happens to be served as `application/pdf`, which nyc.gov does.
+BOARD_PDF_FLOOR = 2_000
+
+
+def _board_pdf_links(page: bytes, base: str) -> list[str]:
+    """Every PDF this board's page links, most recently named first.
+
+    Ordered by the text of the link rather than the href, because the filenames are not a
+    convention: Bronx CB11 writes `calendar/2026-11.pdf` and Bronx CB1 writes
+    `-2026-CB1-Calendars-4.pdf`, which says nothing about which month it holds. So the
+    order here is only a preference, and `BOARD_PDF_LIMIT` plus the parsers' own cutoff
+    decide what is actually used.
+    """
+    from .text import parse_html
+
+    found: list[str] = []
+    for anchor in parse_html(page.decode("utf-8", errors="replace")).find_all("a", href=True):
+        href = safe_url(str(anchor["href"]), base=base)
+        if href and href.lower().split("?")[0].endswith(".pdf") and href not in found:
+            found.append(href)
+    return found
+
+
+def _board_pdf_body(landing: str, *, log: Callable[[str], None], code: str) -> str:
+    """One board's schedule PDFs as extracted text, ready to cache as a string.
+
+    The PDF bytes are deliberately not stored. `extract_pdf_text` runs here, at fetch time,
+    so that `data/` holds no binaries, the build stays offline, and a fixture is a text
+    file a reviewer can read. See `sources/board_pdf.py`.
+    """
+    from .sources.board_pdf import extract_pdf_text
+
+    page = _get(landing, tries=2, timeout=60)
+    links = _board_pdf_links(page, landing)
+    if not links:
+        raise FetchError(f"no PDF linked from {landing}")
+
+    documents = []
+    for href in links[:BOARD_PDF_LIMIT]:
+        try:
+            data = _get(href, tries=2, timeout=120)
+        except FetchError as error:
+            log(f"    board {code} pdf {href} failed: {error}")
+            continue
+        if len(data) < BOARD_PDF_FLOOR:
+            log(f"    board {code} pdf {href} is {len(data)} bytes, not a calendar")
+            continue
+        try:
+            extracted = extract_pdf_text(data)
+        except Exception as error:
+            # Caught broadly on purpose: pypdf raises its own hierarchy, and one
+            # malformed document must not take the other 14 boards' schedules down.
+            log(f"    board {code} pdf {href} did not extract: {type(error).__name__}")
+            continue
+        documents.append({"url": href, **extracted})
+
+    if not documents:
+        raise FetchError(f"none of {len(links)} PDFs at {landing} yielded text")
+    return json.dumps(documents)
+
+
 def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
     """Every board feed we hold, stored raw so the build parses offline.
 
@@ -359,6 +428,16 @@ def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
     for code, entry in sorted(feeds.items()):
         url = str(entry.get("url") or "")
         kind = str(entry.get("kind") or "")
+        if kind == "nyc-pdf":
+            try:
+                body = _board_pdf_body(url, log=log, code=code)
+            except FetchError as error:
+                log(f"    board {code} (nyc-pdf) failed: {error}")
+                out[code] = {"kind": kind, "url": url, "body": None, "error": str(error)[:200]}
+                continue
+            out[code] = {"kind": kind, "url": url, "body": body}
+            answered += 1
+            continue
         if kind == "tribe":
             # Ask for a window rather than the default "upcoming", which some of these
             # return empty even where the plugin holds events.

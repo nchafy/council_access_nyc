@@ -1,12 +1,12 @@
 {
   "generated_on": "2026-10-31",
   "purpose": "The source of truth for where every community board's meeting schedule comes from. All 59 boards appear, including the ones nothing can be read from, so a gap is a recorded fact rather than a silence.",
-  "method": "Every board website was probed for a machine-readable calendar (Google Calendar ICS via an embed's calendar id, The Events Calendar's REST API, a board's own ICS or JSON), then for a dated schedule in nyc.gov HTML, then for a schedule in a linked PDF. Statuses and notes are what was observed, not what was assumed.",
+  "method": "Every board website was probed for a machine-readable calendar (Google Calendar ICS via an embed's calendar id, The Events Calendar's REST API, a board's own ICS or JSON), then for a dated schedule in nyc.gov HTML, then for a schedule in a linked PDF. Statuses and notes are what was observed, not what was assumed. The 15 PDF boards were re-measured on 2026-10-31: all 15 yield extractable text and none is a scan, so each has a reader in sources/board_pdf.py.",
   "statuses": {
     "feed": "machine-readable calendar; fetched and parsed",
     "html": "dated schedule in nyc.gov HTML; fetched and parsed by a per-board reader",
-    "pdf": "dated schedule in a text PDF; a reader is not built yet",
-    "pdf-stale": "same format, but the board stopped updating it",
+    "pdf": "dated schedule in a text PDF; fetched and parsed by a per-board reader",
+    "pdf-stale": "same format and a reader exists, but the newest PDF the board published is already past; it will start yielding meetings again when the board posts a current one",
     "scanned": "schedule exists only as scanned images; needs OCR",
     "agenda-only": "per-meeting agendas or notices, not a schedule",
     "nothing-published": "no dated schedule found anywhere reachable",
@@ -121,7 +121,7 @@
       "site": "https://www.nyc.gov/site/bronxcb1/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb1/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "202": {
       "status": "no-site",
@@ -138,7 +138,7 @@
       "site": "https://www.nyc.gov/site/bronxcb3/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb3/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "204": {
       "status": "pdf",
@@ -146,7 +146,7 @@
       "site": "https://www.nyc.gov/site/bronxcb4/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb4/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "205": {
       "status": "pdf-stale",
@@ -154,7 +154,7 @@
       "site": "https://www.nyc.gov/html/bxcb5/html/home/home.shtml",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb5/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "206": {
       "status": "feed",
@@ -170,7 +170,7 @@
       "site": "https://www.nyc.gov/site/bronxcb7/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb7/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "208": {
       "status": "feed",
@@ -186,7 +186,7 @@
       "site": "https://www.nyc.gov/html/bxcb9/html/home/home.shtml",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb9/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "210": {
       "status": "pdf-stale",
@@ -194,7 +194,7 @@
       "site": "https://www.nyc.gov/site/bronxcb10/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb10/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "211": {
       "status": "pdf",
@@ -202,7 +202,7 @@
       "site": "https://www.nyc.gov/site/bronxcb11/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb11/meetings/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "212": {
       "status": "scanned",
@@ -219,7 +219,7 @@
       "site": "https://www.nyc.gov/site/brooklyncb1/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/brooklyncb1/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "302": {
       "status": "feed",
@@ -428,7 +428,7 @@
       "site": "https://www.nyc.gov/site/queenscb8/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/queenscb8/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "409": {
       "status": "pdf-stale",
@@ -436,7 +436,7 @@
       "site": "https://www.nyc.gov/site/queenscb9/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/queenscb9/meetings/agendas.page",
-      "fetched": false
+      "fetched": true
     },
     "410": {
       "status": "scanned",
@@ -462,7 +462,7 @@
       "site": "https://www.nyc.gov/site/queenscb12/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/queenscb12/calendar/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "413": {
       "status": "feed",
@@ -487,7 +487,7 @@
       "site": "https://www.nyc.gov/sicb1",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/statenislandcb1/meetings/meetings.page",
-      "fetched": false
+      "fetched": true
     },
     "502": {
       "status": "pdf",
@@ -495,7 +495,7 @@
       "site": "https://www.nyc.gov/site/statenislandcb2/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/statenislandcb2/meetings/calendar.page",
-      "fetched": false
+      "fetched": true
     },
     "503": {
       "status": "pdf",
@@ -503,7 +503,7 @@
       "site": "https://www.nyc.gov/sicb3",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/statenislandcb3/meetings/meetings.page",
-      "fetched": false
+      "fetched": true
     }
   }
 }

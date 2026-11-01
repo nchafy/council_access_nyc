@@ -688,7 +688,7 @@ class TestTheBoardCalendarFetcher:
     def test_every_fetched_board_has_a_kind_and_an_https_url(self):
         boards = self._registry()["boards"]
         fetched = {c: e for c, e in boards.items() if e.get("fetched")}
-        assert len(fetched) == 29
+        assert len(fetched) == 44
         for code, entry in fetched.items():
             assert entry["kind"] in {
                 "tribe",
@@ -696,6 +696,7 @@ class TestTheBoardCalendarFetcher:
                 "other-ics",
                 "other-json",
                 "nyc-html",
+                "nyc-pdf",
             }, code
             assert entry["url"].startswith("https://"), code
 
@@ -712,13 +713,26 @@ class TestTheBoardCalendarFetcher:
 
         def fake_get(url, **_kwargs):
             asked.append(url)
+            if ".page" in url:
+                return b'<html><a href="/a/oct.pdf">October</a></html>'
+            if url.lower().endswith(".pdf"):
+                return b"x" * 5_000
             return b'{"events": []}'
 
         monkeypatch.setattr(fetch_module, "_get", fake_get)
+        import showup.sources.board_pdf as board_pdf
+
+        monkeypatch.setattr(
+            board_pdf,
+            "extract_pdf_text",
+            lambda _d: {"layout": "g", "plain": "OCTOBER 2026", "pages": "1"},
+        )
         body = fetch_module._fetch_board_meetings(lambda _m: None)
         payload = json.loads(body)
-        assert len(payload["feeds"]) == 29
-        assert len(asked) == 29
+        assert len(payload["feeds"]) == 44
+        # 29 feeds are one request each. The 15 PDF boards are two: the landing page, then
+        # the one PDF this stub links from it.
+        assert len(asked) == 29 + 15 * 2
         assert all(entry["body"] is not None for entry in payload["feeds"].values())
 
     def test_a_tribe_url_asks_for_a_window(self, monkeypatch):
@@ -744,7 +758,7 @@ class TestTheBoardCalendarFetcher:
         failed = [c for c, e in payload["feeds"].items() if e["body"] is None]
         assert failed, "expected the stubbed failure to be recorded"
         assert all("error" in payload["feeds"][c] for c in failed)
-        assert len(payload["feeds"]) == 29
+        assert len(payload["feeds"]) == 44
 
     def test_the_invariant_counts_boards_that_answered(self):
         feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 120)}
@@ -767,3 +781,159 @@ class TestTheBoardCalendarFetcher:
     )
     def test_the_invariant_refuses_a_malformed_payload(self, body, expected):
         assert expected in fetch_module._board_meetings(body)
+
+
+class TestTheBoardSchedulePdfFetcher:
+    """Fifteen boards publish a schedule only as a PDF linked from a landing page.
+
+    The link has to be discovered, and the text is extracted here rather than at build
+    time so that `data/` holds no binaries and the build stays offline.
+    """
+
+    LANDING = "https://www.nyc.gov/site/bronxcb7/calendar/calendar.page"
+
+    def _page(self, *hrefs: str) -> bytes:
+        links = "".join(f'<a href="{href}">a month</a>' for href in hrefs)
+        return f"<html><body>{links}</body></html>".encode()
+
+    def _stub(self, monkeypatch, page: bytes, *, pdf=b"x" * 5_000, extracted=None):
+        def fake_get(url, **_kwargs):
+            return pdf if url.lower().endswith(".pdf") else page
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        import showup.sources.board_pdf as board_pdf
+
+        monkeypatch.setattr(
+            board_pdf,
+            "extract_pdf_text",
+            lambda _data: (
+                extracted
+                if extracted is not None
+                else {"layout": "grid", "plain": "OCTOBER 2026", "pages": "1"}
+            ),
+        )
+
+    def test_it_discovers_the_pdf_and_stores_the_extracted_text(self, monkeypatch):
+        self._stub(monkeypatch, self._page("/assets/bronxcb7/downloads/pdf/2026/oct.pdf"))
+        body = fetch_module._board_pdf_body(self.LANDING, log=lambda _m: None, code="207")
+        [document] = json.loads(body)
+        assert document["url"].endswith("/oct.pdf")
+        assert document["plain"] == "OCTOBER 2026"
+
+    def test_it_stores_no_pdf_bytes(self, monkeypatch):
+        """The whole point of extracting at fetch time: a cache entry is text."""
+        self._stub(monkeypatch, self._page("/a/b/oct.pdf"))
+        body = fetch_module._board_pdf_body(self.LANDING, log=lambda _m: None, code="207")
+        assert "%PDF" not in body
+
+    def test_a_relative_href_is_resolved_against_the_page(self, monkeypatch):
+        self._stub(monkeypatch, self._page("downloads/pdf/oct.pdf"))
+        body = fetch_module._board_pdf_body(self.LANDING, log=lambda _m: None, code="207")
+        assert json.loads(body)[0]["url"].startswith("https://www.nyc.gov/site/bronxcb7/")
+
+    def test_a_link_to_another_host_is_not_followed(self, monkeypatch):
+        """These pages are third-party HTML, so the href goes through the allowlist."""
+        self._stub(monkeypatch, self._page("https://example.com/evil.pdf"))
+        with pytest.raises(FetchError, match="no PDF linked"):
+            fetch_module._board_pdf_body(self.LANDING, log=lambda _m: None, code="207")
+
+    def test_a_page_linking_no_pdf_is_a_failure(self, monkeypatch):
+        self._stub(monkeypatch, self._page("/about.html"))
+        with pytest.raises(FetchError, match="no PDF linked"):
+            fetch_module._board_pdf_body(self.LANDING, log=lambda _m: None, code="207")
+
+    def test_the_same_pdf_linked_twice_is_fetched_once(self, monkeypatch):
+        self._stub(monkeypatch, self._page("/a/oct.pdf", "/a/oct.pdf"))
+        body = fetch_module._board_pdf_body(self.LANDING, log=lambda _m: None, code="207")
+        assert len(json.loads(body)) == 1
+
+    def test_only_the_nearest_few_months_are_fetched(self, monkeypatch):
+        """Bronx CB11 links every month through June 2027. The parsers drop what is past,
+        so this only bounds an otherwise unbounded fetch."""
+        many = [f"/a/{n}.pdf" for n in range(12)]
+        self._stub(monkeypatch, self._page(*many))
+        body = fetch_module._board_pdf_body(self.LANDING, log=lambda _m: None, code="207")
+        assert len(json.loads(body)) == fetch_module.BOARD_PDF_LIMIT
+
+    def test_a_pdf_too_small_to_be_a_calendar_is_skipped(self, monkeypatch):
+        """nyc.gov serves some error pages as `application/pdf`."""
+        said = []
+        self._stub(monkeypatch, self._page("/a/oct.pdf"), pdf=b"tiny")
+        with pytest.raises(FetchError, match="yielded text"):
+            fetch_module._board_pdf_body(self.LANDING, log=said.append, code="207")
+        assert any("not a calendar" in line for line in said)
+
+    def test_one_unfetchable_pdf_does_not_lose_the_others(self, monkeypatch):
+        said = []
+
+        def fake_get(url, **_kwargs):
+            if url.endswith("bad.pdf"):
+                raise FetchError("gone")
+            if url.lower().endswith(".pdf"):
+                return b"x" * 5_000
+            return self._page("/a/bad.pdf", "/a/good.pdf")
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        import showup.sources.board_pdf as board_pdf
+
+        monkeypatch.setattr(
+            board_pdf, "extract_pdf_text", lambda _d: {"layout": "", "plain": "", "pages": "1"}
+        )
+        body = fetch_module._board_pdf_body(self.LANDING, log=said.append, code="207")
+        assert [d["url"] for d in json.loads(body)] == ["https://www.nyc.gov/a/good.pdf"]
+        assert any("failed" in line for line in said)
+
+    def test_a_document_pypdf_cannot_read_is_skipped_not_fatal(self, monkeypatch):
+        """One malformed PDF must not take the other fourteen boards down with it."""
+        said = []
+
+        def explode(_data):
+            raise ValueError("not a PDF at all")
+
+        self._stub(monkeypatch, self._page("/a/oct.pdf"))
+        import showup.sources.board_pdf as board_pdf
+
+        monkeypatch.setattr(board_pdf, "extract_pdf_text", explode)
+        with pytest.raises(FetchError, match="yielded text"):
+            fetch_module._board_pdf_body(self.LANDING, log=said.append, code="207")
+        assert any("did not extract: ValueError" in line for line in said)
+
+    def test_a_failing_board_is_recorded_and_the_rest_continue(self, monkeypatch):
+        """The whole-fetcher path: a PDF board that cannot be read is stored as a failure
+        with its error, exactly as a dead feed is, and must not be absent."""
+
+        def fake_get(url, **_kwargs):
+            if ".page" in url:
+                return b"<html><body>no links here</body></html>"
+            return b'{"events": []}'
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        payload = json.loads(fetch_module._fetch_board_meetings(lambda _m: None))
+        pdf_boards = {
+            code: entry for code, entry in payload["feeds"].items() if entry["kind"] == "nyc-pdf"
+        }
+        assert len(pdf_boards) == 15
+        assert all(entry["body"] is None for entry in pdf_boards.values())
+        assert all("no PDF linked" in entry["error"] for entry in pdf_boards.values())
+        answered = [c for c, e in payload["feeds"].items() if e["body"]]
+        assert len(answered) == 29
+
+    def test_a_pdf_board_that_answers_is_counted(self, monkeypatch):
+        def fake_get(url, **_kwargs):
+            if ".page" in url:
+                return b'<html><a href="/a/oct.pdf">October</a></html>'
+            if url.lower().endswith(".pdf"):
+                return b"x" * 5_000
+            return b'{"events": []}'
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        import showup.sources.board_pdf as board_pdf
+
+        monkeypatch.setattr(
+            board_pdf,
+            "extract_pdf_text",
+            lambda _d: {"layout": "g", "plain": "OCTOBER 2026", "pages": "1"},
+        )
+        payload = json.loads(fetch_module._fetch_board_meetings(lambda _m: None))
+        answered = [c for c, e in payload["feeds"].items() if e["body"]]
+        assert len(answered) == 44

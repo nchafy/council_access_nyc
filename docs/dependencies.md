@@ -57,6 +57,7 @@ side effect of adding a library.
 | ruff | >=0.6 | MIT | dev | lint + format |
 | websocket-client | 1.9.2 (`>=1.9.2`, pinned in `uv.lock`) | Apache-2.0 | dev | Replaces the 127-line hand-written RFC 6455 client inside `scripts/cdp.py` — frame headers, client masking, 16- and 64-bit lengths, continuation reassembly, ping/pong; the most error-prone code in the repo and the least specific to this project |
 | axe-core | 4.13.0 | MPL-2.0 | dev, fetched | R39's accessibility gate; not committed, see `vendor` note in `scripts/fetch_axe.py` |
+| pypdf | 6.21.4 (`>=6.21.4`, pinned in `uv.lock`) | BSD-3-Clause | runtime (build-time) | Reads the schedule PDFs that 15 community boards publish instead of a feed or a page. Replaces nothing — without it those boards' meetings are simply absent. One `py3-none-any` wheel and **no required runtime dependency at all** on 3.12; see below for why it is not poppler and not pdfminer.six |
 | maplibre-gl | 6.15.0 | BSD-3-Clause | **browser, vendored** | The M3 district map. Replaces hand-rolling pan, zoom, projection and hit-testing over 51 polygons in WebGL. 449 KB gzipped across three files, so it is loaded on demand and never on first paint. Pinned by tarball sha512 plus a sha256 per extracted file in `scripts/fetch_maplibre.py`; not committed. Published 2026-10-18, so rule 3 is comfortable. npm runs at no point, so the `prepare` script in its `package.json` never executes — rule 5 holds for the same reason it does for axe-core |
 
 One entry reaches a reader — `maplibre-gl`, on the map route only, served from `site/vendor/`.
@@ -113,6 +114,54 @@ One behaviour genuinely changed, and it is a fix rather than a wash: `_HREF` mat
 `&amp;amp;GUID=`. Taking the href as a parsed attribute decodes it once, which is what the
 ingest rule always said. 255 links on 51 district pages; both forms were checked live and
 Legistar keys on `ID` alone, so no reader was ever sent somewhere wrong.
+
+## The PDF reader, and why it is not poppler and not pdfminer.six
+
+pypdf landed 2026-10-31, to read the schedule PDFs 15 boards publish. It is a **runtime**
+dependency: it runs inside `showup fetch`, on documents written by 15 third parties.
+
+The owner asked for "the one that is more mature code and reliable dependency". Those two
+criteria point at different libraries, and the honest answer is that **poppler is the more
+mature codebase and pypdf is the more reliable dependency here**:
+
+- **poppler** (`pdftotext`, descended from Xpdf) is two decades old and packaged by every
+  Linux distribution. It is also a **system binary**, installed out of band. A contributor
+  without Homebrew poppler would get a build that silently produces 15 fewer boards'
+  schedules — fail-open, which is the exact failure the ingest floors in
+  `sources/board_meetings.py` exist to prevent. Rule 5 is about install-time execution, and
+  a system binary does not break it; the reproducibility of the build is the objection.
+- **pdfminer.six** is pure Python and gives the best layout boxes of the three, but requires
+  `charset-normalizer` and **`cryptography`** — a compiled Rust extension, pulled in for a
+  feature (encrypted PDFs) none of these documents use. That is a larger install surface
+  than the thing it buys, and it is the same trade that rejected `websockets` and
+  `selectolax`.
+- **pypdf** publishes one `py3-none-any` wheel, built by flit, with `Root-Is-Purelib: true`,
+  no `.so`/`.pyd`/`.dylib`, no `.data/scripts`, and — on 3.12 — **no required dependency at
+  all** (`typing_extensions` is conditioned on `python_version < '3.11'`). It installs
+  through `uv` like bs4 and jinja2 and needs nothing from the host.
+
+Measured on Bronx CB7's October 2026 grid before choosing, and both candidates have a flaw
+worth knowing:
+
+- pypdf's `extraction_mode="layout"` **silently drops heading and footer text blocks**. On
+  that document it dropped `OCTOBER 2026` — the only place the year appears, and so the most
+  load-bearing token in the file. 4,762 characters of grid survived; 26 words of heading and
+  footer vanished, with no error.
+- `pdftotext -layout` keeps the heading but splits a superscript: `211 East 203rd Street`
+  came out as `211 East 203 Street` with a bare `rd` on the next line. pypdf's layout mode
+  keeps that address intact.
+
+So `board_pdf.py` reads **both** pypdf modes and uses each for what it is good at: layout
+mode for the Sunday-to-Saturday grid, where column position is the only thing that says
+which day an entry belongs to, and plain mode for the month-and-year heading. Neither mode
+alone is sufficient, which is why the extracted envelope carries both and
+`tests/unit/test_board_pdf.py` pins the heading's absence from layout mode — if a future
+pypdf starts including it, that test says so rather than the behaviour changing unobserved.
+
+Extraction happens at **fetch** time, not build time, for one structural reason: the cache
+in `sources/board_meetings.py` stores each board's `body` as a string, and a PDF is bytes.
+Storing the extracted text means no PDF binary ever enters `data/`, the build stays offline,
+and a fixture is a text file a reviewer can read.
 
 ## The WebSocket library, and why it is not `websockets`
 

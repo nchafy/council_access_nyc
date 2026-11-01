@@ -30,9 +30,17 @@ from .sources.participatory_budgeting import (
 
 __all__ = ["SOURCES", "FetchError", "cache_path", "fetch_all", "fetch_one", "manifest_key"]
 
+#: Says who we are and how to be asked to stop, which is what a UA is for. It does **not**
+#: claim to be a browser: that was tried and turned out to be unnecessary.
+#:
+#: The contact is written `repo nchafy/council_access_nyc` rather than as a URL because
+#: **the literal string `github.com` in a User-Agent makes nyc.gov return HTTP 403**.
+#: Bisected 2026-10-31 on a board calendar page: `showup-nyc/0.1 (civic data ETL for a
+#: public-interest site)` gets 200, `showup-nyc/0.1 (github.com)` gets 403, and the
+#: hostname is the only token that matters — not the length, not "ETL", not the
+#: parentheses. Verified afterwards against every host this project fetches.
 USER_AGENT = (
-    "showup-nyc/0.1 (civic data ETL for a public-interest site; "
-    "contact via github.com/nchafy/council_access_nyc)"
+    "showup-nyc/0.1 (civic data ETL for a public-interest site; repo nchafy/council_access_nyc)"
 )
 
 #: Seconds between requests to the same host; 2 s where the host publishes no robots.txt.
@@ -320,9 +328,12 @@ def _geospatial(dataset: str) -> Callable[..., bytes]:
     return fetch
 
 
-#: The boards' own calendars, as discovered by measurement and committed in
-#: `crosswalks/board_meeting_feeds.json`. Not a City dataset: the City publishes none.
-BOARD_FEEDS_PATH = Path(__file__).resolve().parents[2] / "crosswalks" / "board_meeting_feeds.json"
+#: Where every board's schedule comes from, discovered by measurement and committed in
+#: `crosswalks/board_schedule_sources.json`. All 59 boards are listed, including the ones
+#: nothing can be read from; only the ones marked `fetched` are requested here.
+BOARD_SOURCES_PATH = (
+    Path(__file__).resolve().parents[2] / "crosswalks" / "board_schedule_sources.json"
+)
 
 #: The Events Calendar caps a page at 50 however much you ask for, so this is the real
 #: ceiling rather than an aspiration. A board page shows a handful.
@@ -336,8 +347,12 @@ def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
     independent third-party sites, several of which were already dead or behind Cloudflare
     when the list was made, so insisting on all of them would mean never refreshing any.
     """
-    registry = json.loads(BOARD_FEEDS_PATH.read_text(encoding="utf-8"))
-    feeds = registry.get("feeds") or {}
+    registry = json.loads(BOARD_SOURCES_PATH.read_text(encoding="utf-8"))
+    feeds = {
+        code: entry
+        for code, entry in (registry.get("boards") or {}).items()
+        if entry.get("fetched") and entry.get("url")
+    }
     out: dict[str, dict] = {}
     answered = 0
 

@@ -574,6 +574,61 @@ def _budget(asked: BoardBudgetRequests | None) -> dict | None:
     }
 
 
+def board_schedule_payload(
+    calendars: dict,
+    sources: dict,
+    *,
+    built_at: datetime,
+    today: date,
+) -> dict:
+    """The published board-schedule artifact, for a backend to fetch rather than re-scrape.
+
+    Owner's instruction, 2026-10-31: a source of truth for every board's schedule. So all
+    59 boards appear here, including the ones nothing can be read from — a consumer can
+    tell "this board has no meetings scheduled" from "we cannot read this board", which is
+    the distinction that matters and the one a list of only the working boards destroys.
+
+    Every entry carries the URL it came from. Nothing is inferred: where a board states a
+    recurrence in prose instead of listing dates, there are no dates here.
+    """
+    boards = {}
+    for code, entry in sorted((sources.get("boards") or {}).items()):
+        meetings = calendars.get(code) or []
+        boards[code] = {
+            "label": entry.get("label"),
+            "status": entry.get("status"),
+            "source_kind": entry.get("kind"),
+            "source_url": entry.get("url"),
+            "site": entry.get("site"),
+            "note": entry.get("note"),
+            "upcoming": [
+                {
+                    "date": meeting.day.isoformat(),
+                    "start_time": meeting.start_time,
+                    "title": meeting.title,
+                    "location": meeting.location,
+                    "url": meeting.url,
+                }
+                for meeting in meetings
+            ],
+        }
+    readable = [code for code, board in boards.items() if board["upcoming"]]
+    return {
+        "generated_at": built_at.isoformat(timespec="seconds"),
+        "upcoming_from": today.isoformat(),
+        "caveat": sources.get("caveat"),
+        "statuses": sources.get("statuses"),
+        "coverage": {
+            "boards": len(boards),
+            "with_a_readable_source": sum(1 for b in boards.values() if b["source_url"]),
+            "with_upcoming_meetings": len(readable),
+            "upcoming_meetings": sum(len(b["upcoming"]) for b in boards.values()),
+            "recurring_entries_expanded": False,
+        },
+        "boards": boards,
+    }
+
+
 def render_board(
     board: DistrictBoard,
     districts: list[tuple[int, float]],

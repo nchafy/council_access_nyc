@@ -201,7 +201,10 @@ class TestPoliteness:
 
         # A city sysadmin who wants to complain should be able to find us.
         assert "showup" in USER_AGENT.lower()
-        assert "github.com" in USER_AGENT
+        # Not a URL: the literal `github.com` in a User-Agent makes nyc.gov return 403
+        # (src/showup/fetch.py, bisected 2026-10-31). The contact is still here.
+        assert "nchafy/council_access_nyc" in USER_AGENT
+        assert "github.com" not in USER_AGENT
 
 
 @pytest.mark.upstream
@@ -669,14 +672,40 @@ class TestTheBoardCalendarFetcher:
 
     @staticmethod
     def _registry():
-        return json.loads(fetch_module.BOARD_FEEDS_PATH.read_text(encoding="utf-8"))
+        return json.loads(fetch_module.BOARD_SOURCES_PATH.read_text(encoding="utf-8"))
 
-    def test_the_registry_on_disk_is_readable_and_sized(self):
-        feeds = self._registry()["feeds"]
-        assert len(feeds) == 23
-        for code, entry in feeds.items():
-            assert entry["kind"] in {"tribe", "gcal-ics", "other-ics", "other-json"}, code
+    def test_the_ledger_covers_every_board(self):
+        """All 59, including the ones nothing can be read from: a gap has to be a recorded
+        fact rather than a silence, or a consumer cannot tell "no meetings" from "we
+        cannot read this board"."""
+        boards = self._registry()["boards"]
+        assert len(boards) == 59
+        statuses = self._registry()["statuses"]
+        for code, entry in boards.items():
+            assert entry["status"] in statuses, (code, entry["status"])
+            assert entry["label"], code
+
+    def test_every_fetched_board_has_a_kind_and_an_https_url(self):
+        boards = self._registry()["boards"]
+        fetched = {c: e for c, e in boards.items() if e.get("fetched")}
+        assert len(fetched) == 29
+        for code, entry in fetched.items():
+            assert entry["kind"] in {
+                "tribe",
+                "gcal-ics",
+                "other-ics",
+                "other-json",
+                "nyc-html",
+            }, code
             assert entry["url"].startswith("https://"), code
+
+    def test_a_board_we_cannot_read_says_why(self):
+        """An unreachable or scanned-only board carries a note, so the gap is explained
+        rather than merely recorded."""
+        boards = self._registry()["boards"]
+        for code, entry in boards.items():
+            if entry["status"] in {"unreachable", "no-site", "nothing-published", "scanned"}:
+                assert entry.get("note"), code
 
     def test_it_fetches_every_feed_and_records_the_kind(self, monkeypatch):
         asked = []
@@ -688,8 +717,8 @@ class TestTheBoardCalendarFetcher:
         monkeypatch.setattr(fetch_module, "_get", fake_get)
         body = fetch_module._fetch_board_meetings(lambda _m: None)
         payload = json.loads(body)
-        assert len(payload["feeds"]) == 23
-        assert len(asked) == 23
+        assert len(payload["feeds"]) == 29
+        assert len(asked) == 29
         assert all(entry["body"] is not None for entry in payload["feeds"].values())
 
     def test_a_tribe_url_asks_for_a_window(self, monkeypatch):
@@ -715,10 +744,10 @@ class TestTheBoardCalendarFetcher:
         failed = [c for c, e in payload["feeds"].items() if e["body"] is None]
         assert failed, "expected the stubbed failure to be recorded"
         assert all("error" in payload["feeds"][c] for c in failed)
-        assert len(payload["feeds"]) == 23
+        assert len(payload["feeds"]) == 29
 
     def test_the_invariant_counts_boards_that_answered(self):
-        feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 114)}
+        feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 120)}
         assert fetch_module._board_meetings(json.dumps({"feeds": feeds}).encode()) is None
 
     def test_the_invariant_refuses_a_mostly_dead_sweep(self):

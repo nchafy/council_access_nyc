@@ -47,9 +47,9 @@ __all__ = [
 #: across 19 boards. A floor well under that still catches a feed format changing under us.
 BOARD_MEETING_FLOOR = 300
 
-#: How many boards must still be answering. Four of the 23 had nothing scheduled forward on
-#: the day this was built, so the floor is not 23.
-BOARD_FEED_FLOOR = 12
+#: How many boards must still be answering. 29 are fetched, and not all of them have
+#: something ahead on any given day, so the floor is below both numbers.
+BOARD_FEED_FLOOR = 15
 
 
 class BoardMeetingsError(RuntimeError):
@@ -242,8 +242,18 @@ def parse_mcb7(payload: list, *, on_or_after: date) -> list[BoardMeeting]:
     return meetings
 
 
-def parse_feed(kind: str, body: str, *, on_or_after: date) -> list[BoardMeeting]:
-    """Dispatch on the feed kind recorded at fetch time."""
+def parse_feed(
+    kind: str, body: str, *, on_or_after: date, code: str | None = None
+) -> list[BoardMeeting]:
+    """Dispatch on the kind recorded at fetch time.
+
+    `nyc-html` needs the board code too: those six boards share a host and a CMS and
+    nothing else, so each has its own reader in `board_html`.
+    """
+    if kind == "nyc-html":
+        from .board_html import parse_html
+
+        return parse_html(str(code), body, on_or_after=on_or_after)
     if kind in ("gcal-ics", "other-ics"):
         return parse_ics(body, on_or_after=on_or_after)
     try:
@@ -279,7 +289,12 @@ def load_board_meetings(path: Path, *, on_or_after: date) -> dict[str, list[Boar
         if not isinstance(entry, dict) or not entry.get("body"):
             continue
         try:
-            found = parse_feed(str(entry.get("kind")), str(entry["body"]), on_or_after=on_or_after)
+            found = parse_feed(
+                str(entry.get("kind")),
+                str(entry["body"]),
+                on_or_after=on_or_after,
+                code=str(code),
+            )
         except BoardMeetingsError:
             continue
         if found:

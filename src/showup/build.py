@@ -33,6 +33,7 @@ from .model import (
     Member,
 )
 from .render import (
+    board_schedule_payload,
     preview_payload,
     render_board,
     render_district,
@@ -460,6 +461,19 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
                 tolerance=ZCTA_TOLERANCE_DEG,
                 precision=ZCTA_PRECISION,
             ),
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+
+    # The board schedules as an artifact, so a backend can consume what this build already
+    # reads rather than scraping 29 third-party sites again. All 59 boards are listed.
+    schedule_sources = json.loads(
+        (repo_root / "crosswalks" / "board_schedule_sources.json").read_text(encoding="utf-8")
+    )
+    (data_dir / "board-meetings.json").write_text(
+        json.dumps(
+            board_schedule_payload(board_calendars, schedule_sources, built_at=now, today=day),
             separators=(",", ":"),
         ),
         encoding="utf-8",

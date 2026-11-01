@@ -1077,3 +1077,35 @@ it, `SO-WHAT` is one clause — what would survive a second jurisdiction, or `co
   under load: the module loads `/map/` a dozen times and the tile host starts throttling.
   Any one of them distinguishes the real style from the fallback, so one is what it asks
   for. A gate that cannot fail is worse than no gate, and this one could not.
+- 2026-10-31 | `crosswalks/board_schedule_sources.json` | Owner's instruction: a source of
+  truth for **every** board's schedule, per-board parsers where needed. The ledger now
+  lists all 59 boards with a status each, so a gap is a recorded fact rather than a
+  silence: 23 feed, 6 nyc.gov HTML, 12 text PDF (no reader yet), 3 PDF-but-abandoned, 3
+  scanned, 5 agenda-only, 3 unreachable, 3 nothing-published, 1 no site. 29 are fetched.
+  Published as `site/data/board-meetings.json` — 59 boards, 958 upcoming entries, 15.4 KB
+  gzipped — so a backend consumes what this build already reads instead of scraping 29
+  third-party sites again. | The ledger's point is the distinction a working-boards-only
+  list destroys: "this board has no meetings scheduled" against "we cannot read this
+  board". Every unreadable board carries a note saying which.
+- 2026-10-31 | `sources/board_html.py` | Six boards publish a dated schedule in nyc.gov
+  HTML and no feed. They share a host and a CMS and **nothing else**, so there is a reader
+  per board: a month-at-a-time list with venues after a double dash (103); a year heading
+  then ordinal dates, no times anywhere (304); a date line whose details follow on the
+  lines beneath it (315); bare dates with the hour only in prose and exceptions marked by
+  colour (318); sections where only the first entry states a time (401); one sentence
+  naming the next meeting (407). 58 upcoming between them. | Two refusals: 318's hour is
+  not attached, because the page marks exceptions "in red" and a colour is not readable;
+  and 401's section time is **not** carried down to bare dates — tried, then removed, since
+  the sections are not reliably delimited and it risked putting the full board's hour on a
+  committee's date. An absent time is a gap; a wrong one sends somebody to a room at the
+  wrong hour.
+- 2026-10-31 | `fetch.py` `USER_AGENT` | nyc.gov returned **HTTP 403** to this project's
+  User-Agent, which silently cost all six HTML boards. Bisected: the trigger is the literal
+  string **`github.com`** in the UA. `showup-nyc/0.1 (civic data ETL for a public-interest
+  site)` gets 200; `showup-nyc/0.1 (github.com)` gets 403. Not the length, not "ETL", not
+  the parentheses, and **not** the absence of a browser token — a bare product UA gets 200,
+  and no UA at all gets 200. | So the contact is written `repo nchafy/council_access_nyc`.
+  A `Mozilla/5.0 (compatible; ...)` prefix was tried first and **also** 403'd, which is the
+  useful part: the instinct to impersonate a browser was both dishonest and wrong. Verified
+  afterwards against all six hosts this project fetches. `tests/unit/test_fetch.py` pinned
+  `github.com` in the UA and now pins its absence, with the reason.

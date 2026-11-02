@@ -663,6 +663,21 @@ class TestDistrictScrapeRetry:
         assert "of 51 district pages" in source.invariant(json.dumps(pages).encode())
 
 
+def _stub_extraction(monkeypatch):
+    """Stand in for both PDF extractors.
+
+    Two kinds read PDFs — one with pypdf, one with OCR — and a test about the fetcher
+    rather than about extraction has to stub both, or the two scanned boards fail for a
+    reason that has nothing to do with what is being tested.
+    """
+    import showup.sources.board_ocr as board_ocr
+    import showup.sources.board_pdf as board_pdf
+
+    envelope = {"layout": "g", "plain": "OCTOBER 2026", "pages": "1"}
+    monkeypatch.setattr(board_pdf, "extract_pdf_text", lambda _d: dict(envelope))
+    monkeypatch.setattr(board_ocr, "extract_ocr_text", lambda _d: dict(envelope))
+
+
 class TestTheBoardCalendarFetcher:
     """`_fetch_board_meetings` with `_get` substituted, and its invariant.
 
@@ -688,7 +703,7 @@ class TestTheBoardCalendarFetcher:
     def test_every_fetched_board_has_a_kind_and_an_https_url(self):
         boards = self._registry()["boards"]
         fetched = {c: e for c, e in boards.items() if e.get("fetched")}
-        assert len(fetched) == 54
+        assert len(fetched) == 56
         for code, entry in fetched.items():
             assert entry["kind"] in {
                 "tribe",
@@ -697,6 +712,7 @@ class TestTheBoardCalendarFetcher:
                 "other-json",
                 "nyc-html",
                 "nyc-pdf",
+                "nyc-pdf-ocr",
             }, code
             # A board may declare several archive pages: Queens CB5 keeps its board
             # notices and its committee notices in two places.
@@ -725,21 +741,16 @@ class TestTheBoardCalendarFetcher:
             return b'{"events": []}'
 
         monkeypatch.setattr(fetch_module, "_get", fake_get)
-        import showup.sources.board_pdf as board_pdf
-
-        monkeypatch.setattr(
-            board_pdf,
-            "extract_pdf_text",
-            lambda _d: {"layout": "g", "plain": "OCTOBER 2026", "pages": "1"},
-        )
+        _stub_extraction(monkeypatch)
         body = fetch_module._fetch_board_meetings(lambda _m: None)
         payload = json.loads(body)
-        assert len(payload["feeds"]) == 54
-        # 33 feeds are one request each. Twenty PDF boards are two — the archive page,
-        # then the one PDF this stub links from it. Queens CB5 keeps two archive pages, so
-        # it is three: both pages, and the PDF once, because the same href linked from two
-        # pages is fetched a single time.
-        assert len(asked) == 33 + 20 * 2 + 3
+        assert len(payload["feeds"]) == 56
+        # 33 feeds are one request each. The PDF boards are two — the archive page, then
+        # the one PDF this stub links from it — except Queens CB5, which keeps two archive
+        # pages and so is three: both pages, and the PDF once, because the same href
+        # linked from two pages is fetched a single time. The two OCR boards fetch the
+        # same way; only their extraction differs.
+        assert len(asked) == 33 + 22 * 2 + 3
         assert all(entry["body"] is not None for entry in payload["feeds"].values())
 
     def test_a_tribe_url_asks_for_a_window(self, monkeypatch):
@@ -765,7 +776,7 @@ class TestTheBoardCalendarFetcher:
         failed = [c for c, e in payload["feeds"].items() if e["body"] is None]
         assert failed, "expected the stubbed failure to be recorded"
         assert all("error" in payload["feeds"][c] for c in failed)
-        assert len(payload["feeds"]) == 54
+        assert len(payload["feeds"]) == 56
 
     def test_the_invariant_counts_boards_that_answered(self):
         feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 120)}

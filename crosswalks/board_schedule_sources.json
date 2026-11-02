@@ -7,14 +7,14 @@
     "html": "dated schedule in nyc.gov HTML; fetched and parsed by a per-board reader",
     "pdf": "dated schedule in a text PDF; fetched and parsed by a per-board reader",
     "pdf-stale": "same format and a reader exists, but the newest PDF the board published is already past; it will start yielding meetings again when the board posts a current one",
-    "scanned": "schedule exists only as scanned images; needs OCR",
     "nothing-published": "no dated schedule found anywhere reachable",
     "unreachable": "the site did not answer",
     "unclassified": "not yet investigated",
     "agenda-pdf": "a notice per meeting in a text PDF; fetched and parsed by a per-board reader",
     "agenda-pdf-stale": "same, but the newest notice the board published is already past",
     "nothing-dated": "a working site that publishes no dates, only a recurrence in prose",
-    "blocked": "the board’s site refuses any non-browser client"
+    "blocked": "the board’s site refuses any non-browser client",
+    "ocr": "published only as scanned images; read by OCR, which is an optional extra and fails only these boards when absent"
   },
   "caveat": "These are the boards' own calendars. They carry office closures, screenings and cancellations alongside meetings, so nothing here may be presented as a meeting list. Recurring entries are not expanded.",
   "boards": {
@@ -208,13 +208,13 @@
       "fetched": true
     },
     "212": {
-      "status": "scanned",
+      "status": "ocr",
       "label": "Bronx Community Board 12",
       "site": "https://www.nyc.gov/site/bronxcb12/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "Both agendas and minutes are published, and both are image-only: 0 extractable characters across 58 PDFs. Needs OCR."
+      "kind": "nyc-pdf-ocr",
+      "url": "https://www.nyc.gov/site/bronxcb12/minutes/agendas.page",
+      "fetched": true,
+      "note": "58 agenda and minutes PDFs, every one a photograph of a page — pypdf extracts zero characters. Read by OCR, which is an optional extra: a machine without it fails this board and no others. The notice is one sentence carrying the day, the hour and the venue together."
     },
     "301": {
       "status": "pdf",
@@ -446,13 +446,13 @@
       "note": "Links per-meeting agendas, not a schedule, so each document yields one meeting and full coverage means fetching every agenda the page lists."
     },
     "410": {
-      "status": "scanned",
+      "status": "ocr",
       "label": "Queens Community Board 10",
       "site": "https://www.nyc.gov/site/queenscb10/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "65 agenda PDFs, all image-only. Link text names the month but not the day, so even the dates are not recoverable without OCR."
+      "kind": "nyc-pdf-ocr",
+      "url": "https://www.nyc.gov/site/queenscb10/meetings/agendas-minutes.page",
+      "fetched": true,
+      "note": "65 agenda PDFs, all image-only, and the link text names the month but not the day — so OCR is needed even for the date. The notice is set in two columns, so OCR returns each label and its value as separate lines."
     },
     "411": {
       "status": "html",

@@ -73,6 +73,7 @@ EXPECTED = {
     "209": 10,
     "210": 8,
     "211": 22,
+    "212": 0,  # the agendas captured were April and May 2026
     "301": 6,
     "309": 2,
     "312": 0,  # this board's newest notice is December 2025
@@ -81,6 +82,7 @@ EXPECTED = {
     "405": 2,
     "408": 3,
     "409": 1,
+    "410": 2,
     "412": 12,
     "501": 13,
     "502": 6,

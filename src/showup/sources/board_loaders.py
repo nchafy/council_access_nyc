@@ -30,6 +30,7 @@ __all__ = [
     "BOARD_PDF_LIMIT",
     "TRIBE_PAGE",
     "load_pdf",
+    "load_pdf_ocr",
     "load_plain",
     "load_tribe",
 ]
@@ -215,6 +216,22 @@ def load_pdf(request: LoadRequest) -> str:
     from .board_pdf import extract_pdf_text
 
     return _load_pdfs(request, extract_pdf_text)
+
+
+def load_pdf_ocr(request: LoadRequest) -> str:
+    """Every PDF a board links, read by looking at the pixels.
+
+    For the two boards whose agendas are photographs of pages. Produces the same envelope
+    as `load_pdf`, so the per-board readers are unchanged — see `board_ocr`.
+    """
+    from .board_ocr import extract_ocr_text, ocr_available
+
+    if not ocr_available():
+        raise LoadError(
+            "OCR is not installed; this board publishes only scanned images. "
+            "Install the extra with `uv sync --extra ocr`."
+        )
+    return _load_pdfs(request, extract_ocr_text)
 
 
 def _load_pdfs(request: LoadRequest, extract_text: Extractor) -> str:

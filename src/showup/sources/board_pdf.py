@@ -826,12 +826,22 @@ class AgendaBoard:
 
 
 def _labelled_fields(lines: list[str]) -> list[tuple[int, str, str]]:
-    """Every labelled line, as `(index, label, value)`."""
+    """Every labelled line, as `(index, label, value)`.
+
+    A label whose own line carries no value takes the next line as its value. Queens CB10
+    sets its notice in two columns, so the labels and the values are separate text boxes
+    and arrive as `DATE:` then `November 5, 2026` on the line after. Only applied when the
+    value is genuinely empty, so a label that states its value inline is untouched.
+    """
     out = []
     for index, line in enumerate(lines):
         found = _FIELD.match(line)
-        if found:
-            out.append((index, found.group(1).upper(), found.group(2)))
+        if not found:
+            continue
+        value = found.group(2).strip()
+        if not value and index + 1 < len(lines):
+            value = lines[index + 1]
+        out.append((index, found.group(1).upper(), value))
     return out
 
 
@@ -1020,6 +1030,13 @@ PDF_BOARDS: dict[str, GridBoard | ListBoard | AgendaBoard] = {
     "408": ListBoard(title="Full board meeting"),
     # Queens CB9: the first agenda board found. One notice per monthly meeting.
     "409": AgendaBoard(),
+    # Bronx CB12: scanned. Its notice is one sentence — "will be held on / Thursday,
+    # April 23, 2026, at 7:00 P.M. in Town Hall 4101 White Plains Road" — which is the
+    # combined shape Brooklyn CB12 uses, so no label and no anchor are needed.
+    "212": AgendaBoard(),
+    # Queens CB10: scanned, and set in two columns, so OCR returns `DATE:` and
+    # `November 5, 2026` as separate lines — see `_labelled_fields`.
+    "410": AgendaBoard(),
     # Queens CB12: abbreviated weekday row and zero-padded day numbers.
     "412": GridBoard(),
     # Staten Island CB2: day numbers carry a trailing period.

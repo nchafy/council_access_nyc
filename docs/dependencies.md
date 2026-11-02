@@ -164,6 +164,57 @@ in `sources/board_meetings.py` stores each board's `body` as a string, and a PDF
 Storing the extracted text means no PDF binary ever enters `data/`, the build stays offline,
 and a fixture is a text file a reviewer can read.
 
+## OCR, and why it is the first optional extra
+
+Owner's instruction, 2026-11-02: install OCR. Two boards publish their agendas only as
+scanned images — Bronx CB12 (58 PDFs) and Queens CB10 (65) — and pypdf extracts zero
+characters from every one. Without OCR there is nothing to parse.
+
+**It is an extra, not a runtime dependency.** `pyproject.toml` puts it under
+`[project.optional-dependencies] ocr`, and `showup build` does not require it. That is not
+squeamishness; it is the only honest way to accept it. Every OCR route breaks one of the
+rules above, and this one breaks the install-surface rule hard:
+
+| | beautifulsoup4 | pypdf | the `ocr` extra |
+|---|---|---|---|
+| Wheels | 1, `py3-none-any` | 1, `py3-none-any` | platform wheels for onnxruntime, PDFium and OpenCV |
+| Required deps | 2 | **0** on 3.12 | onnxruntime, numpy, opencv-python |
+| Bytes | ~100 KB | ~400 KB | tens of megabytes, plus ~15 MB of models |
+
+The alternatives were weighed and are worse, not better:
+
+- **`tesseract` / `pytesseract`** — a system binary plus a language model, which is exactly
+  the fail-open problem that ruled out poppler for the text PDFs.
+- **`ocrmypdf`** — tesseract *and* ghostscript.
+- **A cloud OCR API** — a third party and a secret, which breaks rule 6 outright.
+
+So the cost is paid where it falls. `board_kinds.BoardSourceKind.needs` exists for this: a
+kind that cannot meet its capability fails **its own boards and no others**, which is the
+same contract a dead third-party site already has. A contributor who has not installed the
+extra builds 54 boards instead of 56 and every test still passes, because the fixtures hold
+the text OCR returned rather than the images it read.
+
+| Dependency | Version | Licence |
+|---|---|---|
+| pypdfium2 | 5.14.0 | BSD-3-Clause / Apache-2.0 (bundles Google's PDFium) |
+| rapidocr-onnxruntime | 1.4.4 | Apache-2.0 |
+| onnxruntime | 1.31.1 | MIT |
+| numpy, opencv-python | transitive | BSD-3-Clause / Apache-2.0 |
+
+Rasterising is why there are two libraries and not one: OCR reads pixels, and a PDF has to
+be rendered before anything can look at it. pypdf cannot render, so pypdfium2 does it.
+
+Two properties of the arrangement are load-bearing:
+
+- **Only the machine that fetches needs it.** Extraction runs in `showup fetch` and the
+  cache stores text, so a build parses what a fetch produced. This is the same reason the
+  text PDFs are extracted at fetch time, and it is what keeps the extra optional in
+  practice rather than only on paper.
+- **The plausibility window is checked on the parsed date, never on the text.** A misread
+  digit in a scan is silent. Filtering lines by the four-digit numbers in them was tried
+  first and threw away the only line that mattered — Bronx CB12's notice reads "at 7:00
+  P.M. in Town Hall 4101 White Plains Road", and `4101` is a street number.
+
 ## The WebSocket library, and why it is not `websockets`
 
 `websocket-client` landed 2026-09-30, replacing the hand-written RFC 6455 client in

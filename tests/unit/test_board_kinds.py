@@ -94,6 +94,7 @@ class TestEveryKindHasBothHalves:
         "other-json": "[]",
         "nyc-html": "",
         "nyc-pdf": "[]",
+        "nyc-pdf-ocr": "[]",
     }
 
     @pytest.mark.parametrize("name", sorted(KINDS))

@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import date
 
 from .board_kinds import BoardSourceKind, register
-from .board_loaders import load_pdf, load_plain, load_tribe
+from .board_loaders import load_pdf, load_pdf_ocr, load_plain, load_tribe
 from .board_meetings import BoardMeeting
 
 __all__ = ["install"]
@@ -48,6 +48,21 @@ def _read_nyc_pdf(code: str, body: str, on_or_after: date) -> list[BoardMeeting]
     from .board_pdf import parse_pdf
 
     return parse_pdf(code, body, on_or_after=on_or_after)
+
+
+def _read_nyc_pdf_ocr(code: str, body: str, on_or_after: date) -> list[BoardMeeting]:
+    """The same readers, with one guard the text boards do not need.
+
+    A misread digit in a scanned date is silent and produces a real-looking meeting on the
+    wrong day or in the wrong decade, so a date outside the plausible window is dropped.
+    Having a place to put that without touching the twenty-one text boards is what the
+    registry is for.
+    """
+    from .board_ocr import plausible_year
+    from .board_pdf import parse_pdf
+
+    found = parse_pdf(code, body, on_or_after=on_or_after)
+    return [meeting for meeting in found if plausible_year(meeting.day)]
 
 
 _INSTALLED = False
@@ -106,5 +121,14 @@ def install() -> None:
             load=load_pdf,
             read=_read_nyc_pdf,
             summary="A schedule or a notice in a text PDF, read by a per-board reader.",
+        )
+    )
+    register(
+        BoardSourceKind(
+            name="nyc-pdf-ocr",
+            load=load_pdf_ocr,
+            read=_read_nyc_pdf_ocr,
+            summary="A notice published only as a scanned image, read by OCR.",
+            needs="the `ocr` extra (`uv sync --extra ocr`)",
         )
     )

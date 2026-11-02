@@ -16,6 +16,18 @@ dependencies = [
     "pypdf>=6.21.4",
 ]
 
+[project.optional-dependencies]
+# OCR, for the two boards that publish their agendas only as scanned images. Deliberately
+# an extra and not a runtime dependency: it is two orders of magnitude heavier than
+# everything else here — platform wheels for onnxruntime and PDFium, plus ~15 MB of
+# models — and `showup build` must not require it. A machine without it builds those two
+# boards short, which is the same contract a dead third-party site already has, and the
+# registry's `needs` field is what expresses that. See docs/dependencies.md.
+ocr = [
+    "pypdfium2>=5.14.0",
+    "rapidocr-onnxruntime>=1.4.4",
+]
+
 [project.scripts]
 showup = "showup.cli:main"
 

@@ -80,7 +80,7 @@ class TestEveryKindHasBothHalves:
 
     @pytest.mark.parametrize("name", sorted(KINDS))
     def test_it_says_what_it_is(self, name):
-        """The summary is what `docs/board-pdf-shapes.md` and a reader of the registry
+        """The summary is what `docs/board-sources.md` and a reader of the registry
         go on, so an entry without one is an entry nobody can audit."""
         assert len(KINDS[name].summary) > 20, name
 
@@ -95,6 +95,7 @@ class TestEveryKindHasBothHalves:
         "nyc-html": "",
         "nyc-pdf": "[]",
         "nyc-pdf-ocr": "[]",
+        "browser": "",
     }
 
     @pytest.mark.parametrize("name", sorted(KINDS))

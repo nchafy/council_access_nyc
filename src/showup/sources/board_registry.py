@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from .board_browser import load_browser
 from .board_kinds import BoardSourceKind, register
 from .board_loaders import load_pdf, load_pdf_ocr, load_plain, load_tribe
 from .board_meetings import BoardMeeting
@@ -48,6 +49,12 @@ def _read_nyc_pdf(code: str, body: str, on_or_after: date) -> list[BoardMeeting]
     from .board_pdf import parse_pdf
 
     return parse_pdf(code, body, on_or_after=on_or_after)
+
+
+def _read_browser(code: str, body: str, on_or_after: date) -> list[BoardMeeting]:
+    from .board_browser import parse_rendered
+
+    return parse_rendered(code, body, on_or_after=on_or_after)
 
 
 def _read_nyc_pdf_ocr(code: str, body: str, on_or_after: date) -> list[BoardMeeting]:
@@ -121,6 +128,15 @@ def install() -> None:
             load=load_pdf,
             read=_read_nyc_pdf,
             summary="A schedule or a notice in a text PDF, read by a per-board reader.",
+        )
+    )
+    register(
+        BoardSourceKind(
+            name="browser",
+            load=load_browser,
+            read=_read_browser,
+            summary="A schedule that exists only once a browser has run the page's app.",
+            needs="a local Chrome",
         )
     )
     register(

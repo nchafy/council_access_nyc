@@ -4,7 +4,7 @@ Twenty-one boards publish no feed and no dated HTML — they post a PDF. Owner's
 2026-10-31: separate parsers per board where needed, with the goal of a source of truth for
 every board's schedule. Every shape here was measured against the board's live document, 15
 of them on 2026-10-31 and 6 more on 2026-11-02 while closing the gap on the boards that had
-no readable source at all; `docs/board-pdf-shapes.md` records what each looked like and
+no readable source at all; `docs/board-sources.md` records what each looked like and
 where.
 
 Three shapes, and a configuration per board rather than one parser pretending to cover all:

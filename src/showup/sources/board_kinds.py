@@ -104,7 +104,7 @@ class BoardSourceKind:
     load: Callable[[LoadRequest], str]
     #: Cached string to meetings. Never raises for a board-shaped problem; returns none.
     read: Reader
-    #: One line, for `docs/board-pdf-shapes.md` and for anybody reading the registry.
+    #: One line, for `docs/board-sources.md` and for anybody reading the registry.
     summary: str
     #: What this kind needs beyond the standard library and the pinned runtime deps, when
     #: it needs anything. A kind that cannot meet its `needs` fails only its own boards.

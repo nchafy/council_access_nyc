@@ -14,7 +14,8 @@
     "agenda-pdf-stale": "same, but the newest notice the board published is already past",
     "nothing-dated": "a working site that publishes no dates, only a recurrence in prose",
     "blocked": "the board’s site refuses any non-browser client",
-    "ocr": "published only as scanned images; read by OCR, which is an optional extra and fails only these boards when absent"
+    "ocr": "published only as scanned images; read by OCR, which is an optional extra and fails only these boards when absent",
+    "browser": "a schedule that exists only once a browser has run the page; read with a local Chrome, which is optional and fails only this board"
   },
   "caveat": "These are the boards' own calendars. They carry office closures, screenings and cancellations alongside meetings, so nothing here may be presented as a meeting list. Recurring entries are not expanded.",
   "boards": {
@@ -57,7 +58,7 @@
       "kind": null,
       "url": null,
       "fetched": false,
-      "note": "Cloudflare serves a JS challenge and returns 403 to any non-browser client. No nyc.gov mirror exists: /site/manhattancb5/index.page is 404. Re-probed 2026-11-02."
+      "note": "Cloudflare serves a JS challenge. Measured 2026-11-02: headless Chrome is served \"Just a moment...\" and still has it 40 seconds later, so the challenge detects the automation rather than merely requiring JavaScript. Going further would mean defeating bot detection, which is not done here. No nyc.gov mirror exists. The way through is a feed from the district office."
     },
     "106": {
       "status": "feed",
@@ -101,13 +102,13 @@
       "fetched": true
     },
     "111": {
-      "status": "nothing-published",
+      "status": "browser",
       "label": "Manhattan Community Board 11",
       "site": "www.cb11m.org",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "Meetings live in an Airtable shared view whose embed HTML carries no row data. Its readSharedViewData route returns 401 to the signed URL the page itself emits. The embedded access policy lists downloadICal, so an iCal route probably exists, but its URL was not found and is not guessed."
+      "kind": "browser",
+      "url": "https://airtable.com/embed/appedcOCWGdk7kppK/shrEZxc5vi8McZNFb",
+      "fetched": true,
+      "note": "Meetings live in an Airtable shared view. The embed HTML carries no row data and the readSharedViewData route the page emits returns 401, so the rows exist only once the app has rendered — read by a browser. Only the month the view shows is read, which is what the board’s own page shows a reader."
     },
     "112": {
       "status": "feed",

@@ -663,19 +663,44 @@ class TestDistrictScrapeRetry:
         assert "of 51 district pages" in source.invariant(json.dumps(pages).encode())
 
 
-def _stub_extraction(monkeypatch):
-    """Stand in for both PDF extractors.
+def _stub_loaders(monkeypatch):
+    """Stand in for every loader that does not go through `request.get`.
 
-    Two kinds read PDFs — one with pypdf, one with OCR — and a test about the fetcher
-    rather than about extraction has to stub both, or the two scanned boards fail for a
-    reason that has nothing to do with what is being tested.
+    Two kinds read PDFs — one with pypdf, one with OCR — and one drives a browser. A test
+    about the fetcher rather than about any of those has to stub all three, or boards fail
+    for reasons that have nothing to do with what is being tested.
+
+    The browser one matters most: `load_browser` launches Chrome directly rather than
+    asking `request.get`, so monkeypatching `_get` does not contain it. Without this stub
+    these tests really did start a browser and wait on a live Airtable view.
     """
+    import showup.cdp as cdp
     import showup.sources.board_ocr as board_ocr
     import showup.sources.board_pdf as board_pdf
 
     envelope = {"layout": "g", "plain": "OCTOBER 2026", "pages": "1"}
     monkeypatch.setattr(board_pdf, "extract_pdf_text", lambda _d: dict(envelope))
     monkeypatch.setattr(board_ocr, "extract_ocr_text", lambda _d: dict(envelope))
+
+    class Page:
+        def navigate(self, _url, timeout=None):
+            return None
+
+        def evaluate(self, _expression):
+            return "Full Board11/17/2026via Video Conference"
+
+    class FakeBrowser:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def page(self):
+            return Page()
+
+    monkeypatch.setattr(cdp, "Browser", FakeBrowser)
+    monkeypatch.setattr("time.sleep", lambda _s: None)
 
 
 class TestTheBoardCalendarFetcher:
@@ -703,7 +728,7 @@ class TestTheBoardCalendarFetcher:
     def test_every_fetched_board_has_a_kind_and_an_https_url(self):
         boards = self._registry()["boards"]
         fetched = {c: e for c, e in boards.items() if e.get("fetched")}
-        assert len(fetched) == 56
+        assert len(fetched) == 57
         for code, entry in fetched.items():
             assert entry["kind"] in {
                 "tribe",
@@ -713,6 +738,7 @@ class TestTheBoardCalendarFetcher:
                 "nyc-html",
                 "nyc-pdf",
                 "nyc-pdf-ocr",
+                "browser",
             }, code
             # A board may declare several archive pages: Queens CB5 keeps its board
             # notices and its committee notices in two places.
@@ -741,15 +767,16 @@ class TestTheBoardCalendarFetcher:
             return b'{"events": []}'
 
         monkeypatch.setattr(fetch_module, "_get", fake_get)
-        _stub_extraction(monkeypatch)
+        _stub_loaders(monkeypatch)
         body = fetch_module._fetch_board_meetings(lambda _m: None)
         payload = json.loads(body)
-        assert len(payload["feeds"]) == 56
+        assert len(payload["feeds"]) == 57
         # 33 feeds are one request each. The PDF boards are two — the archive page, then
         # the one PDF this stub links from it — except Queens CB5, which keeps two archive
         # pages and so is three: both pages, and the PDF once, because the same href
         # linked from two pages is fetched a single time. The two OCR boards fetch the
         # same way; only their extraction differs.
+        # One more board is read by a browser, which asks for nothing over HTTP at all.
         assert len(asked) == 33 + 22 * 2 + 3
         assert all(entry["body"] is not None for entry in payload["feeds"].values())
 
@@ -776,7 +803,7 @@ class TestTheBoardCalendarFetcher:
         failed = [c for c, e in payload["feeds"].items() if e["body"] is None]
         assert failed, "expected the stubbed failure to be recorded"
         assert all("error" in payload["feeds"][c] for c in failed)
-        assert len(payload["feeds"]) == 56
+        assert len(payload["feeds"]) == 57
 
     def test_the_invariant_counts_boards_that_answered(self):
         feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 120)}

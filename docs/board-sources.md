@@ -1,4 +1,15 @@
-# The fifteen boards whose schedule is a PDF
+# Where every community board's schedule comes from
+
+Fifty-nine boards publish their meetings in no agreed way at all, so there is a *kind* per
+way and a configuration per board. The kinds live in `src/showup/sources/board_registry.py`
+— each binds a loader to a reader, and every one of them ends at the same `BoardMeeting` —
+and `crosswalks/board_schedule_sources.json` records which kind each board uses and why.
+
+This file is the measurement behind that: what each document actually looks like, where,
+and when it was last checked. **56 of 59 boards have a readable source.** The three that do
+not, and the reason in each case, are at the end.
+
+## The twenty-one boards whose schedule is a PDF
 
 Measured 2026-10-31 by fetching each board's landing page, following every `.pdf` link it
 carries, and extracting both pypdf text modes. Every URL below returned HTTP 200 and
@@ -152,6 +163,41 @@ Five remain uncovered, and each for a reason no parser fixes:
 | Bronx CB12 (212) | 58 agenda and minutes PDFs, all image-only: zero extractable characters. Needs OCR. |
 | Queens CB10 (410) | 65 agenda PDFs, all image-only. The link text names the month but not the day, so not even the dates survive without OCR. |
 | Brooklyn CB5 (305) | A working site that publishes no dates — only a recurrence in prose, "every 4th Wednesday at 6:30pm". A recurrence stated in prose is not expanded. |
+
+## The browser, and the one board it does not rescue
+
+Owner's instruction, 2026-11-02: implement the browser route. One board needed it and one
+turned out not to be reachable that way.
+
+**Manhattan CB11 (111) works.** Its meetings live in an Airtable shared view: the embed's
+HTML carries no row data and the `readSharedViewData` route the page itself emits returns
+401, so the rows exist only once the app has rendered. Rendering the embed URL directly in
+headless Chrome gives them, as the text of the grid with no separator between the cells:
+
+```
+Environment, Open Space & Parks11/5/2026via Video Conference, "1664 Park Avenue, New York"
+Election Day - CLOSED11/3/2026
+```
+
+The date is the divider — what precedes it is the committee, what follows it is where the
+meeting is held. Only the month the view happens to be showing is read; paging the app is a
+click the loader does not make, which is the same month a reader sees on the board's page.
+
+One trap worth knowing: because the cells run together, `\bclosed\b` does **not** match
+`CLOSED11`, and three public holidays were published as meetings until each closure word
+was closed with a lookahead instead. The same word-boundary mistake had already appeared
+once, in the PDF link ranking, where `\b` after a year failed on `2018_general`.
+
+**Manhattan CB5 (105) is not reachable and stays `blocked`.** It sits behind a Cloudflare
+JS challenge. Measured 2026-11-02: headless Chrome is served `Just a moment...` and still
+has it 40 seconds later, so the challenge is detecting the automation rather than merely
+requiring JavaScript. No nyc.gov mirror exists — `/site/manhattancb5/index.page` is a 404.
+
+Going further would mean defeating bot detection: patched fingerprints, a persistent
+real-browser profile, an arms race against a control the board's host deliberately put up.
+That is a different act from rendering a page and it is not done here. The way through is a
+calendar feed from the district office. `tests/unit/test_board_browser.py` records the
+measurement so the next person does not spend the afternoon rediscovering it.
 
 ## What these documents do not say
 

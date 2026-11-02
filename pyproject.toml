@@ -66,6 +66,16 @@ markers = [
     "slow: takes more than a few seconds; still runs by default",
 ]
 
+[tool.coverage.run]
+# `cdp.py` is the Chrome DevTools client. It moved into the package when the browser
+# became a way of *loading* a board's schedule and not only a way of testing the site, and
+# that brought it under this gate — where it cannot honestly sit. Every line of it needs a
+# real Chrome, so the only way to cover it is `make browser`, which the default `make
+# check` deliberately excludes. Measuring it here would make the 100% floor depend on a
+# browser being installed, which is exactly the coupling the `needs` field exists to
+# avoid. `tests/browser/test_cdp.py` is where it is actually exercised.
+omit = ["src/showup/cdp.py"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
@@ -91,6 +101,9 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH", "RET", "A
 # in `Veterans’ Day`, which slipped past a pattern spelling only the straight one.
 # Normalising them would delete the thing being matched.
 "src/showup/sources/board_pdf.py" = ["RUF001", "RUF003"]
+# Same rule, same reason: these strip the en dash and em dash an Airtable cell carries
+# around a committee name. Normalising them would delete what is being stripped.
+"src/showup/sources/board_browser.py" = ["RUF001"]
 "tests/unit/test_board_pdf.py" = ["RUF001", "ARG"]
 # Source adapters import their own package's shared primitives by relative path.
 # TID252 exists to stop reaching across package boundaries; staying inside one

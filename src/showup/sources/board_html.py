@@ -310,7 +310,7 @@ def read_brooklyn_cb13(markup: str, *, on_or_after: date) -> list[BoardMeeting]:
     the lines instead.
 
     The page says the dates are tentative. That is the board's caveat to make, not a reason
-    to withhold them, and `docs/board-pdf-shapes.md` records it.
+    to withhold them, and `docs/board-sources.md` records it.
     """
     lines = lines_of(markup)
     year = None

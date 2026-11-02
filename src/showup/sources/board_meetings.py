@@ -242,37 +242,50 @@ def parse_mcb7(payload: list, *, on_or_after: date) -> list[BoardMeeting]:
     return meetings
 
 
+def _payload(kind: str, body: str):
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as error:
+        raise BoardMeetingsError(f"{kind}: not valid JSON ({error})") from error
+
+
+def as_object(kind: str, body: str) -> dict:
+    """A cached body that must be a JSON object."""
+    payload = _payload(kind, body)
+    if not isinstance(payload, dict):
+        raise BoardMeetingsError(f"{kind}: expected an object, got {type(payload).__name__}")
+    return payload
+
+
+def as_array(kind: str, body: str) -> list:
+    """A cached body that must be a JSON array."""
+    payload = _payload(kind, body)
+    if not isinstance(payload, list):
+        raise BoardMeetingsError(f"{kind}: expected an array, got {type(payload).__name__}")
+    return payload
+
+
 def parse_feed(
     kind: str, body: str, *, on_or_after: date, code: str | None = None
 ) -> list[BoardMeeting]:
-    """Dispatch on the kind recorded at fetch time.
+    """Read a cached body with whichever kind fetched it.
 
-    `nyc-html` needs the board code too: those six boards share a host and a CMS and
-    nothing else, so each has its own reader in `board_html`.
+    The kinds live in `board_registry`, one entry per way a board publishes, each binding
+    a loader to a reader. This used to be an `if kind == ...` chain here and another in
+    `fetch`, which could disagree about what a kind meant.
+
+    The board code is passed through because several kinds need it: the nine HTML boards
+    and the twenty-one PDF boards share a host and a file format and nothing else, so each
+    has its own reader.
     """
-    if kind == "nyc-html":
-        from .board_html import parse_html
+    from .board_kinds import kind_for
+    from .board_registry import install
 
-        return parse_html(str(code), body, on_or_after=on_or_after)
-    if kind == "nyc-pdf":
-        from .board_pdf import parse_pdf
-
-        return parse_pdf(str(code), body, on_or_after=on_or_after)
-    if kind in ("gcal-ics", "other-ics"):
-        return parse_ics(body, on_or_after=on_or_after)
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError as error:
-        raise BoardMeetingsError(f"{kind}: not valid JSON ({error})") from error
-    if kind == "tribe":
-        if not isinstance(payload, dict):
-            raise BoardMeetingsError(f"tribe: expected an object, got {type(payload).__name__}")
-        return parse_tribe(payload, on_or_after=on_or_after)
-    if kind == "other-json":
-        if not isinstance(payload, list):
-            raise BoardMeetingsError(f"other-json: expected an array, got {type(payload).__name__}")
-        return parse_mcb7(payload, on_or_after=on_or_after)
-    raise BoardMeetingsError(f"unknown feed kind {kind!r}")
+    install()
+    handler = kind_for(kind)
+    if handler is None:
+        raise BoardMeetingsError(f"unknown feed kind {kind!r}")
+    return handler.read(str(code), body, on_or_after)
 
 
 def load_board_meetings(path: Path, *, on_or_after: date) -> dict[str, list[BoardMeeting]]:

@@ -38,6 +38,31 @@ is. The column it sits under does. Three properties of that turned out to be loa
    an entry printed under September 28 in October's grid would otherwise be published as
    October 28.
 
+## Which PDF to fetch is its own problem
+
+These pages link an archive, not a current calendar, and **document order is not usable**.
+Bronx CB11's calendar page lists `meeting_preferences.pdf`, then `2023-09.pdf`, then
+`2027-06.pdf`, then `2027-05.pdf` — so taking the first four got one file that is not a
+calendar, one three-year-old month and two in mid-2027, and missed the November its reader
+needed. The board contributed 23 meetings, the earliest in May 2027.
+
+`_board_pdf_links` in `src/showup/fetch.py` therefore ranks links by the month they name,
+in the href or the link text, preferring this month and later, soonest first. CB11 now
+yields 72 upcoming entries from November 2026 through April 2027.
+
+Two things make that ranking awkward, both measured 2026-11-01:
+
+- **A filename is not a convention.** Bronx CB1's current calendar is
+  `-2026-CB1-Calendars-4.pdf`, which names no month at all, and Queens CB12 keeps a
+  `2018_general_meeting_schedule.pdf` beside its current one. So a link naming no month is
+  tried before a past one, and a link naming only a year that has already ended is treated
+  as an archive.
+- **Bronx CB3 links `calendar/Committee Schedules.pdf`, with a literal space.** `urllib`
+  raises `InvalidURL` on that rather than encoding it, and because the raise was neither a
+  `FetchError` nor caught per link, one board's filename took the whole board-calendar
+  fetch down with it. The path is percent-encoded, and a per-link `ValueError` is now
+  recorded and skipped.
+
 ## Per board
 
 | Board | Form | Where the month and year live | Time forms | What is particular to it |

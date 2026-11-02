@@ -133,12 +133,13 @@
       "note": "no website recorded in the City's dataset"
     },
     "203": {
-      "status": "pdf",
+      "status": "pdf-stale",
       "label": "Bronx Community Board 3",
       "site": "https://www.nyc.gov/site/bronxcb3/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/bronxcb3/calendar/calendar.page",
-      "fetched": true
+      "fetched": true,
+      "note": "Newest published calendar is September 2026."
     },
     "204": {
       "status": "pdf",
@@ -149,7 +150,7 @@
       "fetched": true
     },
     "205": {
-      "status": "pdf-stale",
+      "status": "pdf",
       "label": "Bronx Community Board 5",
       "site": "https://www.nyc.gov/html/bxcb5/html/home/home.shtml",
       "kind": "nyc-pdf",
@@ -189,7 +190,7 @@
       "fetched": true
     },
     "210": {
-      "status": "pdf-stale",
+      "status": "pdf",
       "label": "Bronx Community Board 10",
       "site": "https://www.nyc.gov/site/bronxcb10/index.page",
       "kind": "nyc-pdf",
@@ -431,12 +432,13 @@
       "fetched": true
     },
     "409": {
-      "status": "pdf-stale",
+      "status": "pdf",
       "label": "Queens Community Board 9",
       "site": "https://www.nyc.gov/site/queenscb9/index.page",
       "kind": "nyc-pdf",
       "url": "https://www.nyc.gov/site/queenscb9/meetings/agendas.page",
-      "fetched": true
+      "fetched": true,
+      "note": "Links per-meeting agendas, not a schedule, so each document yields one meeting and full coverage means fetching every agenda the page lists."
     },
     "410": {
       "status": "scanned",

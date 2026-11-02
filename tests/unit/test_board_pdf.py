@@ -65,7 +65,7 @@ EXPECTED = {
     "207": 10,
     "209": 10,
     "210": 8,
-    "211": 23,
+    "211": 22,
     "301": 6,
     "408": 3,
     "409": 1,
@@ -427,6 +427,14 @@ class TestTheCellSplit:
         [meeting] = [m for m in read(documents, "211") if m.day == date(2026, 11, 10)]
         assert meeting.start_time == "7:00 PM"
         assert meeting.title == "Health & Social Services Committee"
+
+    def test_a_standing_venue_notice_is_not_part_of_the_name(self, documents):
+        """Bronx CB11 prints "All committee meetings are currently held at the BxCB11
+        Office at 1741 Colden Avenue and remotely via Webex" inside its first cell of the
+        month, which arrived as part of the Transportation Committee's name. A committee
+        name is not a sentence."""
+        [meeting] = [m for m in read(documents, "211") if m.day == date(2026, 11, 2)]
+        assert meeting.title == "Transportation Committee"
 
     def test_a_hyperlink_label_is_not_part_of_the_name(self, documents):
         for meeting in read(documents, "211"):

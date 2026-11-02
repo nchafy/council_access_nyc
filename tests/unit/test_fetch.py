@@ -6,6 +6,7 @@ cache entry, so every fetcher is substituted. One network test is marked `upstre
 
 from __future__ import annotations
 
+import datetime
 import json
 from dataclasses import replace
 
@@ -937,3 +938,140 @@ class TestTheBoardSchedulePdfFetcher:
         payload = json.loads(fetch_module._fetch_board_meetings(lambda _m: None))
         answered = [c for c, e in payload["feeds"].items() if e["body"]]
         assert len(answered) == 44
+
+
+class TestWhichBoardPdfIsFetched:
+    """`BOARD_PDF_LIMIT` truncates, so the order these links come back in decides which
+    months a board contributes. Document order is not usable."""
+
+    BASE = "https://www.nyc.gov/site/bronxcb11/meetings/calendar.page"
+    TODAY = datetime.date(2026, 11, 1)
+
+    def _links(self, *anchors: tuple[str, str], today=None):
+        body = "".join(f'<a href="{href}">{text}</a>' for href, text in anchors)
+        return fetch_module._board_pdf_links(
+            f"<html><body>{body}</body></html>".encode(),
+            self.BASE,
+            today=today or self.TODAY,
+        )
+
+    def test_the_nearest_upcoming_month_comes_first(self):
+        """Measured on Bronx CB11, whose page lists `meeting_preferences.pdf`, then
+        `2023-09.pdf`, then `2027-06.pdf`, then `2027-05.pdf`. Taking the first four in
+        document order got one file that is not a calendar, one three-year-old month and
+        two in mid-2027 — and missed the November its readers needed."""
+        found = self._links(
+            ("/a/calendar/meeting_preferences.pdf", "Meeting preferences"),
+            ("/a/calendar/2023-09.pdf", "September 2023"),
+            ("/a/calendar/2027-06.pdf", "June 2027"),
+            ("/a/calendar/2027-05.pdf", "May 2027"),
+            ("/a/calendar/2026-11.pdf", "November 2026"),
+            ("/a/calendar/2026-12.pdf", "December 2026"),
+        )
+        assert [href.rsplit("/", 1)[-1] for href in found[:4]] == [
+            "2026-11.pdf",
+            "2026-12.pdf",
+            "2027-05.pdf",
+            "2027-06.pdf",
+        ]
+
+    def test_the_current_month_still_counts_as_upcoming(self):
+        """A board publishing only the current month must not be treated as past: there
+        are usually meetings left in it."""
+        found = self._links(("/a/2026-11.pdf", "November"), ("/a/2026-10.pdf", "October"))
+        assert found[0].endswith("2026-11.pdf")
+
+    def test_a_link_naming_no_month_is_tried_before_a_past_one(self):
+        """A filename is not a convention — Bronx CB1 writes `-2026-CB1-Calendars-4.pdf`,
+        which says nothing about which month it holds — so an unnamed link may well be
+        the current calendar, and a 2018 one certainly is not."""
+        found = self._links(
+            ("/a/2018_general_meeting_schedule.pdf", "2018 schedule"),
+            ("/a/-2026-CB1-Calendars-4.pdf", "Calendar"),
+        )
+        assert found[0].endswith("-2026-CB1-Calendars-4.pdf")
+
+    def test_unnamed_links_keep_the_order_the_page_put_them_in(self):
+        found = self._links(("/a/first.pdf", "one"), ("/a/second.pdf", "two"))
+        assert [h.rsplit("/", 1)[-1] for h in found] == ["first.pdf", "second.pdf"]
+
+    def test_past_months_come_back_most_recent_first(self):
+        found = self._links(("/a/2026-05.pdf", "May"), ("/a/2026-09.pdf", "September"))
+        assert [h.rsplit("/", 1)[-1] for h in found] == ["2026-09.pdf", "2026-05.pdf"]
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("calendar/2026-11.pdf", (2026, 11)),
+            ("calendar/2026_11.pdf", (2026, 11)),
+            ("2026.10.01.pdf", (2026, 10)),
+            ("October-2026-Calendar.pdf", (2026, 10)),
+            ("november_2026.pdf", (2026, 11)),
+            ("November2026Calendar.pdf", (2026, 11)),
+            ("2026-September-Calendar.pdf", (2026, 9)),
+            ("2026_April_Calendar.pdf", (2026, 4)),
+            ("calendar-202610.pdf", None),
+            ("meeting_preferences.pdf", None),
+            ("-2026-CB1-Calendars-4.pdf", None),
+            ("2026-13.pdf", None),
+        ],
+    )
+    def test_the_month_a_filename_names(self, text, expected):
+        assert fetch_module._pdf_month(text) == expected
+
+    def test_the_month_may_come_from_the_link_text_rather_than_the_href(self):
+        found = self._links(("/a/20260127134946.pdf", "November 2026 calendar"))
+        assert found == ["https://www.nyc.gov/a/20260127134946.pdf"]
+
+    def test_a_space_in_a_filename_is_encoded(self):
+        """Bronx CB3 links `calendar/Committee Schedules.pdf`, with a literal space.
+        `urllib` raises `InvalidURL` on that rather than encoding it, and the raise was
+        neither a `FetchError` nor caught per link, so one board's filename took the whole
+        board-calendar fetch down with it."""
+        [href] = self._links(("/assets/bronxcb3/pdf/calendar/Committee Schedules.pdf", "x"))
+        assert href.endswith("Committee%20Schedules.pdf")
+        assert " " not in href
+
+    def test_an_already_encoded_path_is_not_doubly_encoded(self):
+        [href] = self._links(("/a/2026_February_Calendar%24.pdf", "February"))
+        assert href.endswith("2026_February_Calendar%24.pdf")
+
+    def test_a_query_string_survives_encoding(self):
+        [href] = self._links(("/a/oct.pdf?v=2", "October"))
+        assert href.endswith("oct.pdf?v=2")
+
+    def test_an_href_that_is_not_a_requestable_url_is_skipped_not_fatal(self, monkeypatch):
+        """`http.client.InvalidURL` derives from `ValueError`, not `FetchError`. A board can
+        link an href that cannot be requested, and that must not end the fetch."""
+        said = []
+
+        def fake_get(url, **_kwargs):
+            if url.lower().endswith(".pdf"):
+                raise ValueError("URL can't contain control characters")
+            return b'<html><a href="/a/oct.pdf">October</a></html>'
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        with pytest.raises(FetchError, match="yielded text"):
+            fetch_module._board_pdf_body(self.BASE, log=said.append, code="203")
+        assert any("failed" in line for line in said)
+
+    def test_a_link_naming_only_a_year_that_has_ended_sorts_last(self):
+        """Queens CB12 keeps a `2018_general_meeting_schedule.pdf` beside its current
+        calendar. A year that is over is enough to know the file is an archive."""
+        found = self._links(
+            ("/a/2018_general_meeting_schedule.pdf", "General meeting schedule"),
+            ("/a/committee_meeting_schedule.pdf", "Committee meeting schedule"),
+        )
+        assert [h.rsplit("/", 1)[-1] for h in found] == [
+            "committee_meeting_schedule.pdf",
+            "2018_general_meeting_schedule.pdf",
+        ]
+
+    def test_a_link_naming_only_the_current_year_is_still_tried_early(self):
+        """`-2026-CB1-Calendars-4.pdf` names this year and no month, and is in fact Bronx
+        CB1's current calendar."""
+        found = self._links(
+            ("/a/2026-09.pdf", "September 2026"),
+            ("/a/-2026-CB1-Calendars-4.pdf", "Calendar"),
+        )
+        assert found[0].endswith("-2026-CB1-Calendars-4.pdf")

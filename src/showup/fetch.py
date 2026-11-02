@@ -9,6 +9,7 @@ invariants, not status codes". Crawl rates come from each host's own robots.txt
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -341,34 +342,125 @@ BOARD_SOURCES_PATH = (
 TRIBE_PAGE = 50
 
 
-#: How many of a board's linked PDFs to read. These pages link an archive — Bronx CB11
-#: lists every month through June 2027 — and the parsers drop anything already past, so
-#: this only has to be large enough to cover what is still ahead. Four months is well past
-#: the furthest any board schedules, and bounds a fetch that is otherwise unbounded.
-BOARD_PDF_LIMIT = 4
+#: How many of a board's linked PDFs to read, after `_board_pdf_links` has put the nearest
+#: upcoming month first. These pages link an archive — Bronx CB11 lists every month through
+#: June 2027 — so this bounds an otherwise unbounded fetch. Six covers the two months a
+#: reader can act on plus the boards that interleave a file which is not a calendar.
+BOARD_PDF_LIMIT = 6
 
 #: A PDF big enough to be a calendar. Below this the link resolved to an error page that
 #: happens to be served as `application/pdf`, which nyc.gov does.
 BOARD_PDF_FLOOR = 2_000
 
 
-def _board_pdf_links(page: bytes, base: str) -> list[str]:
-    """Every PDF this board's page links, most recently named first.
+#: A month named in a link or its text. `2026-11`, `2026_11` and `2026.11.01` are how
+#: three of these boards name a file; `November-2026`, `november_2026` and `November2026`
+#: are how four others do. Both orders are needed, and the month name may be abbreviated.
+_PDF_MONTH_NUMBER = re.compile(r"(?<!\d)(20\d\d)[-_.](0[1-9]|1[0-2])(?!\d)")
+_PDF_MONTH_NAME = re.compile(
+    r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-_.\s]*(20\d\d)",
+    re.I,
+)
+_PDF_NAME_MONTH = re.compile(
+    r"(20\d\d)[-_.\s]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*",
+    re.I,
+)
+_PDF_MONTH_ABBR = {
+    name: number
+    for number, name in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
 
-    Ordered by the text of the link rather than the href, because the filenames are not a
-    convention: Bronx CB11 writes `calendar/2026-11.pdf` and Bronx CB1 writes
-    `-2026-CB1-Calendars-4.pdf`, which says nothing about which month it holds. So the
-    order here is only a preference, and `BOARD_PDF_LIMIT` plus the parsers' own cutoff
-    decide what is actually used.
+
+def _encoded_path(url: str) -> str:
+    """The same URL with its path percent-encoded.
+
+    Bronx CB3 links `calendar/Committee Schedules.pdf`, with a literal space. `urllib`
+    raises `InvalidURL` on that rather than encoding it, and because the raise was neither
+    a `FetchError` nor caught per link, one board's filename took the whole board-calendar
+    fetch down with it. Measured 2026-11-01.
+    """
+    parts = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit(parts._replace(path=urllib.parse.quote(parts.path, safe="/%:@")))
+
+
+#: A year with no month beside it. Queens CB12 keeps a `2018_general_meeting_schedule.pdf`
+#: in the same list as its current calendar; a year that has already ended is enough to
+#: know the file is an archive, without pretending to know which month it covers.
+#: Bounded with digit lookarounds rather than `\b`: `_` is a word character, so `\b`
+#: after the year never matched `2018_general_meeting_schedule.pdf` — the exact filename
+#: this is for.
+_PDF_BARE_YEAR = re.compile(r"(?<!\d)(20\d\d)(?!\d)")
+
+
+def _pdf_month(text: str) -> tuple[int, int] | None:
+    """The month a PDF link names, from its href or its link text."""
+    numbered = _PDF_MONTH_NUMBER.search(text)
+    if numbered:
+        return int(numbered.group(1)), int(numbered.group(2))
+    named = _PDF_MONTH_NAME.search(text)
+    if named:
+        return int(named.group(2)), _PDF_MONTH_ABBR[named.group(1).lower()]
+    reversed_ = _PDF_NAME_MONTH.search(text)
+    if reversed_:
+        return int(reversed_.group(1)), _PDF_MONTH_ABBR[reversed_.group(2).lower()]
+    return None
+
+
+def _pdf_spent_year(text: str, today: date) -> bool:
+    """Whether a link names a year that is already over.
+
+    Only meaningful for a link `_pdf_month` found no month in, which is the only place
+    this is called from — so it does not re-check that.
+    """
+    found = _PDF_BARE_YEAR.search(text)
+    return bool(found) and int(found.group(1)) < today.year
+
+
+def _board_pdf_links(page: bytes, base: str, *, today: date | None = None) -> list[str]:
+    """Every PDF this board's page links, nearest upcoming month first.
+
+    The order matters because `BOARD_PDF_LIMIT` truncates. Document order is not usable:
+    Bronx CB11's calendar page lists `meeting_preferences.pdf`, then `2023-09.pdf`, then
+    `2027-06.pdf`, then `2027-05.pdf`, so taking the first four got one file that is not a
+    calendar, one three-year-old month and two in mid-2027 — and missed the November its
+    readers needed. Measured 2026-11-01.
+
+    So links are ranked by the month they name, in the href or the link text:
+
+    1. this month and later, soonest first — what a reader is about to attend;
+    2. links naming no month, in document order, because a filename is not a convention
+       (Bronx CB1 writes `-2026-CB1-Calendars-4.pdf`, which says nothing about its month);
+    3. past months, most recent first, which is what a board with nothing current has,
+       together with links naming only a year that has already ended — Queens CB12 keeps
+       a `2018_general_meeting_schedule.pdf` beside its current calendar.
     """
     from .text import parse_html
 
-    found: list[str] = []
-    for anchor in parse_html(page.decode("utf-8", errors="replace")).find_all("a", href=True):
+    today = today or date.today()
+    current = (today.year, today.month)
+
+    found: dict[str, tuple[int, int]] = {}
+    for position, anchor in enumerate(
+        parse_html(page.decode("utf-8", errors="replace")).find_all("a", href=True)
+    ):
         href = safe_url(str(anchor["href"]), base=base)
-        if href and href.lower().split("?")[0].endswith(".pdf") and href not in found:
-            found.append(href)
-    return found
+        if not href or not href.lower().split("?")[0].endswith(".pdf") or href in found:
+            continue
+        href = _encoded_path(href)
+        describes = f"{href} {anchor.get_text(' ', strip=True)}"
+        named = _pdf_month(describes)
+        if named is None:
+            # A year that has ended, with no month, is an archive file. Anything else
+            # unnamed may well be the current calendar and is tried before the archive.
+            found[href] = (2, 0) if _pdf_spent_year(describes, today) else (1, position)
+        elif named >= current:
+            found[href] = (0, named[0] * 12 + named[1])
+        else:
+            found[href] = (2, -(named[0] * 12 + named[1]))
+    return sorted(found, key=lambda href: found[href])
 
 
 def _board_pdf_body(landing: str, *, log: Callable[[str], None], code: str) -> str:
@@ -389,7 +481,9 @@ def _board_pdf_body(landing: str, *, log: Callable[[str], None], code: str) -> s
     for href in links[:BOARD_PDF_LIMIT]:
         try:
             data = _get(href, tries=2, timeout=120)
-        except FetchError as error:
+        except (FetchError, ValueError) as error:
+            # `ValueError` is `http.client.InvalidURL`'s base: a board can link an href
+            # that is not a requestable URL, and that is its problem, not the fetch's.
             log(f"    board {code} pdf {href} failed: {error}")
             continue
         if len(data) < BOARD_PDF_FLOOR:

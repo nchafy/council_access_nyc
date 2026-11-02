@@ -231,9 +231,20 @@ _PIECE_NOISE = re.compile(
     re.I,
 )
 
-#: Labels and hyperlink text that are part of the document's furniture, not the entry.
-#: Stripped from a title rather than disqualifying the cell, because the cell is a meeting.
-_TITLE_FURNITURE = re.compile(r"\(click here\)|^note:\s*time\b|^note:\s*", re.I)
+#: Labels, hyperlink text and standing notices that are part of the document's furniture
+#: rather than the entry. Stripped from a title instead of disqualifying the cell, because
+#: the cell is a meeting.
+#:
+#: The venue notice is a sentence, and a committee name is not. Bronx CB11 prints "All
+#: committee meetings are currently held at the BxCB11 Office at 1741 Colden Avenue and
+#: remotely via Webex" inside its first cell of the month, which arrived as part of the
+#: Transportation Committee's name. Cut at the phrase rather than listed per board: no
+#: board names a committee this way, and the notice names no date of its own.
+_TITLE_FURNITURE = re.compile(
+    r"\(click here\)|^note:\s*time\b|^note:\s*|"
+    r"\ball (?:committee )?meetings? (?:are|will be|is)\b.*$",
+    re.I | re.S,
+)
 
 
 def _right_edge(columns: list[int]) -> int:

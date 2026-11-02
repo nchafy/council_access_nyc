@@ -36,11 +36,13 @@ __all__ = [
     "BOARD_MEETING_FLOOR",
     "BoardMeeting",
     "BoardMeetingsError",
+    "SourceFreshness",
     "load_board_meetings",
     "parse_feed",
     "parse_ics",
     "parse_mcb7",
     "parse_tribe",
+    "source_freshness",
 ]
 
 #: Below this the ingest is broken rather than thin. Measured 2026-10-31: 1,424 upcoming
@@ -288,22 +290,97 @@ def parse_feed(
     return handler.read(str(code), body, on_or_after)
 
 
-def load_board_meetings(path: Path, *, on_or_after: date) -> dict[str, list[BoardMeeting]]:
-    """Every board's upcoming meetings, from the cached payloads, newest first by day.
+#: How far back to look when asking what a source last said. Far enough to cover a board
+#: that has not posted in years, which is the case worth seeing.
+_STALENESS_HORIZON = date(2015, 1, 1)
 
-    A board whose feed failed is simply absent, which the page renders as "we hold none"
-    rather than as "there are none".
+
+@dataclass(frozen=True, slots=True)
+class SourceFreshness:
+    """How current one board's source is, as two separate facts.
+
+    They answer different questions and a dashboard needs both. `fetched_at` says when we
+    last looked; `latest_entry` says when the *board* last said anything. A source we
+    fetched this morning whose newest meeting is eight months old is stale, and only the
+    second field shows it — while a board with nothing upcoming but a meeting last week is
+    simply between meetings.
     """
+
+    #: Whether the last load produced a body at all. False distinguishes "we could not
+    #: read this board" from "the board published nothing", which are different facts and
+    #: the one this project is most careful not to conflate.
+    loaded: bool
+    #: When this board's source was last loaded, from the cache.
+    fetched_at: str | None
+    #: The most recent date the source asserts, past or future. None if it asserts none.
+    latest_entry: date | None
+    #: How far behind today the source's newest entry is, in days, floored at zero. None
+    #: when the source asserts no date at all.
+    #:
+    #: Floored because a board publishing ahead is not negatively stale, it is simply
+    #: current: Manhattan CB7 posts a continuous schedule into 2029 — 193 entries in 2028
+    #: alone, which was checked rather than assumed — and "stale -1011 days" says nothing
+    #: a reader wants. Zero means up to date; anything above it is how far behind.
+    stale_days: int | None
+
+
+def source_freshness(path: Path, *, today: date) -> dict[str, SourceFreshness]:
+    """How current every board's source is.
+
+    The newest date each source asserts is obtained by reading it with an early cutoff —
+    **the same `read` call every kind already provides**, so a feed, a PDF, an OCR'd scan
+    and a rendered page are all measured the same way and no kind carries staleness code of
+    its own. That is the whole reason the kinds bind a loader to a reader rather than being
+    two dispatch chains.
+    """
+    cached = _cached_feeds(path)
+    out: dict[str, SourceFreshness] = {}
+    for code, entry in cached.items():
+        latest = None
+        if entry.get("body"):
+            try:
+                found = parse_feed(
+                    str(entry.get("kind")),
+                    str(entry["body"]),
+                    on_or_after=_STALENESS_HORIZON,
+                    code=str(code),
+                )
+            except BoardMeetingsError:
+                found = []
+            latest = max((meeting.day for meeting in found), default=None)
+        out[str(code)] = SourceFreshness(
+            loaded=bool(entry.get("body")),
+            fetched_at=entry.get("fetched_at"),
+            latest_entry=latest,
+            stale_days=max(0, (today - latest).days) if latest else None,
+        )
+    return out
+
+
+def _cached_feeds(path: Path) -> dict[str, dict]:
+    """The cache's per-board entries, or a refusal if the file is not one."""
     try:
         cached = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise BoardMeetingsError(f"{path}: {error}") from error
     if not isinstance(cached, dict):
         raise BoardMeetingsError(f"{path}: expected an object, got {type(cached).__name__}")
+    return {
+        str(code): entry
+        for code, entry in (cached.get("feeds") or {}).items()
+        if isinstance(entry, dict)
+    }
 
+
+def load_board_meetings(path: Path, *, on_or_after: date) -> dict[str, list[BoardMeeting]]:
+    """Every board's upcoming meetings, from the cached payloads, newest first by day.
+
+    A board whose feed failed is simply absent, which the page renders as "we hold none"
+    rather than as "there are none".
+    """
     by_board: dict[str, list[BoardMeeting]] = {}
-    for code, entry in (cached.get("feeds") or {}).items():
-        if not isinstance(entry, dict) or not entry.get("body"):
+    for code, entry in _cached_feeds(path).items():
+        if not entry.get("body"):
             continue
         try:
             found = parse_feed(

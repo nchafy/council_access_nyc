@@ -373,3 +373,196 @@ class TestThePublishedShape:
     def test_several_archives_count_once_towards_coverage(self):
         payload = self._payload({"405": {"label": "Queens CB5", "url": ["https://a", "https://b"]}})
         assert payload["coverage"]["with_a_readable_source"] == 1
+
+
+class TestSourceFreshness:
+    """Two signals per board, because they answer different questions.
+
+    `fetched_at` says when we last looked. `latest_entry` says when the *board* last said
+    anything. A source fetched this morning whose newest meeting is eight months old is
+    stale, and only the second shows it; a board with nothing upcoming but a meeting last
+    week is simply between meetings.
+    """
+
+    def _cache(self, tmp_path, feeds: dict):
+        path = tmp_path / "bm.json"
+        path.write_text(json.dumps({"feeds": feeds}), encoding="utf-8")
+        return path
+
+    def _ics(self, *stamps: str) -> str:
+        events = "".join(
+            f"BEGIN:VEVENT\r\nDTSTART:{s}T183000\r\nSUMMARY:Meeting\r\nEND:VEVENT\r\n"
+            for s in stamps
+        )
+        return f"BEGIN:VCALENDAR\r\n{events}END:VCALENDAR\r\n"
+
+    def test_it_reports_the_newest_date_a_source_states(self, tmp_path):
+        """Past dates count. The question is whether the board is still publishing, not
+        whether it has something coming up."""
+        from showup.sources.board_meetings import source_freshness
+
+        path = self._cache(
+            tmp_path,
+            {"301": {"kind": "gcal-ics", "body": self._ics("20260115", "20260520")}},
+        )
+        found = source_freshness(path, today=date(2026, 11, 2))
+        assert found["301"].latest_entry == date(2026, 5, 20)
+        assert found["301"].stale_days == 166
+
+    def test_a_source_publishing_ahead_is_current_not_negatively_stale(self, tmp_path):
+        """Manhattan CB7 posts a continuous schedule into 2029 — 193 entries in 2028
+        alone, which was checked rather than assumed. "Stale -1011 days" says nothing a
+        reader wants, so it floors at zero."""
+        from showup.sources.board_meetings import source_freshness
+
+        path = self._cache(tmp_path, {"107": {"kind": "gcal-ics", "body": self._ics("20290809")}})
+        found = source_freshness(path, today=date(2026, 11, 2))
+        assert found["107"].latest_entry == date(2029, 8, 9)
+        assert found["107"].stale_days == 0
+
+    def test_a_source_that_states_no_date_has_no_staleness(self, tmp_path):
+        """Brooklyn CB11's feed answers and holds nothing. That is a different fact from
+        being behind, and a number would imply one."""
+        from showup.sources.board_meetings import source_freshness
+
+        path = self._cache(tmp_path, {"311": {"kind": "tribe", "body": '{"events": []}'}})
+        found = source_freshness(path, today=date(2026, 11, 2))
+        assert found["311"].loaded is True
+        assert found["311"].latest_entry is None
+        assert found["311"].stale_days is None
+
+    def test_a_failed_load_is_not_an_empty_source(self, tmp_path):
+        """The distinction this project is most careful not to conflate: "we could not read
+        this board" against "the board published nothing"."""
+        from showup.sources.board_meetings import source_freshness
+
+        path = self._cache(tmp_path, {"105": {"kind": "nyc-html", "body": None, "error": "403"}})
+        found = source_freshness(path, today=date(2026, 11, 2))
+        assert found["105"].loaded is False
+        assert found["105"].latest_entry is None
+
+    def test_it_carries_the_time_that_board_was_last_loaded(self, tmp_path):
+        """Stamped per board rather than once per run, so a board whose load fails keeps
+        the time of its last success."""
+        from showup.sources.board_meetings import source_freshness
+
+        path = self._cache(
+            tmp_path,
+            {
+                "301": {
+                    "kind": "gcal-ics",
+                    "body": self._ics("20261112"),
+                    "fetched_at": "2026-11-02T09:00:00",
+                }
+            },
+        )
+        assert source_freshness(path, today=date(2026, 11, 2))["301"].fetched_at == (
+            "2026-11-02T09:00:00"
+        )
+
+    def test_every_kind_is_measured_the_same_way(self, tmp_path, cached):
+        """The newest date is obtained by calling each kind's own `read` with an early
+        cutoff — the same call for a feed, a PDF, an OCR'd scan and a rendered page — so no
+        kind carries staleness code of its own. That is what the registry is for."""
+        from showup.sources.board_meetings import source_freshness
+
+        path = self._cache(tmp_path, cached["feeds"])
+        found = source_freshness(path, today=date(2026, 11, 2))
+        assert len(found) == len(cached["feeds"])
+        measured = [c for c, f in found.items() if f.latest_entry]
+        assert measured, "the fixture's real feeds should all state a date"
+
+    def test_a_cache_that_is_not_an_object_is_refused(self, tmp_path):
+        from showup.sources.board_meetings import BoardMeetingsError, source_freshness
+
+        path = tmp_path / "bm.json"
+        path.write_text("[]", encoding="utf-8")
+        with pytest.raises(BoardMeetingsError, match="expected an object"):
+            source_freshness(path, today=DAY)
+
+    def test_a_source_that_will_not_parse_is_measured_as_stating_nothing(self, tmp_path):
+        """A format change must not take the staleness report down with it."""
+        from showup.sources.board_meetings import source_freshness
+
+        path = self._cache(tmp_path, {"101": {"kind": "tribe", "body": "{not json"}})
+        assert source_freshness(path, today=DAY)["101"].latest_entry is None
+
+
+class TestTheSourceHealthTable:
+    """Aggregate plus exceptions, not fifty-nine rows: a page listing every board as "fine"
+    buries the four that are not, and this page has a weight budget."""
+
+    def _health(self, boards: dict, freshness: dict | None = None):
+        from showup.render import board_source_health
+
+        return board_source_health({"boards": boards}, freshness or {})
+
+    def _fresh(self, **kwargs):
+        from showup.sources.board_meetings import SourceFreshness
+
+        return SourceFreshness(
+            **{"loaded": True, "fetched_at": None, "latest_entry": None, "stale_days": None}
+            | kwargs
+        )
+
+    def test_a_current_board_is_not_listed(self):
+        """Only what a maintainer would act on."""
+        health = self._health(
+            {"101": {"label": "MCB1", "kind": "tribe", "fetched": True}},
+            {"101": self._fresh(latest_entry=date(2026, 12, 1), stale_days=0)},
+        )
+        assert health is None, "an empty table is not rendered at all"
+
+    def test_a_board_behind_the_window_is_listed_with_how_far(self):
+        health = self._health(
+            {"312": {"label": "BKCB12", "kind": "nyc-pdf", "fetched": True}},
+            {"312": self._fresh(latest_entry=date(2025, 5, 27), stale_days=524)},
+        )
+        assert health["rows"] == [["BKCB12", "nyc-pdf", "27 May 2025", "524 days behind"]]
+
+    def test_a_board_just_inside_the_window_is_not_listed(self):
+        from showup.render import SOURCE_BEHIND_DAYS
+
+        health = self._health(
+            {"203": {"label": "BXCB3", "kind": "nyc-pdf", "fetched": True}},
+            {"203": self._fresh(latest_entry=date(2026, 9, 1), stale_days=SOURCE_BEHIND_DAYS)},
+        )
+        assert health is None
+
+    @pytest.mark.parametrize(
+        ("board", "freshness", "expected"),
+        [
+            # Four causes that look identical in a naive table and are not.
+            ({"fetched": False, "status": "blocked"}, None, ("Not readable", "blocked")),
+            ({"fetched": True}, "absent", ("Not yet fetched", "wired since the last fetch")),
+            ({"fetched": True}, {"loaded": False}, ("Could not be read", "last load failed")),
+            ({"fetched": True}, {"loaded": True}, ("Nothing dated", "answers, but states no date")),
+        ],
+    )
+    def test_each_cause_of_silence_reads_differently(self, board, freshness, expected):
+        """ "We could not read this board" and "the board published nothing" are different
+        facts, and saying the second when the first is true blames the board for our gap."""
+        fresh = {} if freshness == "absent" else {"999": self._fresh(**(freshness or {}))}
+        health = self._health({"999": {"label": "Board", "kind": "x", **board}}, fresh)
+        assert tuple(health["rows"][0][2:]) == expected
+
+    def test_an_unreadable_board_shows_no_kind(self):
+        health = self._health({"105": {"label": "MCB5", "fetched": False, "status": "blocked"}})
+        assert health["rows"][0][1] == "—"
+
+    def test_the_table_uses_the_shared_spec_shape(self):
+        """The same spec the map panel renders, so there is one notion of a table here."""
+        health = self._health(
+            {"105": {"label": "MCB5", "fetched": False, "status": "blocked"}},
+        )
+        assert set(health) == {"legend", "columns", "rows", "caption", "href"}
+        assert len(health["columns"]) == len(health["rows"][0])
+
+    def test_boards_are_listed_in_code_order(self):
+        health = self._health(
+            {
+                "312": {"label": "BKCB12", "fetched": False, "status": "x"},
+                "105": {"label": "MCB5", "fetched": False, "status": "y"},
+            }
+        )
+        assert [row[0] for row in health["rows"]] == ["MCB5", "BKCB12"]

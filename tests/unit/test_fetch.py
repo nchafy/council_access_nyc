@@ -728,7 +728,7 @@ class TestTheBoardCalendarFetcher:
     def test_every_fetched_board_has_a_kind_and_an_https_url(self):
         boards = self._registry()["boards"]
         fetched = {c: e for c, e in boards.items() if e.get("fetched")}
-        assert len(fetched) == 57
+        assert len(fetched) == 58
         for code, entry in fetched.items():
             assert entry["kind"] in {
                 "tribe",
@@ -770,14 +770,14 @@ class TestTheBoardCalendarFetcher:
         _stub_loaders(monkeypatch)
         body = fetch_module._fetch_board_meetings(lambda _m: None)
         payload = json.loads(body)
-        assert len(payload["feeds"]) == 57
+        assert len(payload["feeds"]) == 58
         # 33 feeds are one request each. The PDF boards are two — the archive page, then
         # the one PDF this stub links from it — except Queens CB5, which keeps two archive
         # pages and so is three: both pages, and the PDF once, because the same href
         # linked from two pages is fetched a single time. The two OCR boards fetch the
         # same way; only their extraction differs.
         # One more board is read by a browser, which asks for nothing over HTTP at all.
-        assert len(asked) == 33 + 22 * 2 + 3
+        assert len(asked) == 34 + 22 * 2 + 3
         assert all(entry["body"] is not None for entry in payload["feeds"].values())
 
     def test_a_tribe_url_asks_for_a_window(self, monkeypatch):
@@ -803,7 +803,7 @@ class TestTheBoardCalendarFetcher:
         failed = [c for c, e in payload["feeds"].items() if e["body"] is None]
         assert failed, "expected the stubbed failure to be recorded"
         assert all("error" in payload["feeds"][c] for c in failed)
-        assert len(payload["feeds"]) == 57
+        assert len(payload["feeds"]) == 58
 
     def test_the_invariant_counts_boards_that_answered(self):
         feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 120)}

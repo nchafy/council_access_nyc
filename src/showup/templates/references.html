@@ -65,6 +65,19 @@
 </section>
 
 <section class="references">
+  <h2>Board sources</h2>
+  <p class="why">
+    The City publishes no community board meeting calendar, so each of the 59 boards is
+    read from whatever it publishes itself — a calendar feed, a page, a PDF, a scan, or a
+    page that only exists once a browser has run it. A source can answer and still be
+    months behind, which is why both are reported.
+  </p>
+{% if board_health %}
+{{ m.group(board_health) }}
+{% else %}
+  <p>Every board source currently states a recent date.</p>
+{% endif %}
+
   <h2>Caveats</h2>
   <ul>
     <li>Community board meeting cadence is quoted exactly as ruf7-3wgc records it. That is

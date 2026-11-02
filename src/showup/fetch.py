@@ -363,7 +363,15 @@ def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
         kind = str(entry.get("kind") or "")
         urls = urls_of(entry.get("url"))
         handler = kind_for(kind)
-        recorded: dict = {"kind": kind, "url": urls[0] if urls else None}
+        # Stamped per board, not once per run: a board whose load fails keeps the time of
+        # its last success, which is the only way to tell "we have not looked lately" from
+        # "we looked and it was empty". Recorded here, in the one loop that visits every
+        # kind, so no kind has to know about staleness.
+        recorded: dict = {
+            "kind": kind,
+            "url": urls[0] if urls else None,
+            "fetched_at": datetime.now().isoformat(timespec="seconds"),
+        }
         if len(urls) > 1:
             recorded["other_urls"] = list(urls[1:])
 

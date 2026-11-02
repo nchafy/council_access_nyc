@@ -34,6 +34,7 @@ from .model import (
 )
 from .render import (
     board_schedule_payload,
+    board_source_health,
     preview_payload,
     render_board,
     render_district,
@@ -43,7 +44,7 @@ from .render import (
     render_not_found,
     render_references,
 )
-from .sources.board_meetings import BoardMeetingsError, load_board_meetings
+from .sources.board_meetings import BoardMeetingsError, load_board_meetings, source_freshness
 from .sources.boards import JOINT_INTEREST_AREAS, load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
@@ -287,6 +288,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     # sites and several were already dead when the registry was made.
     try:
         board_calendars = load_board_meetings(cache_path(raw, "board-meetings"), on_or_after=day)
+        board_freshness = source_freshness(cache_path(raw, "board-meetings"), today=day)
     except BoardMeetingsError as error:
         raise BuildError(str(error)) from error
 
@@ -473,7 +475,13 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     )
     (data_dir / "board-meetings.json").write_text(
         json.dumps(
-            board_schedule_payload(board_calendars, schedule_sources, built_at=now, today=day),
+            board_schedule_payload(
+                board_calendars,
+                schedule_sources,
+                built_at=now,
+                today=day,
+                freshness=board_freshness,
+            ),
             separators=(",", ":"),
         ),
         encoding="utf-8",
@@ -533,7 +541,10 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     references_root.mkdir()
     (references_root / "index.html").write_text(
         render_references(
-            _reference_rows(raw, manifest_sources), built_at=now, window_end=window_end
+            _reference_rows(raw, manifest_sources),
+            built_at=now,
+            window_end=window_end,
+            board_health=board_source_health(schedule_sources, board_freshness),
         ),
         encoding="utf-8",
     )

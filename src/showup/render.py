@@ -580,6 +580,7 @@ def board_schedule_payload(
     *,
     built_at: datetime,
     today: date,
+    freshness: dict | None = None,
 ) -> dict:
     """The published board-schedule artifact, for a backend to fetch rather than re-scrape.
 
@@ -590,7 +591,14 @@ def board_schedule_payload(
 
     Every entry carries the URL it came from. Nothing is inferred: where a board states a
     recurrence in prose instead of listing dates, there are no dates here.
+
+    `freshness` carries, per board, when its source was last loaded and how far behind
+    today the newest date that source asserts is. Both are needed and they answer different
+    questions: a source fetched this morning whose newest meeting is eight months old is
+    stale, and only the second number shows it, while a board with nothing upcoming but a
+    meeting last week is simply between meetings.
     """
+    freshness = freshness or {}
     boards = {}
     for code, entry in sorted((sources.get("boards") or {}).items()):
         meetings = calendars.get(code) or []
@@ -608,6 +616,13 @@ def board_schedule_payload(
             "other_source_urls": declared[1:] or None,
             "site": entry.get("site"),
             "note": entry.get("note"),
+            "fetched_at": getattr(freshness.get(code), "fetched_at", None),
+            "source_latest_entry": (
+                latest.isoformat()
+                if (latest := getattr(freshness.get(code), "latest_entry", None))
+                else None
+            ),
+            "source_stale_days": getattr(freshness.get(code), "stale_days", None),
             "upcoming": [
                 {
                     "date": meeting.day.isoformat(),
@@ -631,6 +646,17 @@ def board_schedule_payload(
             "with_upcoming_meetings": len(readable),
             "upcoming_meetings": sum(len(b["upcoming"]) for b in boards.values()),
             "recurring_entries_expanded": False,
+            # A source can be readable and months behind. Counting that is the difference
+            # between "we cover 58 boards" and "58 boards are telling us something."
+            "sources_current": sum(1 for b in boards.values() if b["source_stale_days"] == 0),
+            "sources_behind_90_days": sum(
+                1
+                for b in boards.values()
+                if (behind := b["source_stale_days"]) is not None and behind > 90
+            ),
+            "sources_asserting_no_date": sum(
+                1 for b in boards.values() if b["source_url"] and b["source_latest_entry"] is None
+            ),
         },
         "boards": boards,
     }
@@ -695,7 +721,62 @@ def _window(hours: float) -> str:
     return f"{hours:g} hours" if hours < 48 else f"{hours / 24:g} days"
 
 
-def render_references(sources: list[dict], *, built_at: datetime, window_end: date | None) -> str:
+#: Beyond this, a board's source is reported as behind rather than merely quiet. Three
+#: months: long enough that a board publishing one month at a time, or taking the summer
+#: recess, is not accused of neglect, and short enough that a site abandoned mid-2025 is.
+SOURCE_BEHIND_DAYS = 90
+
+
+def board_source_health(sources: dict, freshness: dict) -> dict | None:
+    """The boards whose source needs looking at, as a table spec.
+
+    Aggregate plus exceptions, not all fifty-nine rows: a page listing every board as
+    "fine" buries the four that are not, and this page has a weight budget. The counts go
+    in the prose above the table; the table is only what a maintainer would act on.
+
+    Uses the same spec shape as the map panel's tables, so there is one notion of a table
+    in this project rather than a second one grown here.
+    """
+    rows = []
+    for code, entry in sorted((sources.get("boards") or {}).items()):
+        found = freshness.get(code)
+        behind = getattr(found, "stale_days", None)
+        latest = getattr(found, "latest_entry", None)
+        if not entry.get("fetched"):
+            said, note = "Not readable", entry.get("status") or "unreadable"
+        elif found is None:
+            # Declared readable but absent from the cache: newly wired, and not fetched
+            # since. Saying "states no date" here would blame the board for our gap.
+            said, note = "Not yet fetched", "wired since the last fetch"
+        elif not found.loaded:
+            said, note = "Could not be read", "last load failed"
+        elif latest is None:
+            said, note = "Nothing dated", "answers, but states no date"
+        elif behind is not None and behind > SOURCE_BEHIND_DAYS:
+            said, note = latest.strftime("%-d %B %Y"), f"{behind} days behind"
+        else:
+            continue
+        rows.append([f"{entry.get('label', code)}", entry.get("kind") or "—", said, note])
+
+    return _table(
+        "Board sources needing attention",
+        ["Board", "How it is read", "Source last said", "Status"],
+        rows,
+        caption=(
+            "A source can answer and still be months behind. These are the boards where "
+            "the most recent date the board itself states is more than "
+            f"{SOURCE_BEHIND_DAYS} days old, or where it states none at all."
+        ),
+    )
+
+
+def render_references(
+    sources: list[dict],
+    *,
+    built_at: datetime,
+    window_end: date | None,
+    board_health: dict | None = None,
+) -> str:
     """The one page carrying every identifier, fetch date, window and caveat."""
     return templates.render(
         "references.html",
@@ -705,4 +786,5 @@ def render_references(sources: list[dict], *, built_at: datetime, window_end: da
         register_url=BUDGET_REGISTER_URL,
         built_at=built_at,
         window_end=window_end,
+        board_health=board_health,
     )

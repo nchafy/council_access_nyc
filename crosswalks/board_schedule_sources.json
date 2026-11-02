@@ -13,7 +13,7 @@
     "agenda-pdf": "a notice per meeting in a text PDF; fetched and parsed by a per-board reader",
     "agenda-pdf-stale": "same, but the newest notice the board published is already past",
     "nothing-dated": "a working site that publishes no dates, only a recurrence in prose",
-    "blocked": "the board’s site refuses any non-browser client",
+    "blocked": "the board’s site refuses every non-interactive client; not pursued further, because getting past it would mean defeating bot detection",
     "ocr": "published only as scanned images; read by OCR, which is an optional extra and fails only these boards when absent",
     "browser": "a schedule that exists only once a browser has run the page; read with a local Chrome, which is optional and fails only this board"
   },
@@ -58,7 +58,7 @@
       "kind": null,
       "url": null,
       "fetched": false,
-      "note": "Cloudflare serves a JS challenge. Measured 2026-11-02: headless Chrome is served \"Just a moment...\" and still has it 40 seconds later, so the challenge detects the automation rather than merely requiring JavaScript. Going further would mean defeating bot detection, which is not done here. No nyc.gov mirror exists. The way through is a feed from the district office."
+      "note": "Not pursued further — owner decision, 2026-11-02. Cloudflare challenges every non-interactive client, including the board’s own iCalendar subscribe URL (?post_type=tribe_events&ical=1), so their subscribe button is unreachable to calendar apps as well as to us. A real headed Chrome on a clean profile was also refused: 60 seconds of \"Just a moment...\" and no cf_clearance cookie, so the challenge is detecting the automation and not the headlessness. Their own robots.txt permits crawling everything but /wp-admin/ with crawl-delay 1, so the block contradicts their stated policy and is very likely a misconfigured security level. Getting past it would mean defeating bot detection, which this project does not do. The way in is a WAF skip rule for the iCal path, or a feed URL from the district office (office@cb5.org)."
     },
     "106": {
       "status": "feed",
@@ -250,13 +250,13 @@
       "fetched": true
     },
     "305": {
-      "status": "nothing-dated",
+      "status": "feed",
       "label": "Brooklyn Community Board 5",
       "site": "https://www.nyc.gov/site/brooklyncb5/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "brooklyncb5.org now redirects to an unrelated business, but nyc.gov hosts a working site. It publishes no dates — only recurring prose (\"every 4th Wednesday at 6:30pm\") and bundled minutes. A recurrence stated in prose is not expanded."
+      "kind": "gcal-ics",
+      "url": "https://calendar.google.com/calendar/ical/bkcb5cc%40gmail.com/public/basic.ics",
+      "fetched": true,
+      "note": "A public Google Calendar, embedded on the board’s nyc.gov meetings page — the calendar id is base64 in the embed’s `src`, which is how the other eight gcal-ics boards were found. 242 events, of which 68 are monthly recurring series (FREQ=MONTHLY;BYDAY=nDAY) carrying 76 EXDATEs and 86 RECURRENCE-ID overrides. Recurring entries are not expanded yet, so this currently yields almost nothing despite holding the whole committee calendar."
     },
     "306": {
       "status": "feed",

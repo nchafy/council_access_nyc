@@ -594,11 +594,18 @@ def board_schedule_payload(
     boards = {}
     for code, entry in sorted((sources.get("boards") or {}).items()):
         meetings = calendars.get(code) or []
+        # A board may keep its meetings in more than one archive — Queens CB5 lists board
+        # notices on one page and committee notices on another. `source_url` stays a
+        # string so this published shape does not change type between boards, which a
+        # consumer would have to special-case; the rest go in their own list.
+        declared = entry.get("url")
+        declared = [declared] if isinstance(declared, str) else list(declared or [])
         boards[code] = {
             "label": entry.get("label"),
             "status": entry.get("status"),
             "source_kind": entry.get("kind"),
-            "source_url": entry.get("url"),
+            "source_url": declared[0] if declared else None,
+            "other_source_urls": declared[1:] or None,
             "site": entry.get("site"),
             "note": entry.get("note"),
             "upcoming": [

@@ -22,6 +22,7 @@ import pytest
 from showup.sources.board_pdf import (
     PDF_BOARDS,
     PDF_READERS,
+    AgendaBoard,
     GridBoard,
     ListBoard,
     _cell_pieces,
@@ -46,9 +47,14 @@ ONE_CELL_GRID = "11   12   13   14   15   16   17\n          Executive\n        
 TODAY = date(2026, 10, 1)
 
 
+#: Read once at import so a test that is about one board's shape can reach it without
+#: taking the fixture as an argument.
+DOCUMENTS = json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
 @pytest.fixture(scope="module")
 def documents() -> dict:
-    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+    return DOCUMENTS
 
 
 def read(documents: dict, code: str, *, on_or_after: date = TODAY):
@@ -59,6 +65,7 @@ def read(documents: dict, code: str, *, on_or_after: date = TODAY):
 #: computed so that a board silently dropping to zero fails here.
 EXPECTED = {
     "201": 13,
+    "202": 0,  # the agenda captured was April 2026, before the cutoff
     "203": 0,  # stale: the newest PDF this board published is September 2026
     "204": 10,
     "205": 2,
@@ -67,6 +74,11 @@ EXPECTED = {
     "210": 8,
     "211": 22,
     "301": 6,
+    "309": 2,
+    "312": 0,  # this board's newest notice is December 2025
+    "316": 1,
+    "404": 1,
+    "405": 2,
     "408": 3,
     "409": 1,
     "412": 12,
@@ -575,31 +587,175 @@ class TestTheListBoards:
             assert PDF_READERS[code]("", "", on_or_after=TODAY, url=None) == []
 
 
-class TestQueensCb9:
-    """One agenda PDF per monthly meeting, on labelled lines. This board's page links
-    agendas rather than a schedule, so each document yields exactly one meeting."""
+class TestTheAgendaBoards:
+    """Seven boards publish a notice per meeting rather than a schedule, so each document
+    yields exactly one meeting and full coverage means fetching every notice listed."""
 
-    def test_it_reads_the_date_time_and_place(self, documents):
-        [meeting] = read(documents, "409")
+    CUTOFF = date(2025, 1, 1)
+
+    def agenda(self, documents, code):
+        return parse_pdf(code, json.dumps(documents[code]), on_or_after=self.CUTOFF)
+
+    def test_queens_cb9_reads_the_date_time_and_place(self, documents):
+        [meeting] = self.agenda(documents, "409")
         assert meeting.day == date(2026, 11, 10)
         assert meeting.start_time == "7:15 PM"
         assert "Queens Borough Hall" in (meeting.location or "")
 
-    def test_a_document_with_no_date_field_yields_nothing(self):
-        layout = "TIME:   7:15 PM\nPLACE:  Queens Borough Hall"
-        assert PDF_READERS["409"](layout, "", on_or_after=TODAY, url=None) == []
+    def test_bronx_cb2_takes_the_date_from_page_two_not_page_one(self, documents):
+        """Page 1 of this board's agenda is the PREVIOUS month's notice — `Date: March 25,
+        2026` — and the meeting it is an agenda for is on page 2. Taking the first labelled
+        date would publish a meeting a month early, every month."""
+        [meeting] = self.agenda(documents, "202")
+        assert meeting.day == date(2026, 4, 22)
+        assert meeting.start_time == "6:00 PM"
+        assert "977 Fox street" in (meeting.location or "")
 
-    def test_an_unparseable_date_field_yields_nothing(self):
-        assert PDF_READERS["409"]("DATE:   sometime soon", "", on_or_after=TODAY, url=None) == []
+    def test_bronx_cb2_names_the_board_meeting_not_the_hearing_before_it(self, documents):
+        """Page 2 carries a public hearing and then the full board that follows it, both on
+        the same day. Only the hearing states a clock time — the board's own says "Upon
+        Public Hearing completion" — so the hour comes from the first of the two and the
+        name from the last."""
+        [meeting] = self.agenda(documents, "202")
+        assert "HEARING" not in meeting.title.upper()
 
-    def test_a_past_agenda_is_dropped(self):
-        layout = "DATE:   Tuesday, November 10, 2020\nTIME:   7:15 PM"
-        assert PDF_READERS["409"](layout, "", on_or_after=TODAY, url=None) == []
+    def test_brooklyn_cb9_reads_both_its_general_and_executive_notices(self, documents):
+        found = {m.title: m.day for m in self.agenda(documents, "309")}
+        assert found == {
+            "Full board meeting": date(2026, 10, 20),
+            "Executive Committee Meeting": date(2026, 10, 13),
+        }
 
-    def test_only_the_first_value_of_a_repeated_label_is_taken(self):
-        layout = "DATE:   Tuesday, November 10, 2026\nDATE:   Wednesday, December 9, 2026"
-        [meeting] = PDF_READERS["409"](layout, "", on_or_after=TODAY, url=None)
-        assert meeting.day == date(2026, 11, 10)
+    def test_brooklyn_cb9_skips_the_memo_date_on_its_executive_notice(self, documents):
+        """That notice is dated the day it was written — `DATE: Friday, October 9, 2026` —
+        before giving the meeting's own date under "has been scheduled as follows"."""
+        executive = [m for m in self.agenda(documents, "309") if "Executive" in m.title]
+        assert [m.day for m in executive] == [date(2026, 10, 13)]
+        assert all(m.day != date(2026, 10, 9) for m in self.agenda(documents, "309"))
+
+    def test_brooklyn_cb12_reads_one_combined_uppercase_line(self, documents):
+        """This board labels nothing: `TUESDAY, MAY 27, 2025 at 7:00 P.M.` is the whole of
+        it."""
+        [meeting] = self.agenda(documents, "312")
+        assert (meeting.day, meeting.start_time) == (date(2025, 5, 27), "7:00 PM")
+
+    def test_brooklyn_cb16_reads_a_location_label(self, documents):
+        """Three different words mean a venue across these boards: PLACE, VENUE, LOCATION."""
+        [meeting] = self.agenda(documents, "316")
+        assert meeting.day == date(2026, 10, 27)
+        assert meeting.location == "Virtual & In-Person"
+
+    def test_queens_cb4_finds_its_notice_under_a_heading_in_a_newsletter(self, documents):
+        """The notice is on page 2 of an eleven-page newsletter whose other pages carry
+        dozens of unrelated dates, and it carries no label at all. The heading is the only
+        thing that locates it, and the hour is simply the next line down."""
+        [meeting] = self.agenda(documents, "404")
+        assert meeting.day == date(2026, 10, 13)
+        assert meeting.start_time == "7:00 PM"
+
+    def test_queens_cb5_reads_an_hour_printed_on_the_date_line(self, documents):
+        """`Date  : Wednesday, October 14, 2026 (7:30pm)` — note the space before the
+        colon, and the hour in brackets rather than on a TIME line."""
+        board = [m for m in self.agenda(documents, "405") if m.day == date(2026, 10, 14)]
+        assert [m.start_time for m in board] == ["7:30 PM"]
+
+    def test_queens_cb5_committee_notices_share_the_board_shape(self, documents):
+        later = [m for m in self.agenda(documents, "405") if m.day == date(2026, 11, 4)]
+        assert [m.start_time for m in later] == ["7:30 PM"]
+
+    def test_a_committee_notice_is_named_for_its_committee(self):
+        """A heading may end in COMMITTEE rather than MEETING or HEARING. Without that,
+        Queens CB5's Sanitation Services notice was published as a full board meeting."""
+        [meeting] = [m for m in self.agenda(DOCUMENTS, "405") if m.day == date(2026, 11, 4)]
+        assert meeting.title == "SANITATION SERVICES COMMITTEE"
+
+    def test_layout_mode_puts_other_columns_before_the_label(self, documents):
+        """Why these readers use plain mode, and it is not that layout mode loses the text.
+
+        Layout mode keeps horizontal position, so a board's sidebar of officers' names
+        shares a line with whichever field it is level with. Brooklyn CB9's executive
+        notice comes out as `Nicolas Almonor        DATE:   Tuesday, October 13, 2026`,
+        which a line-anchored label cannot match. Plain mode puts each label at the start
+        of its own line, which is what `_FIELD` is anchored on.
+        """
+        _general, executive = documents["309"]
+        labelled = [line for line in executive["layout"].splitlines() if "DATE:" in line]
+        assert labelled, "layout mode does still contain the text"
+        assert not any(line.lstrip().startswith("DATE:") for line in labelled)
+        assert any(line.lstrip().startswith("DATE:") for line in executive["plain"].splitlines())
+
+    def test_a_document_with_no_date_anywhere_yields_nothing(self):
+        envelope = json.dumps([{"plain": "TIME: 7:15 PM\nPLACE: Queens Borough Hall"}])
+        assert parse_pdf("409", envelope, on_or_after=TODAY) == []
+
+    def test_an_unparseable_date_label_yields_nothing(self):
+        envelope = json.dumps([{"plain": "DATE: sometime soon"}])
+        assert parse_pdf("409", envelope, on_or_after=TODAY) == []
+
+    def test_a_past_notice_is_dropped(self):
+        envelope = json.dumps([{"plain": "DATE: Tuesday, November 10, 2020\nTIME: 7:15 PM"}])
+        assert parse_pdf("409", envelope, on_or_after=TODAY) == []
+
+    def test_an_impossible_combined_line_is_skipped(self):
+        """`FEBRUARY 30` is not a date, and must not become March 2."""
+        envelope = json.dumps([{"plain": "TUESDAY, FEBRUARY 30, 2027 at 7:00 P.M."}])
+        assert parse_pdf("312", envelope, on_or_after=TODAY) == []
+
+    def test_a_combined_line_needs_its_weekday(self):
+        """Anchored on the weekday so a sentence mentioning a date and an hour is not read
+        as the meeting itself."""
+        envelope = json.dumps([{"plain": "Minutes were adopted May 27, 2027 at 7:00 P.M."}])
+        assert parse_pdf("312", envelope, on_or_after=TODAY) == []
+
+    def test_an_anchor_with_no_date_under_it_yields_nothing(self):
+        envelope = json.dumps([{"plain": "BOARD MEETING NOTICE AND AGENDA\nTo be confirmed."}])
+        assert parse_pdf("404", envelope, on_or_after=TODAY) == []
+
+    def test_an_anchor_at_the_very_end_of_a_document_does_not_overrun(self):
+        envelope = json.dumps([{"plain": "BOARD MEETING NOTICE AND AGENDA"}])
+        assert parse_pdf("404", envelope, on_or_after=TODAY) == []
+
+    def test_a_date_further_below_the_anchor_than_the_span_is_not_taken(self):
+        plain = "BOARD MEETING NOTICE AND AGENDA\na\nb\nc\nd\nTuesday, November 10, 2026"
+        assert parse_pdf("404", json.dumps([{"plain": plain}]), on_or_after=TODAY) == []
+
+    @pytest.mark.parametrize(
+        "heading",
+        [
+            "AGENDA",
+            "MINUTES",
+            "OCTOBER AGENDA",
+            "CLICK HERE FOR MINUTES FROM OUR SEPTEMBER 2026 MEETING",
+        ],
+    )
+    def test_a_heading_that_names_no_meeting_is_not_a_title(self, heading):
+        """Each of these appears in one of these documents above or near a date, and none
+        of them is the name of a meeting."""
+        plain = f"{heading}\nDATE: Tuesday, November 10, 2026\nTIME: 7:15 PM"
+        [meeting] = parse_pdf("409", json.dumps([{"plain": plain}]), on_or_after=TODAY)
+        assert meeting.title == "Full board meeting"
+
+    def test_a_heading_naming_a_meeting_becomes_the_title(self):
+        plain = "SPECIAL PUBLIC HEARING\nDATE: Tuesday, November 10, 2026"
+        [meeting] = parse_pdf("409", json.dumps([{"plain": plain}]), on_or_after=TODAY)
+        assert meeting.title == "SPECIAL PUBLIC HEARING"
+
+    def test_the_document_word_is_dropped_from_a_heading(self):
+        """`FULL BOARD MEETING AGENDA` names the meeting; the last word names the paper."""
+        plain = "FULL BOARD MEETING AGENDA\nDATE: Tuesday, November 10, 2026"
+        [meeting] = parse_pdf("409", json.dumps([{"plain": plain}]), on_or_after=TODAY)
+        assert meeting.title == "FULL BOARD MEETING"
+
+    def test_a_heading_too_far_above_the_date_is_not_taken(self):
+        plain = "SPECIAL PUBLIC HEARING\na\nb\nc\nd\nDATE: Tuesday, November 10, 2026"
+        [meeting] = parse_pdf("409", json.dumps([{"plain": plain}]), on_or_after=TODAY)
+        assert meeting.title == "Full board meeting"
+
+    def test_a_time_that_is_not_a_clock_time_is_not_reported(self):
+        """Bronx CB2's full board starts "Upon Public Hearing completion"."""
+        plain = "DATE: Tuesday, November 10, 2026\nTIME: Upon Public Hearing completion"
+        [meeting] = parse_pdf("409", json.dumps([{"plain": plain}]), on_or_after=TODAY)
+        assert meeting.start_time is None
 
 
 class TestStatenIslandCb1:
@@ -715,11 +871,11 @@ class TestTheEnvelopeAndTheDispatch:
 
 
 class TestTheConfiguration:
-    def test_every_board_is_a_grid_or_a_list_or_has_its_own_function(self):
+    def test_every_board_is_a_grid_a_list_an_agenda_or_has_its_own_function(self):
         bespoke = set(PDF_READERS) - set(PDF_BOARDS)
-        assert bespoke == {"409", "501"}
+        assert bespoke == {"501"}
         for code, board in PDF_BOARDS.items():
-            assert isinstance(board, GridBoard | ListBoard), code
+            assert isinstance(board, GridBoard | ListBoard | AgendaBoard), code
 
     def test_only_bronx_cb1_has_a_sidebar_column(self):
         with_sidebar = {c for c, b in PDF_BOARDS.items() if getattr(b, "sidebar", False)}

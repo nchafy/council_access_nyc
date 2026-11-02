@@ -365,6 +365,26 @@ _PDF_NAME_MONTH = re.compile(
     r"(20\d\d)[-_.\s]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*",
     re.I,
 )
+
+#: `October 14, 2026`, `Oct14-2026`, `March 11th, 2015` — a month, then a day, then the
+#: year. Queens CB5 names its files `BoardMeetingNoticeOct14-2026.pdf` and labels its links
+#: `October 14, 2026`, and neither of the two patterns above matches that: both expect the
+#: year to sit next to the month with only separators between. Without this the board's
+#: 2015 and 2021 agendas outranked its 2026 ones and were the ones fetched.
+_PDF_MONTH_DAY_YEAR = re.compile(
+    r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?[-_.\s]*"
+    r"(\d{1,2})(?:st|nd|rd|th)?[,\s_-]+(20\d\d)",
+    re.I,
+)
+#: `12012021` — month, day and four-digit year run together, which is how Queens CB5 names
+#: `AGENDA_CB5QBdMtg_12012021.pdf`. Nothing else here matches it: the digits are flanked by
+#: other digits, so even the bare-year pattern fails, and the file ranked as undated. Those
+#: 2021 notices then outranked the board's dated 2026 ones and were the ones fetched.
+_PDF_COMPACT = re.compile(r"(?<!\d)(0[1-9]|1[0-2])\d{2}(20\d\d)(?!\d)")
+
+#: `10.27.26` — month, day, two-digit year, which is how Brooklyn CB16 names its notices.
+_PDF_DOTTED = re.compile(r"(?<!\d)(0?[1-9]|1[0-2])[-_.]\d{1,2}[-_.](\d{2})(?!\d)")
+
 _PDF_MONTH_ABBR = {
     name: number
     for number, name in enumerate(
@@ -400,6 +420,15 @@ def _pdf_month(text: str) -> tuple[int, int] | None:
     numbered = _PDF_MONTH_NUMBER.search(text)
     if numbered:
         return int(numbered.group(1)), int(numbered.group(2))
+    compact = _PDF_COMPACT.search(text)
+    if compact:
+        return int(compact.group(2)), int(compact.group(1))
+    dotted = _PDF_DOTTED.search(text)
+    if dotted:
+        return 2000 + int(dotted.group(2)), int(dotted.group(1))
+    spelled = _PDF_MONTH_DAY_YEAR.search(text)
+    if spelled:
+        return int(spelled.group(3)), _PDF_MONTH_ABBR[spelled.group(1).lower()]
     named = _PDF_MONTH_NAME.search(text)
     if named:
         return int(named.group(2)), _PDF_MONTH_ABBR[named.group(1).lower()]
@@ -450,8 +479,12 @@ def _board_pdf_links(page: bytes, base: str, *, today: date | None = None) -> li
         if not href or not href.lower().split("?")[0].endswith(".pdf") or href in found:
             continue
         href = _encoded_path(href)
-        describes = f"{href} {anchor.get_text(' ', strip=True)}"
-        named = _pdf_month(describes)
+        # The link's own text is asked first, and the filename only as a fallback,
+        # because these filenames demonstrably lie: Queens CB5 publishes
+        # `ZoningHousingAugust2026.pdf` under a link reading `October 7, 2026`.
+        label = anchor.get_text(" ", strip=True)
+        describes = f"{label} {href}"
+        named = _pdf_month(label) or _pdf_month(href)
         if named is None:
             # A year that has ended, with no month, is an archive file. Anything else
             # unnamed may well be the current calendar and is tried before the archive.
@@ -463,8 +496,14 @@ def _board_pdf_links(page: bytes, base: str, *, today: date | None = None) -> li
     return sorted(found, key=lambda href: found[href])
 
 
-def _board_pdf_body(landing: str, *, log: Callable[[str], None], code: str) -> str:
+def _board_pdf_body(landing: str | list, *, log: Callable[[str], None], code: str) -> str:
     """One board's schedule PDFs as extracted text, ready to cache as a string.
+
+    `landing` may be several pages. Two boards keep their meetings in more than one
+    archive: Queens CB5 lists 53 board notices on `/meetings/agendas.page` and 331
+    committee notices on `/meetings/notices.page`, and reading only the first means
+    reporting none of its committees. Each page contributes its own
+    `BOARD_PDF_LIMIT` nearest months.
 
     The PDF bytes are deliberately not stored. `extract_pdf_text` runs here, at fetch time,
     so that `data/` holds no binaries, the build stays offline, and a fixture is a text
@@ -472,13 +511,16 @@ def _board_pdf_body(landing: str, *, log: Callable[[str], None], code: str) -> s
     """
     from .sources.board_pdf import extract_pdf_text
 
-    page = _get(landing, tries=2, timeout=60)
-    links = _board_pdf_links(page, landing)
+    pages = [landing] if isinstance(landing, str) else list(landing)
+    links: list[str] = []
+    for page_url in pages:
+        found = _board_pdf_links(_get(page_url, tries=2, timeout=60), page_url)
+        links.extend(href for href in found[:BOARD_PDF_LIMIT] if href not in links)
     if not links:
-        raise FetchError(f"no PDF linked from {landing}")
+        raise FetchError(f"no PDF linked from {', '.join(pages)}")
 
     documents = []
-    for href in links[:BOARD_PDF_LIMIT]:
+    for href in links:
         try:
             data = _get(href, tries=2, timeout=120)
         except (FetchError, ValueError) as error:
@@ -499,7 +541,7 @@ def _board_pdf_body(landing: str, *, log: Callable[[str], None], code: str) -> s
         documents.append({"url": href, **extracted})
 
     if not documents:
-        raise FetchError(f"none of {len(links)} PDFs at {landing} yielded text")
+        raise FetchError(f"none of {len(links)} PDFs at {', '.join(pages)} yielded text")
     return json.dumps(documents)
 
 
@@ -520,11 +562,12 @@ def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
     answered = 0
 
     for code, entry in sorted(feeds.items()):
-        url = str(entry.get("url") or "")
+        raw_url = entry.get("url") or ""
+        url = raw_url if isinstance(raw_url, str) else ", ".join(raw_url)
         kind = str(entry.get("kind") or "")
         if kind == "nyc-pdf":
             try:
-                body = _board_pdf_body(url, log=log, code=code)
+                body = _board_pdf_body(raw_url, log=log, code=code)
             except FetchError as error:
                 log(f"    board {code} (nyc-pdf) failed: {error}")
                 out[code] = {"kind": kind, "url": url, "body": None, "error": str(error)[:200]}

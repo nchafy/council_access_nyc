@@ -1,9 +1,15 @@
 """Per-board readers for the boards that publish a schedule as a PDF.
 
-Fifteen boards publish no feed and no dated HTML — they post a PDF. Owner's instruction,
+Twenty-one boards publish no feed and no dated HTML — they post a PDF. Owner's instruction,
 2026-10-31: separate parsers per board where needed, with the goal of a source of truth for
-every board's schedule. Every shape below was measured against the board's live document on
-2026-10-31; `docs/board-pdf-shapes.md` records what each one looked like and where.
+every board's schedule. Every shape here was measured against the board's live document, 15
+of them on 2026-10-31 and 6 more on 2026-11-02 while closing the gap on the boards that had
+no readable source at all; `docs/board-pdf-shapes.md` records what each looked like and
+where.
+
+Three shapes, and a configuration per board rather than one parser pretending to cover all:
+a `GridBoard` is a Sunday-to-Saturday month grid, a `ListBoard` is a plain run of dates, and
+an `AgendaBoard` is a notice per meeting on labelled lines.
 
 Two things about these documents drive the whole design.
 
@@ -135,10 +141,28 @@ def extract_pdf_text(data: bytes) -> dict[str, str]:
 
     `layout` keeps the grid's columns and drops the heading; `plain` keeps the heading and
     flattens the grid. See the module docstring and `docs/dependencies.md`.
+
+    pypdf's own logger is quietened to errors for the duration. Several of these documents
+    are malformed in ways it reads anyway — `Multiple definitions in dictionary at byte
+    0x419fc for key /Info` — and at `WARNING` those lines bury the fetch's own output
+    about which board answered. Errors still come through, and a document that cannot be
+    read at all raises, which the fetcher catches per link.
     """
+    import logging
+
     from pypdf import PdfReader
 
-    pages = list(PdfReader(BytesIO(data)).pages)
+    logger = logging.getLogger("pypdf")
+    was = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        pages = list(PdfReader(BytesIO(data)).pages)
+        return _both_modes(pages)
+    finally:
+        logger.setLevel(was)
+
+
+def _both_modes(pages: list) -> dict[str, str]:
     return {
         "layout": "\n".join(page.extract_text(extraction_mode="layout") for page in pages),
         "plain": "\n".join(page.extract_text() for page in pages),
@@ -757,37 +781,204 @@ _SICB1_GRID = _grid_reader(
     )
 )
 
-#: Queens CB9 publishes no calendar at all — only one agenda PDF per monthly meeting, with
-#: the date, hour and venue on labelled lines.
-_QCB9_FIELD = re.compile(r"^(DATE|TIME|PLACE):\s*(.+)$", re.I)
+# --------------------------------------------------------------------------------------
+# The agenda boards: one meeting per PDF, on labelled lines
+# --------------------------------------------------------------------------------------
+
+#: `DATE:`, `Date :`, `TIME:`, `Place:`, `VENUE:`, `Location:`. The space before the colon
+#: is Queens CB5's, and the label's case varies within a single document.
+_FIELD = re.compile(r"^(DATE|TIME|PLACE|VENUE|LOCATION)\s*:\s*(.*)$", re.I)
+
+#: A date and hour on one line, under no label: `TUESDAY, MAY 27, 2025 at 7:00 P.M.`
+#: Anchored on the weekday so that a sentence mentioning a date is not mistaken for one.
+_COMBINED = re.compile(
+    r"^(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s+(" + "|".join(_MONTHS) + r")\s+"
+    r"(\d{1,2})(?:st|nd|rd|th)?,?\s*(20\d\d)\b.*?\bat\b",
+    re.I,
+)
+
+#: A meeting's own name, where the document states one. `RE: Executive Committee Meeting`
+#: is how Brooklyn CB9 titles its memo; the others print a heading in capitals.
+_AGENDA_TITLE = re.compile(
+    r"^(?:RE|SUBJECT)\s*:\s*(.{4,60}?(?:meeting|hearing|agenda).*)$|"
+    r"^([A-Z][A-Z0-9 ,&/'’\-\.]{6,60}(?:MEETING|HEARING|COMMITTEE)"
+    r"(?:\s+(?:AGENDA|NOTICE))?)\s*$",
+    re.I,
+)
 
 
-def read_queens_cb9(layout: str, plain: str, *, on_or_after: date, url: str | None):  # noqa: ARG001
-    """Queens CB9: one meeting per PDF, on `DATE:` / `TIME:` / `PLACE:` lines.
+@dataclass(frozen=True, slots=True)
+class AgendaBoard:
+    """One board that publishes a notice per meeting rather than a schedule.
 
-    This board's page links agendas, not a schedule, so each document yields exactly one
-    meeting and full coverage means fetching every agenda the page lists.
+    Five boards do this, and Queens CB9 was the first found. Each document yields exactly
+    one meeting, so full coverage means fetching every notice the board's page lists.
     """
-    fields: dict[str, str] = {}
-    for raw in layout.splitlines():
-        found = _QCB9_FIELD.match(collapse(raw))
-        if found:
-            fields.setdefault(found.group(1).upper(), found.group(2))
 
-    stated = fields.get("DATE")
-    if not stated:
-        return []
-    day = _list_date(stated, None, slash=False)
-    if day is None or day < on_or_after:
-        return []
-    start_time = _time_of(fields.get("TIME", ""))
-    return [_meeting(day, "Full board meeting", start_time, fields.get("PLACE"), url)]
+    #: What to call the meeting when the document states no name of its own.
+    title: str = "Full board meeting"
+    #: A heading to find the date under, for the documents that print no `DATE:` label.
+    #: Queens CB4 buries one dated notice in an eleven-page newsletter whose other pages
+    #: carry dozens of unrelated dates, so the heading is the only thing that locates it.
+    anchor: str | None = None
+    #: How many lines after the anchor the date may appear.
+    anchor_span: int = 4
+
+
+def _labelled_fields(lines: list[str]) -> list[tuple[int, str, str]]:
+    """Every labelled line, as `(index, label, value)`."""
+    out = []
+    for index, line in enumerate(lines):
+        found = _FIELD.match(line)
+        if found:
+            out.append((index, found.group(1).upper(), found.group(2)))
+    return out
+
+
+def _agenda_date(lines: list[str], fields: list[tuple[int, str, str]], board: AgendaBoard):
+    """The meeting's date, and the line to read its hour and venue from.
+
+    **The last labelled date wins.** Two of these boards print an earlier date first and
+    mean a later one: Bronx CB2's page 1 is the previous month's notice, and Brooklyn CB9's
+    Executive memo is dated the day it was written before giving the meeting's own date
+    under "has been scheduled as follows". Taking the first would publish both wrong.
+
+    Returns the day, the index to read the hour and venue from, and the index to read the
+    meeting's name from. Those last two differ on Bronx CB2, which prints a public hearing
+    and then the full board that follows it, both on the same day: only the hearing states
+    a clock time — the board's own says "Upon Public Hearing completion", which is not a
+    time anybody can be told — while the name of the thing a reader attends is the full
+    board's, above the later date. So the hour comes from the first line carrying the date
+    and the name from the last.
+    """
+    dated = [
+        (index, _list_date(value, None, slash=False))
+        for index, label, value in fields
+        if label == "DATE"
+    ]
+    dated = [(index, day) for index, day in dated if day is not None]
+    if dated:
+        day = dated[-1][1]
+        return day, next(index for index, found in dated if found == day), dated[-1][0]
+
+    for index, line in enumerate(lines):
+        combined = _COMBINED.match(line)
+        if combined:
+            try:
+                month = _MONTHS[combined.group(1).lower()]
+                day = date(int(combined.group(3)), month, int(combined.group(2)))
+                return day, index, index
+            except ValueError:
+                continue
+
+    if board.anchor:
+        heading = re.compile(board.anchor, re.I)
+        for index, line in enumerate(lines):
+            if not heading.search(line):
+                continue
+            for offset in range(1, board.anchor_span + 1):
+                if index + offset >= len(lines):
+                    break
+                day = _list_date(lines[index + offset], None, slash=False)
+                if day is not None:
+                    return day, index + offset, index + offset
+    return None, 0, 0
+
+
+def _agenda_reader(board: AgendaBoard) -> Callable[..., list[BoardMeeting]]:
+    """A reader for one board's per-meeting notices."""
+
+    def read(layout: str, plain: str, *, on_or_after: date, url: str | None):  # noqa: ARG001
+        # **Plain mode, not layout.** A notice has no columns worth preserving, and layout
+        # mode actively hurts here: it keeps horizontal position, so a board's sidebar of
+        # officers' names shares a line with the field it happens to sit level with.
+        # Brooklyn CB9's executive notice comes out as
+        # `    Nicolas Almonor        DATE:     Tuesday, October 13, 2026`, which a
+        # line-anchored label cannot match. Plain mode puts each label at the start of its
+        # own line, which is what `_FIELD` is anchored on.
+        lines = [collapse(raw) for raw in plain.splitlines()]
+        lines = [line for line in lines if line]
+        fields = _labelled_fields(lines)
+
+        day, at, named_at = _agenda_date(lines, fields, board)
+        if day is None or day < on_or_after:
+            return []
+
+        # Queens CB5 puts the hour in brackets on the date line itself. Otherwise it is on
+        # a labelled TIME line below, and only the first one that parses as a clock time.
+        start_time = _time_of(lines[at])
+        if start_time is None:
+            start_time = next(
+                (
+                    found
+                    for index, label, value in fields
+                    if label == "TIME" and index >= at and (found := _time_of(value))
+                ),
+                None,
+            )
+        if start_time is None:
+            # Queens CB4 labels nothing: the hour is simply the next line under the date.
+            start_time = next(
+                (found for line in lines[at + 1 : at + 3] if (found := _time_of(line))), None
+            )
+        location = next(
+            (value for index, label, value in fields if label in _VENUE_LABELS and index >= at),
+            None,
+        )
+        title = _title_near(lines, named_at, board)
+        return [_meeting(day, title, start_time, location, url)]
+
+    return read
+
+
+#: The labels these boards use for a venue. Three different words, one meaning.
+_VENUE_LABELS = frozenset({"PLACE", "VENUE", "LOCATION"})
+
+
+#: How far above the date to look for the meeting's own heading.
+_TITLE_SPAN = 4
+
+
+def _title_near(lines: list[str], at: int, board: AgendaBoard) -> str:
+    """The meeting's own name, taken from the heading just above its date.
+
+    Searched upward from the date rather than across the document, because these notices
+    carry other headings: Queens CB4's newsletter offers "CLICK HERE FOR MINUTES FROM OUR
+    SEPTEMBER 2026 MEETING", and Bronx CB2 prints the public hearing's heading above the
+    full board's that follows it. The nearest heading above the date is the one that
+    describes it.
+    """
+    for index in range(at, max(-1, at - _TITLE_SPAN - 1), -1):
+        stated = _agenda_title(lines[index])
+        if stated:
+            return stated
+    return board.title
+
+
+def _agenda_title(line: str) -> str | None:
+    """The meeting's own name, where the document prints one."""
+    found = _AGENDA_TITLE.match(line)
+    if not found:
+        return None
+    stated = collapse(found.group(1) or found.group(2) or "")
+    # An invitation to click is not the name of a meeting, and Queens CB4's newsletter
+    # offers "CLICK HERE FOR MINUTES FROM OUR SEPTEMBER 2026 MEETING" — which ends in the
+    # right word and is otherwise shaped exactly like a heading.
+    #
+    # A bare "AGENDA" or "OCTOBER AGENDA" needs no guard: the pattern only accepts a
+    # heading ending in MEETING or HEARING, so neither reaches here.
+    if re.match(r"click\b", stated, re.I):
+        return None
+    return collapse(re.sub(r"\s+(?:AGENDA|NOTICE)$", "", stated, flags=re.I))
 
 
 #: Every board whose schedule is a PDF, with the shape measured on its live document.
-#: One entry per board, on purpose: these 15 share a borough and a file format and nothing
-#: else, and the next person here will be here because one of them redesigned its PDF.
-PDF_BOARDS: dict[str, GridBoard | ListBoard] = {
+#: One entry per board, on purpose: these 21 share a file format and nothing else, and the
+#: next person here will be here because one of them redesigned its PDF.
+PDF_BOARDS: dict[str, GridBoard | ListBoard | AgendaBoard] = {
+    # Bronx CB2: a Full Board agenda per month. Page 1 is the previous month's notice, so
+    # the date must come from the last labelled one, not the first.
+    "202": AgendaBoard(),
     # Bronx CB1: a grid plus an eighth "Community Events" sidebar whose rows carry their
     # own dates, so the sidebar must not be read as Saturday.
     "201": GridBoard(sidebar=True),
@@ -807,11 +998,28 @@ PDF_BOARDS: dict[str, GridBoard | ListBoard] = {
     # Bronx CB11: the time precedes the committee name, inverting every other board's
     # field order, and cells carry a `(Click here)` hyperlink label.
     "211": GridBoard(),
+    # Brooklyn CB9: a General Board and an Executive agenda per month. The Executive memo
+    # is dated the day it was written before it gives the meeting's own date.
+    "309": AgendaBoard(),
+    # Brooklyn CB12: one combined all-caps line, `TUESDAY, MAY 27, 2025 at 7:00 P.M.`, and
+    # no labelled fields at all. The site stops at 2025.
+    "312": AgendaBoard(),
+    # Brooklyn CB16: one notice at a time, on `DATE:` / `TIME:` / `LOCATION:` lines.
+    "316": AgendaBoard(title="General board meeting"),
+    # Queens CB4: the notice is on page 2 of an eleven-page newsletter whose other pages
+    # carry dozens of unrelated dates, and it carries no label — so it is found under its
+    # own heading. The board's agenda archive stopped in 2022; this is the only live source.
+    "404": AgendaBoard(anchor=r"BOARD MEETING NOTICE"),
+    # Queens CB5: `Date  : Wednesday, October 14, 2026 (7:30pm)` — hour on the date line.
+    # Two archives, board meetings and committee notices, both live.
+    "405": AgendaBoard(),
     # Brooklyn CB1: a press release listing two years of dates as `Tuesday 01/13`, with the
     # year as a bare section header. The list appears twice in the extracted text.
     "301": ListBoard(title="Full board meeting", slash_dates=True),
     # Queens CB8: an annual memo, `January 7th` per row, no times anywhere in the document.
     "408": ListBoard(title="Full board meeting"),
+    # Queens CB9: the first agenda board found. One notice per monthly meeting.
+    "409": AgendaBoard(),
     # Queens CB12: abbreviated weekday row and zero-padded day numbers.
     "412": GridBoard(),
     # Staten Island CB2: day numbers carry a trailing period.
@@ -820,14 +1028,22 @@ PDF_BOARDS: dict[str, GridBoard | ListBoard] = {
     "503": GridBoard(),
 }
 
+
+def _reader_for(board: GridBoard | ListBoard | AgendaBoard) -> Callable[..., list[BoardMeeting]]:
+    if isinstance(board, GridBoard):
+        return _grid_reader(board)
+    if isinstance(board, ListBoard):
+        return _list_reader(board)
+    return _agenda_reader(board)
+
+
 #: Board code to the reader that understands that board's document.
 PDF_READERS: dict[str, Callable[..., list[BoardMeeting]]] = {
-    code: _grid_reader(board) if isinstance(board, GridBoard) else _list_reader(board)
-    for code, board in PDF_BOARDS.items()
+    code: _reader_for(board) for code, board in PDF_BOARDS.items()
 }
 
-# The two boards whose documents are not one shape at all.
-PDF_READERS["409"] = read_queens_cb9
+# The one board whose document is not any single shape: a grid on page 1, then an agenda
+# per meeting on the pages after it.
 PDF_READERS["501"] = read_staten_island_cb1
 
 

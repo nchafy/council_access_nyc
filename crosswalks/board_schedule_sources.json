@@ -1,18 +1,20 @@
 {
-  "generated_on": "2026-10-31",
+  "generated_on": "2026-11-02",
   "purpose": "The source of truth for where every community board's meeting schedule comes from. All 59 boards appear, including the ones nothing can be read from, so a gap is a recorded fact rather than a silence.",
-  "method": "Every board website was probed for a machine-readable calendar (Google Calendar ICS via an embed's calendar id, The Events Calendar's REST API, a board's own ICS or JSON), then for a dated schedule in nyc.gov HTML, then for a schedule in a linked PDF. Statuses and notes are what was observed, not what was assumed. The 15 PDF boards were re-measured on 2026-10-31: all 15 yield extractable text and none is a scan, so each has a reader in sources/board_pdf.py.",
+  "method": "Every board website was probed for a machine-readable calendar (Google Calendar ICS via an embed's calendar id, The Events Calendar's REST API, a board's own ICS or JSON), then for a dated schedule in nyc.gov HTML, then for a schedule in a linked PDF. Statuses and notes are what was observed, not what was assumed. The 15 PDF boards were re-measured on 2026-10-31: all 15 yield extractable text and none is a scan, so each has a reader in sources/board_pdf.py. The 15 boards with no readable source were re-probed on 2026-11-02; the record had been wrong on 7 of them, and 10 turned out to have a parseable source.",
   "statuses": {
     "feed": "machine-readable calendar; fetched and parsed",
     "html": "dated schedule in nyc.gov HTML; fetched and parsed by a per-board reader",
     "pdf": "dated schedule in a text PDF; fetched and parsed by a per-board reader",
     "pdf-stale": "same format and a reader exists, but the newest PDF the board published is already past; it will start yielding meetings again when the board posts a current one",
     "scanned": "schedule exists only as scanned images; needs OCR",
-    "agenda-only": "per-meeting agendas or notices, not a schedule",
     "nothing-published": "no dated schedule found anywhere reachable",
     "unreachable": "the site did not answer",
-    "no-site": "no website recorded",
-    "unclassified": "not yet investigated"
+    "unclassified": "not yet investigated",
+    "agenda-pdf": "a notice per meeting in a text PDF; fetched and parsed by a per-board reader",
+    "agenda-pdf-stale": "same, but the newest notice the board published is already past",
+    "nothing-dated": "a working site that publishes no dates, only a recurrence in prose",
+    "blocked": "the board’s site refuses any non-browser client"
   },
   "caveat": "These are the boards' own calendars. They carry office closures, screenings and cancellations alongside meetings, so nothing here may be presented as a meeting list. Recurring entries are not expanded.",
   "boards": {
@@ -49,13 +51,13 @@
       "fetched": true
     },
     "105": {
-      "status": "unreachable",
+      "status": "blocked",
       "label": "Manhattan Community Board 5",
       "site": "www.cb5.org",
       "kind": null,
       "url": null,
       "fetched": false,
-      "note": "Cloudflare returns 403 to a non-browser client; status genuinely unknown"
+      "note": "Cloudflare serves a JS challenge and returns 403 to any non-browser client. No nyc.gov mirror exists: /site/manhattancb5/index.page is 404. Re-probed 2026-11-02."
     },
     "106": {
       "status": "feed",
@@ -105,7 +107,7 @@
       "kind": null,
       "url": null,
       "fetched": false,
-      "note": "meetings live in an Airtable shared view, which exposes no public JSON or ICS"
+      "note": "Meetings live in an Airtable shared view whose embed HTML carries no row data. Its readSharedViewData route returns 401 to the signed URL the page itself emits. The embedded access policy lists downloadICal, so an iCal route probably exists, but its URL was not found and is not guessed."
     },
     "112": {
       "status": "feed",
@@ -124,13 +126,13 @@
       "fetched": true
     },
     "202": {
-      "status": "no-site",
+      "status": "agenda-pdf",
       "label": "Bronx Community Board 2",
-      "site": null,
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "no website recorded in the City's dataset"
+      "site": "https://www.nyc.gov/site/bronxcb2/index.page",
+      "kind": "nyc-pdf",
+      "url": "https://www.nyc.gov/site/bronxcb2/meetings/agendas.page",
+      "fetched": true,
+      "note": "The City dataset records no website, but nyc.gov hosts one. ~45 Full Board agenda PDFs, Oct 2019 onward. Page 1 of each is the PREVIOUS month’s notice, so the date must come from the last labelled one."
     },
     "203": {
       "status": "pdf-stale",
@@ -212,7 +214,7 @@
       "kind": null,
       "url": null,
       "fetched": false,
-      "note": "minutes only, and scanned images rather than text"
+      "note": "Both agendas and minutes are published, and both are image-only: 0 extractable characters across 58 PDFs. Needs OCR."
     },
     "301": {
       "status": "pdf",
@@ -247,13 +249,13 @@
       "fetched": true
     },
     "305": {
-      "status": "unreachable",
+      "status": "nothing-dated",
       "label": "Brooklyn Community Board 5",
-      "site": "www.brooklyncb5.org",
+      "site": "https://www.nyc.gov/site/brooklyncb5/index.page",
       "kind": null,
       "url": null,
       "fetched": false,
-      "note": "the published domain now redirects to an unrelated business"
+      "note": "brooklyncb5.org now redirects to an unrelated business, but nyc.gov hosts a working site. It publishes no dates — only recurring prose (\"every 4th Wednesday at 6:30pm\") and bundled minutes. A recurrence stated in prose is not expanded."
     },
     "306": {
       "status": "feed",
@@ -280,13 +282,13 @@
       "fetched": true
     },
     "309": {
-      "status": "agenda-only",
+      "status": "agenda-pdf",
       "label": "Brooklyn Community Board 9",
       "site": "https://cbbrooklyn.cityofnewyork.us/cb9/",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "publishes a calendar page carrying no dates"
+      "kind": "nyc-pdf",
+      "url": "https://www.nyc.gov/site/brooklyncb9/about/agendas.page",
+      "fetched": true,
+      "note": "cbbrooklyn.cityofnewyork.us/cb9 redirects here. The calendar page carries no dates; /about/agendas.page is a 90-PDF archive of General Board and Executive notices. The Executive memos are dated the day they were written before giving the meeting date."
     },
     "310": {
       "status": "feed",
@@ -297,31 +299,31 @@
       "fetched": true
     },
     "311": {
-      "status": "nothing-published",
+      "status": "feed",
       "label": "Brooklyn Community Board 11",
       "site": "www.brooklyncb11.org",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "The Events Calendar route answers but holds no upcoming events"
+      "kind": "tribe",
+      "url": "https://www.brooklyncb11.org/wp-json/tribe/events/v1/events",
+      "fetched": true,
+      "note": "The Events Calendar, live and populated — 79 events through 2026-10-08, measured 2026-11-02. It reads as empty only because the endpoint defaults start_date to today and the board has posted nothing further ahead yet."
     },
     "312": {
-      "status": "unreachable",
+      "status": "agenda-pdf-stale",
       "label": "Brooklyn Community Board 12",
       "site": "www.brooklyncb12.org",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "no HTTP response on apex or www, repeatedly"
+      "kind": "nyc-pdf",
+      "url": "https://www.nyc.gov/site/brooklyncb12/meetings/upcoming-meetings.page",
+      "fetched": true,
+      "note": "brooklyncb12.org is dead — DNS resolves but TCP times out on 80 and 443. This nyc.gov site works, but its newest agenda is December 2025."
     },
     "313": {
-      "status": "agenda-only",
+      "status": "html",
       "label": "Brooklyn Community Board 13",
       "site": "https://www.nyc.gov/site/brooklyncb13/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "publishes minutes only"
+      "kind": "nyc-html",
+      "url": "https://www.nyc.gov/site/brooklyncb13/index.page",
+      "fetched": true,
+      "note": "Not minutes-only: the HOME page carries the year’s dated schedule, pasted out of Outlook. The year appears only in the heading, and the board calls the dates tentative."
     },
     "314": {
       "status": "feed",
@@ -340,13 +342,13 @@
       "fetched": true
     },
     "316": {
-      "status": "nothing-published",
+      "status": "agenda-pdf",
       "label": "Brooklyn Community Board 16",
       "site": "https://www.nyc.gov/site/brooklyncb16/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "no working calendar path and nothing dated on the site"
+      "kind": "nyc-pdf",
+      "url": "https://www.nyc.gov/site/brooklyncb16/announcements/announcements.page",
+      "fetched": true,
+      "note": "One notice PDF at a time, linked as the word \"agenda\". The filename contains spaces."
     },
     "317": {
       "status": "feed",
@@ -390,22 +392,25 @@
       "fetched": true
     },
     "404": {
-      "status": "agenda-only",
+      "status": "agenda-pdf",
       "label": "Queens Community Board 4",
       "site": "https://www.nyc.gov/site/queenscb4/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "the calendar page says to telephone the office"
+      "kind": "nyc-pdf",
+      "url": "https://www.nyc.gov/site/queenscb4/newsletters/newsletters.page",
+      "fetched": true,
+      "note": "The calendar page does say to telephone the office and the agenda archive stopped in June 2022, but the monthly newsletter PDFs are current and each carries the dated board meeting notice on page 2, under its own heading and with no label."
     },
     "405": {
-      "status": "agenda-only",
+      "status": "agenda-pdf",
       "label": "Queens Community Board 5",
       "site": "https://www.nyc.gov/site/queenscb5/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "227 per-meeting notice PDFs, one date each, rather than a schedule"
+      "kind": "nyc-pdf",
+      "url": [
+        "https://www.nyc.gov/site/queenscb5/meetings/agendas.page",
+        "https://www.nyc.gov/site/queenscb5/meetings/notices.page"
+      ],
+      "fetched": true,
+      "note": "Two archives, both live and both read: 53 board notices on /meetings/agendas.page and 331 committee notices on /meetings/notices.page. Filenames are unreliable — ZoningHousingAugust2026.pdf is labelled October 7 — so the body is trusted, never the name. Some hrefs are emitted as www1.nyc.gov and redirect."
     },
     "406": {
       "status": "feed",
@@ -432,7 +437,7 @@
       "fetched": true
     },
     "409": {
-      "status": "pdf",
+      "status": "agenda-pdf",
       "label": "Queens Community Board 9",
       "site": "https://www.nyc.gov/site/queenscb9/index.page",
       "kind": "nyc-pdf",
@@ -447,16 +452,16 @@
       "kind": null,
       "url": null,
       "fetched": false,
-      "note": "monthly agenda archive, scanned images rather than text"
+      "note": "65 agenda PDFs, all image-only. Link text names the month but not the day, so even the dates are not recoverable without OCR."
     },
     "411": {
-      "status": "agenda-only",
+      "status": "html",
       "label": "Queens Community Board 11",
       "site": "https://www.nyc.gov/site/queenscb11/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "one current agenda, no schedule"
+      "kind": "nyc-html",
+      "url": "https://www.nyc.gov/site/queenscb11/meetings/meetings.page",
+      "fetched": true,
+      "note": "Not one agenda: a flat list of the year’s dates with the hour in one sentence beneath it. 79 text agenda PDFs also exist at /meetings/meeting-agendas.page."
     },
     "412": {
       "status": "pdf",
@@ -475,13 +480,13 @@
       "fetched": true
     },
     "414": {
-      "status": "scanned",
+      "status": "html",
       "label": "Queens Community Board 14",
       "site": "https://www.nyc.gov/site/queenscb14/index.page",
-      "kind": null,
-      "url": null,
-      "fetched": false,
-      "note": "per-meeting agendas, scanned images rather than text"
+      "kind": "nyc-html",
+      "url": "https://www.nyc.gov/site/queenscb14/calendar/calendar.page",
+      "fetched": true,
+      "note": "The PDFs really are scans, but this page publishes the dates in HTML — the year’s board meetings plus one dated label per agenda link. Venue is not recoverable: the page names two alternating locations and says to check the agenda."
     },
     "501": {
       "status": "pdf",

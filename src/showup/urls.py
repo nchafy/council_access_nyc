@@ -20,6 +20,12 @@ ALLOWED_HOSTS = frozenset(
         "data.cityofnewyork.us",
         "www.nyc.gov",
         "nyc.gov",
+        # The City's own legacy host, same operator as `www.nyc.gov`, to which it 301s.
+        # Several board pages still emit asset links against it: 379 of the 648 PDF links
+        # across Queens CB5's two archive pages are `www1`, including every one of its
+        # 2026 meeting notices. Rejecting the host meant that board's schedule could not
+        # be read at all, while its 2021 notices — linked without the prefix — could.
+        "www1.nyc.gov",
         "geosearch.planninglabs.nyc",
         "cb.nyc.gov",
         # Borough-president hosts, as nyc.gov itself lists them. Staten Island's is

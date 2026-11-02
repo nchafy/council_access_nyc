@@ -689,7 +689,7 @@ class TestTheBoardCalendarFetcher:
     def test_every_fetched_board_has_a_kind_and_an_https_url(self):
         boards = self._registry()["boards"]
         fetched = {c: e for c, e in boards.items() if e.get("fetched")}
-        assert len(fetched) == 44
+        assert len(fetched) == 54
         for code, entry in fetched.items():
             assert entry["kind"] in {
                 "tribe",
@@ -699,7 +699,12 @@ class TestTheBoardCalendarFetcher:
                 "nyc-html",
                 "nyc-pdf",
             }, code
-            assert entry["url"].startswith("https://"), code
+            # A board may declare several archive pages: Queens CB5 keeps its board
+            # notices and its committee notices in two places.
+            urls = [entry["url"]] if isinstance(entry["url"], str) else entry["url"]
+            assert urls, code
+            for url in urls:
+                assert url.startswith("https://"), code
 
     def test_a_board_we_cannot_read_says_why(self):
         """An unreachable or scanned-only board carries a note, so the gap is explained
@@ -730,10 +735,12 @@ class TestTheBoardCalendarFetcher:
         )
         body = fetch_module._fetch_board_meetings(lambda _m: None)
         payload = json.loads(body)
-        assert len(payload["feeds"]) == 44
-        # 29 feeds are one request each. The 15 PDF boards are two: the landing page, then
-        # the one PDF this stub links from it.
-        assert len(asked) == 29 + 15 * 2
+        assert len(payload["feeds"]) == 54
+        # 33 feeds are one request each. Twenty PDF boards are two — the archive page,
+        # then the one PDF this stub links from it. Queens CB5 keeps two archive pages, so
+        # it is three: both pages, and the PDF once, because the same href linked from two
+        # pages is fetched a single time.
+        assert len(asked) == 33 + 20 * 2 + 3
         assert all(entry["body"] is not None for entry in payload["feeds"].values())
 
     def test_a_tribe_url_asks_for_a_window(self, monkeypatch):
@@ -759,7 +766,7 @@ class TestTheBoardCalendarFetcher:
         failed = [c for c, e in payload["feeds"].items() if e["body"] is None]
         assert failed, "expected the stubbed failure to be recorded"
         assert all("error" in payload["feeds"][c] for c in failed)
-        assert len(payload["feeds"]) == 44
+        assert len(payload["feeds"]) == 54
 
     def test_the_invariant_counts_boards_that_answered(self):
         feeds = {str(c): {"kind": "tribe", "body": "{}"} for c in range(101, 120)}
@@ -913,11 +920,11 @@ class TestTheBoardSchedulePdfFetcher:
         pdf_boards = {
             code: entry for code, entry in payload["feeds"].items() if entry["kind"] == "nyc-pdf"
         }
-        assert len(pdf_boards) == 15
+        assert len(pdf_boards) == 21
         assert all(entry["body"] is None for entry in pdf_boards.values())
         assert all("no PDF linked" in entry["error"] for entry in pdf_boards.values())
         answered = [c for c, e in payload["feeds"].items() if e["body"]]
-        assert len(answered) == 29
+        assert len(answered) == 33
 
     def test_a_pdf_board_that_answers_is_counted(self, monkeypatch):
         def fake_get(url, **_kwargs):
@@ -937,7 +944,7 @@ class TestTheBoardSchedulePdfFetcher:
         )
         payload = json.loads(fetch_module._fetch_board_meetings(lambda _m: None))
         answered = [c for c, e in payload["feeds"].items() if e["body"]]
-        assert len(answered) == 44
+        assert len(answered) == 54
 
 
 class TestWhichBoardPdfIsFetched:
@@ -1010,6 +1017,24 @@ class TestWhichBoardPdfIsFetched:
             ("November2026Calendar.pdf", (2026, 11)),
             ("2026-September-Calendar.pdf", (2026, 9)),
             ("2026_April_Calendar.pdf", (2026, 4)),
+            # `Month D, YYYY` and `MonD-YYYY`. Queens CB5 names its files the second way
+            # and labels its links the first, and neither of the year-adjacent patterns
+            # matches either — without this its 2015 and 2021 agendas outranked its 2026
+            # ones and were the ones fetched.
+            # `MMDDYYYY` run together, which is how Queens CB5 names most of its
+            # notices. Nothing else matches it — the digits are flanked by other digits,
+            # so even the bare-year pattern fails — and those files ranked as undated,
+            # which put the board's 2021 notices ahead of its dated 2026 ones.
+            ("AGENDA_CB5QBdMtg_12012021.pdf", (2021, 12)),
+            ("CB5QBdMtg_07142021.pdf", (2021, 7)),
+            # `MM.DD.YY`, which is how Brooklyn CB16 names its notices.
+            ("10.27.26 AGENDA - GENERAL BOARD MEETING.pdf", (2026, 10)),
+            # Not a date: a scanner's serial number, which Queens CB14 links.
+            ("SKM_C36826101614370.pdf", None),
+            ("BoardMeetingNoticeOct14-2026.pdf", (2026, 10)),
+            ("October 14, 2026 - Board Meeting", (2026, 10)),
+            ("Agenda-for-March-2015.pdf March 11th, 2015", (2015, 3)),
+            ("board-meeting-notice-september-14-2021.pdf", (2021, 9)),
             ("calendar-202610.pdf", None),
             ("meeting_preferences.pdf", None),
             ("-2026-CB1-Calendars-4.pdf", None),
@@ -1022,6 +1047,30 @@ class TestWhichBoardPdfIsFetched:
     def test_the_month_may_come_from_the_link_text_rather_than_the_href(self):
         found = self._links(("/a/20260127134946.pdf", "November 2026 calendar"))
         assert found == ["https://www.nyc.gov/a/20260127134946.pdf"]
+
+    def test_the_link_text_is_believed_over_the_filename(self):
+        """These filenames demonstrably lie: Queens CB5 publishes
+        `ZoningHousingAugust2026.pdf` under a link reading `October 7, 2026`. Asking the
+        filename first would file that notice two months early and drop it."""
+        found = self._links(
+            ("/a/ZoningHousingAugust2026.pdf", "November 7, 2026 - Zoning and Housing"),
+            ("/a/NovemberCalendar2026.pdf", "August 3, 2026 - Parks"),
+        )
+        assert [h.rsplit("/", 1)[-1] for h in found] == [
+            "ZoningHousingAugust2026.pdf",
+            "NovemberCalendar2026.pdf",
+        ]
+
+    def test_the_citys_legacy_asset_host_is_followed(self):
+        """Several board pages still emit asset links against `www1.nyc.gov`, which 301s
+        to `www.nyc.gov`. 379 of the 648 PDF links across Queens CB5's two archive pages
+        are `www1`, including every one of its 2026 notices — so rejecting the host meant
+        that board's schedule could not be read at all."""
+        href = "https://www1.nyc.gov/assets/queenscb5/downloads/pdf/agendas/oct-2026.pdf"
+        assert self._links((href, "October 14, 2026")) == [href]
+
+    def test_a_lookalike_of_that_host_is_still_refused(self):
+        assert self._links(("https://www1.nyc.gov.evil.test/x.pdf", "October 2026")) == []
 
     def test_a_space_in_a_filename_is_encoded(self):
         """Bronx CB3 links `calendar/Committee Schedules.pdf`, with a literal space.
@@ -1039,6 +1088,66 @@ class TestWhichBoardPdfIsFetched:
     def test_a_query_string_survives_encoding(self):
         [href] = self._links(("/a/oct.pdf?v=2", "October"))
         assert href.endswith("oct.pdf?v=2")
+
+    def test_a_board_may_keep_its_meetings_in_two_archives(self, monkeypatch):
+        """Queens CB5 lists 53 board notices on one page and 331 committee notices on
+        another. Reading only the first reports none of its committees."""
+        asked = []
+
+        def fake_get(url, **_kwargs):
+            asked.append(url)
+            if url.endswith("agendas.page"):
+                return b'<html><a href="/a/board-oct-2026.pdf">October 14, 2026</a></html>'
+            if url.endswith("notices.page"):
+                return b'<html><a href="/a/sanit-nov-2026.pdf">November 4, 2026</a></html>'
+            return b"x" * 5_000
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        import showup.sources.board_pdf as board_pdf
+
+        monkeypatch.setattr(
+            board_pdf, "extract_pdf_text", lambda _d: {"layout": "", "plain": "", "pages": "1"}
+        )
+        body = fetch_module._board_pdf_body(
+            [
+                "https://www.nyc.gov/site/queenscb5/meetings/agendas.page",
+                "https://www.nyc.gov/site/queenscb5/meetings/notices.page",
+            ],
+            log=lambda _m: None,
+            code="405",
+        )
+        assert [d["url"].rsplit("/", 1)[-1] for d in json.loads(body)] == [
+            "board-oct-2026.pdf",
+            "sanit-nov-2026.pdf",
+        ]
+
+    def test_the_same_pdf_linked_from_two_archives_is_fetched_once(self, monkeypatch):
+        def fake_get(url, **_kwargs):
+            if url.endswith(".page"):
+                return b'<html><a href="/a/oct.pdf">October 2026</a></html>'
+            return b"x" * 5_000
+
+        monkeypatch.setattr(fetch_module, "_get", fake_get)
+        import showup.sources.board_pdf as board_pdf
+
+        monkeypatch.setattr(
+            board_pdf, "extract_pdf_text", lambda _d: {"layout": "", "plain": "", "pages": "1"}
+        )
+        body = fetch_module._board_pdf_body(
+            ["https://www.nyc.gov/a/one.page", "https://www.nyc.gov/a/two.page"],
+            log=lambda _m: None,
+            code="405",
+        )
+        assert len(json.loads(body)) == 1
+
+    def test_two_archives_that_link_nothing_name_both_in_the_failure(self, monkeypatch):
+        monkeypatch.setattr(fetch_module, "_get", lambda _u, **_k: b"<html>nothing</html>")
+        with pytest.raises(FetchError, match=r"one\.page, .*two\.page"):
+            fetch_module._board_pdf_body(
+                ["https://www.nyc.gov/a/one.page", "https://www.nyc.gov/a/two.page"],
+                log=lambda _m: None,
+                code="405",
+            )
 
     def test_an_href_that_is_not_a_requestable_url_is_skipped_not_fatal(self, monkeypatch):
         """`http.client.InvalidURL` derives from `ValueError`, not `FetchError`. A board can

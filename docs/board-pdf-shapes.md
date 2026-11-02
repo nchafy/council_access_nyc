@@ -83,6 +83,76 @@ Two things make that ranking awkward, both measured 2026-11-01:
 | Staten Island CB2 (502) | grid | `October 2026` + `Committee Meetings` | `6:30 P.M.` (uppercase dotted) | **Day numbers carry a trailing period**: `1.` `2.` `10.` |
 | Staten Island CB3 (503) | grid | `October 2026` under a seven-line letterhead | `6:30PM` (no space, no dots) | The cleanest plain grid. Only one PDF on the whole landing page, so no archive and no future month. |
 
+## The agenda boards: a notice per meeting, not a schedule
+
+Seven boards publish no calendar at all. They post one notice per meeting, so each document
+yields exactly one meeting and full coverage means fetching every notice the page lists.
+Queens CB9 was the first found; re-probing the uncovered boards on 2026-11-02 turned up six
+more in the same shape.
+
+They are read from **plain** mode, not layout. A notice has no columns worth preserving, and
+layout mode actively hurts: it keeps horizontal position, so a board's sidebar of officers'
+names ends up sharing a line with whichever field it is level with. Brooklyn CB9's executive
+notice comes out of layout mode as `Nicolas Almonor        DATE:   Tuesday, October 13,
+2026`, which a line-anchored label cannot match.
+
+Two rules make all seven work, and both exist because of a document that breaks the obvious
+approach:
+
+- **The last labelled date wins.** Bronx CB2's page 1 is the *previous* month's notice
+  (`Date: March 25, 2026` on an agenda for April 22), and Brooklyn CB9's executive memo is
+  dated the day it was written before giving the meeting's own date under "has been
+  scheduled as follows". Taking the first labelled date would publish both wrong, every
+  month.
+- **The hour comes from the first line carrying that date, the name from the last.** Bronx
+  CB2's page 2 prints a public hearing and then the full board that follows it, both on the
+  same day. Only the hearing states a clock time — the board's own says "Upon Public Hearing
+  completion", which is not a time anybody can be told — while the name a reader needs is
+  the full board's.
+
+| Board | Source | Shape |
+|---|---|---|
+| Bronx CB2 (202) | `/site/bronxcb2/meetings/agendas.page` | `DATE:` / `TIME:` / `Location:` and `VENUE:`. Notice on page 2; page 1 is last month's. The City's dataset records no website for this board — it has one. |
+| Brooklyn CB9 (309) | `/site/brooklyncb9/about/agendas.page` | `DATE:` / `TIME:` / `PLACE:`. General Board and Executive notices, ~90 PDFs. The executive ones carry two `DATE:` lines. |
+| Brooklyn CB12 (312) | `/site/brooklyncb12/meetings/upcoming-meetings.page` | No labels at all: one combined line, `TUESDAY, MAY 27, 2025 at 7:00 P.M.` **Stale** — newest notice is December 2025. |
+| Brooklyn CB16 (316) | `/site/brooklyncb16/announcements/announcements.page` | `DATE:` / `TIME:` / `LOCATION:`. One notice at a time; the filename contains spaces. |
+| Queens CB4 (404) | `/site/queenscb4/newsletters/newsletters.page` | **No label and no schedule page.** The notice is on page 2 of an eleven-page newsletter whose other pages carry dozens of unrelated dates, so it is found under its own `BOARD MEETING NOTICE` heading with the hour on the next line down. The board's agenda archive stopped in June 2022. |
+| Queens CB5 (405) | `/site/queenscb5/meetings/agendas.page` | `Date  : Wednesday, October 14, 2026 (7:30pm)` — space before the colon, hour in brackets. 53 board notices plus 331 committee notices on `/meetings/notices.page`. **Filenames lie**: `ZoningHousingAugust2026.pdf` is labelled October 7, so the body is trusted and never the name. |
+| Queens CB9 (409) | `/site/queenscb9/meetings/agendas.page` | `DATE:` / `TIME:` / `PLACE:`. The board that established the shape. |
+
+## Closing the gap: what the second pass found
+
+Fifteen boards had no readable source after the first pass. Re-probed 2026-11-02: **ten had
+one, and the record had been wrong on seven of them.** Boards with a readable source went
+from 44 to 54 of 59.
+
+The record was wrong in a consistent way — a board's own `.org` domain had died or its
+calendar page had gone dateless, and the *nyc.gov* site that replaced it was never checked:
+
+- **Bronx CB2** was recorded as having no website. nyc.gov hosts one, with a text agenda
+  archive going back to 2019.
+- **Brooklyn CB5** and **Brooklyn CB12**: `brooklyncb5.org` now redirects to an unrelated
+  business and `brooklyncb12.org` resolves in DNS but times out on both 80 and 443. Both
+  have working nyc.gov sites.
+- **Brooklyn CB9** was recorded as publishing a dateless calendar page. True, but
+  `/about/agendas.page` is a 90-PDF notice archive.
+- **Brooklyn CB11** was recorded as having a feed holding no events. The feed holds 79. It
+  reads as empty only because the endpoint defaults `start_date` to today and the board has
+  posted nothing further ahead.
+- **Brooklyn CB13** was recorded as minutes-only; its home page carries the year's schedule.
+- **Brooklyn CB16** and **Queens CB11** were recorded as having one notice; both have more.
+- **Queens CB14**'s PDFs really are scans, but its calendar page publishes the dates in HTML.
+
+Five remain uncovered, and each for a reason no parser fixes:
+
+| Board | Why |
+|---|---|
+| Manhattan CB5 (105) | Cloudflare serves a JS challenge and returns 403 to any non-browser client. No nyc.gov mirror exists. |
+| Manhattan CB11 (111) | Meetings live in an Airtable shared view whose embed carries no row data, and whose `readSharedViewData` route returns 401 to the signed URL the page itself emits. The embedded access policy lists `downloadICal`, so an iCal route probably exists — its URL was not found, and is not guessed. |
+| Bronx CB12 (212) | 58 agenda and minutes PDFs, all image-only: zero extractable characters. Needs OCR. |
+| Queens CB10 (410) | 65 agenda PDFs, all image-only. The link text names the month but not the day, so not even the dates survive without OCR. |
+| Brooklyn CB5 (305) | A working site that publishes no dates — only a recurrence in prose, "every 4th Wednesday at 6:30pm". A recurrence stated in prose is not expanded. |
+
 ## What these documents do not say
 
 Nothing in a board's PDF states whether a meeting is remote, whether testimony is taken, or

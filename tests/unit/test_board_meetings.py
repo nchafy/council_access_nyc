@@ -327,3 +327,49 @@ class TestTheRemainingBranches:
         path.write_text(json.dumps({"feeds": feeds}), encoding="utf-8")
         with pytest.raises(BoardMeetingsError, match="boards answered, floor is"):
             load_board_meetings(path, on_or_after=DAY)
+
+
+class TestThePublishedShape:
+    """`site/data/board-meetings.json` is a contract: a separate backend reads it, so its
+    field types must not vary between boards."""
+
+    def _payload(self, boards: dict) -> dict:
+        from datetime import datetime
+
+        from showup.render import board_schedule_payload
+
+        return board_schedule_payload(
+            {},
+            {"boards": boards, "caveat": "c", "statuses": {}},
+            today=DAY,
+            built_at=datetime(2026, 11, 2, 12, 0, 0),
+        )
+
+    def test_source_url_is_a_string_even_for_a_board_with_two_archives(self):
+        """Queens CB5 declares two archive pages. Emitting a list for that board and a
+        string for the other 58 would make every consumer special-case it."""
+        payload = self._payload(
+            {
+                "405": {
+                    "label": "Queens CB5",
+                    "kind": "nyc-pdf",
+                    "url": ["https://a", "https://b"],
+                },
+                "409": {"label": "Queens CB9", "kind": "nyc-pdf", "url": "https://c"},
+            }
+        )
+        for code in ("405", "409"):
+            assert isinstance(payload["boards"][code]["source_url"], str), code
+        assert payload["boards"]["405"]["other_source_urls"] == ["https://b"]
+        assert payload["boards"]["409"]["other_source_urls"] is None
+
+    def test_a_board_with_no_source_says_so_rather_than_being_absent(self):
+        """A consumer must be able to tell "no meetings scheduled" from "we cannot read
+        this board", which a list of only the working boards destroys."""
+        payload = self._payload({"105": {"label": "Manhattan CB5", "status": "blocked"}})
+        assert payload["boards"]["105"]["source_url"] is None
+        assert payload["coverage"]["with_a_readable_source"] == 0
+
+    def test_several_archives_count_once_towards_coverage(self):
+        payload = self._payload({"405": {"label": "Queens CB5", "url": ["https://a", "https://b"]}})
+        assert payload["coverage"]["with_a_readable_source"] == 1

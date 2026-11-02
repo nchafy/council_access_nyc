@@ -57,7 +57,7 @@ side effect of adding a library.
 | ruff | >=0.6 | MIT | dev | lint + format |
 | websocket-client | 1.9.2 (`>=1.9.2`, pinned in `uv.lock`) | Apache-2.0 | dev | Replaces the 127-line hand-written RFC 6455 client inside `scripts/cdp.py` — frame headers, client masking, 16- and 64-bit lengths, continuation reassembly, ping/pong; the most error-prone code in the repo and the least specific to this project |
 | axe-core | 4.13.0 | MPL-2.0 | dev, fetched | R39's accessibility gate; not committed, see `vendor` note in `scripts/fetch_axe.py` |
-| pypdf | 6.21.4 (`>=6.21.4`, pinned in `uv.lock`) | BSD-3-Clause | runtime (build-time) | Reads the schedule PDFs that 15 community boards publish instead of a feed or a page. Replaces nothing — without it those boards' meetings are simply absent. One `py3-none-any` wheel and **no required runtime dependency at all** on 3.12; see below for why it is not poppler and not pdfminer.six |
+| pypdf | 6.21.4 (`>=6.21.4`, pinned in `uv.lock`) | BSD-3-Clause | runtime (build-time) | Reads the schedule PDFs that 21 community boards publish instead of a feed or a page. Replaces nothing — without it those boards' meetings are simply absent. One `py3-none-any` wheel and **no required runtime dependency at all** on 3.12; see below for why it is not poppler and not pdfminer.six |
 | maplibre-gl | 6.15.0 | BSD-3-Clause | **browser, vendored** | The M3 district map. Replaces hand-rolling pan, zoom, projection and hit-testing over 51 polygons in WebGL. 449 KB gzipped across three files, so it is loaded on demand and never on first paint. Pinned by tarball sha512 plus a sha256 per extracted file in `scripts/fetch_maplibre.py`; not committed. Published 2026-10-18, so rule 3 is comfortable. npm runs at no point, so the `prepare` script in its `package.json` never executes — rule 5 holds for the same reason it does for axe-core |
 
 One entry reaches a reader — `maplibre-gl`, on the map route only, served from `site/vendor/`.
@@ -117,8 +117,9 @@ Legistar keys on `ID` alone, so no reader was ever sent somewhere wrong.
 
 ## The PDF reader, and why it is not poppler and not pdfminer.six
 
-pypdf landed 2026-10-31, to read the schedule PDFs 15 boards publish. It is a **runtime**
-dependency: it runs inside `showup fetch`, on documents written by 15 third parties.
+pypdf landed 2026-10-31 to read the schedule PDFs 15 boards publish, and six more boards
+joined them on 2026-11-02. It is a **runtime** dependency: it runs inside `showup fetch`, on
+documents written by 21 third parties.
 
 The owner asked for "the one that is more mature code and reliable dependency". Those two
 criteria point at different libraries, and the honest answer is that **poppler is the more
@@ -126,7 +127,7 @@ mature codebase and pypdf is the more reliable dependency here**:
 
 - **poppler** (`pdftotext`, descended from Xpdf) is two decades old and packaged by every
   Linux distribution. It is also a **system binary**, installed out of band. A contributor
-  without Homebrew poppler would get a build that silently produces 15 fewer boards'
+  without Homebrew poppler would get a build that silently produces 21 fewer boards'
   schedules — fail-open, which is the exact failure the ingest floors in
   `sources/board_meetings.py` exist to prevent. Rule 5 is about install-time execution, and
   a system binary does not break it; the reproducibility of the build is the objection.

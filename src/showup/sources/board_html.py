@@ -1,15 +1,24 @@
 """Per-board readers for the boards that publish a schedule as nyc.gov HTML.
 
-Six boards publish real dated schedules on their nyc.gov pages and no feed at all. They
+Nine boards publish real dated schedules on their nyc.gov pages and no feed at all. They
 share a host, a CMS and nothing else: one writes a month at a time with venues, one a bare
 list of dates with the recurrence in prose, one a year list with ordinal suffixes and no
-year on the line, one a sectioned list where only the first entry carries a time. So there
-is a function per board, named for it, and the shape each one reads is written down in its
-docstring — because the next person to look at this will be looking because one board
-changed its page, and they need to know what this code believed.
+year on the line, one a sectioned list where only the first entry carries a time, one pastes
+its year out of Outlook. So there is a function per board, named for it, and the shape each
+one reads is written down in its docstring — because the next person to look at this will be
+looking because one board changed its page, and they need to know what this code believed.
 
 Owner's instruction, 2026-10-31: separate parsers per board where needed, with the goal of
 a source of truth for every board's schedule.
+
+**On taking an hour stated once, in prose.** Two boards here refuse to: Brooklyn CB18
+states its hour in a sentence and marks the exceptions by colour, and Queens CB1 states one
+at the head of a section whose extent the markup does not delimit. In both, applying the
+hour uniformly would put some meetings at the wrong time. Queens CB11 is different and is
+read: one flat list titled `Community Board Meetings`, one sentence immediately beneath it
+reading `Meetings are held at 7:30 pm`, and no exception mechanism anywhere on the page.
+Taking that is reading what the page says; the other two would be inferring what it does
+not. The distinction is the presence of an exception the markup cannot express.
 
 Everything here is third-party prose that reaches the page, so every string goes through
 `strip_tags` and nothing is inferred that the page does not say. In particular: where a
@@ -283,8 +292,143 @@ def read_queens_cb7(markup: str, *, on_or_after: date) -> list[BoardMeeting]:
     return []
 
 
+#: Brooklyn CB13 heads its block `Upcoming Brooklyn Community Board 13 Meetings for 2026
+#: Calendar`. That heading is the only place the year appears.
+_CB13_YEAR = re.compile(r"Meetings\s+for\s+(20\d\d)", re.I)
+
+#: A venue in parentheses at the end of a line, which is how Brooklyn CB13 writes one.
+_PARENTHESISED = re.compile(r"\(([^)]{6,})\)\s*$")
+
+
+def read_brooklyn_cb13(markup: str, *, on_or_after: date) -> list[BoardMeeting]:
+    """Brooklyn CB13: a centred block on the **home page**, pasted out of Outlook.
+
+    `Wednesday, September 23, @ 7 PM (2601 Ocean Pkwy-South Brooklyn Hospital, 2nd floor
+    Auditorium)`, under a heading that is the only place the year appears. The rows carry
+    `data-olk-copy-source="MessageBody"`, which is the giveaway that somebody pasted them
+    from an email — so the markup around them is not a structure to rely on, and this reads
+    the lines instead.
+
+    The page says the dates are tentative. That is the board's caveat to make, not a reason
+    to withhold them, and `docs/board-pdf-shapes.md` records it.
+    """
+    lines = lines_of(markup)
+    year = None
+    for line in lines:
+        heading = _CB13_YEAR.search(line)
+        if heading:
+            year = int(heading.group(1))
+            break
+
+    out = []
+    for line in lines:
+        # Every row begins with the weekday. Without that anchor, a sentence further down
+        # the home page that happens to name a month becomes a meeting.
+        if not re.match(r"^(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day,", line):
+            continue
+        day = _date_of(line, default_year=year)
+        if not day or day < on_or_after:
+            continue
+        venue = _PARENTHESISED.search(line)
+        where = venue.group(1) if venue else None
+        out.append(_meeting(day, "General board meeting", _time_of(line), where))
+    return out
+
+
+#: Queens CB11's standing note, immediately below its one list of dates.
+_CB11_HOUR = re.compile(r"Meetings\s+are\s+held\s+at\s+(\d{1,2}(?::\d{2})?\s*[ap]\.?\s*m\.?)", re.I)
+
+
+def read_queens_cb11(markup: str, *, on_or_after: date) -> list[BoardMeeting]:
+    """Queens CB11: a flat `<ul>` of full dates, with the hour in one sentence beneath it.
+
+    `May 4, 2026` … `December 7, 2026`, then `**Meetings are held at 7:30 pm`. The year is
+    on every row, and the hour governs the whole list — see the module docstring for why
+    this board's prose hour is taken where Brooklyn CB18's and Queens CB1's are not.
+
+    This board also publishes 79 agenda PDFs carrying `DATE:`/`TIME:`/`PLACE:`. The HTML is
+    read instead because it lists the whole year, where an agenda exists only once a
+    meeting is imminent.
+    """
+    lines = lines_of(markup)
+    stated = next((found for found in map(_CB11_HOUR.search, lines) if found), None)
+    hour = _time_of(stated.group(1)) if stated else None
+
+    out = []
+    for line in lines:
+        day = _date_of(line, default_year=None)
+        if not day or day < on_or_after:
+            continue
+        # A row here is a date and nothing else. Longer lines are the page's own prose
+        # about registering to speak, which also names dates.
+        if len(line) > 24:
+            continue
+        out.append(_meeting(day, "Community board meeting", hour, None))
+    return out
+
+
+#: Queens CB14 labels each agenda link with its full date: `Monthly Board Meeting Agenda,
+#: November 10, 2026`. The label before the comma is the committee.
+_CB14_AGENDA = re.compile(
+    r"^(.*?Agenda),\s*(" + "|".join(_MONTHS) + r")\s+(\d{1,2}),\s*(20\d\d)", re.I
+)
+
+
+def read_queens_cb14(markup: str, *, on_or_after: date) -> list[BoardMeeting]:
+    """Queens CB14: a year's full-board dates, plus one dated label per agenda link.
+
+    Two lists on one page. `May 12th, 2026<br />June 9th, 2026` under
+    `Full Board / Public Hearing Meetings` gives the year's board meetings with ordinal
+    suffixes; below it, every agenda link is labelled with its own full date and the
+    committee, which is where the committee meetings come from.
+
+    **No time and no venue are reported.** The page names two alternating locations in
+    prose — Knights of Columbus or the Bayswater Jewish Center — and tells the reader to
+    check the agenda for which; the agendas are scanned images. So the venue is genuinely
+    not readable here, and the prose hour covers only the monthly board meetings and not
+    the committees, which share the page. Dates alone are what this document supports.
+    """
+    lines = lines_of(markup)
+    labelled: dict[date, list[str]] = {}
+    listed: list[date] = []
+
+    for line in lines:
+        found = _CB14_AGENDA.match(line)
+        if found:
+            try:
+                month = _MONTHS[found.group(2).lower()]
+                day = date(int(found.group(4)), month, int(found.group(3)))
+            except ValueError:
+                continue
+            title = collapse(re.sub(r"\s*Agenda$", "", found.group(1))) or "Meeting"
+            if title not in labelled.setdefault(day, []):
+                labelled[day].append(title)
+            continue
+        day = _date_of(line, default_year=None)
+        # A bare dated line is one of the year's board meetings. Anything longer is the
+        # page explaining its two venues.
+        if day and len(line) <= 24 and day not in listed:
+            listed.append(day)
+
+    out = []
+    for day, titles in labelled.items():
+        if day >= on_or_after:
+            out.extend(_meeting(day, title, None, None) for title in titles)
+    for day in listed:
+        # The year's list and the agenda labels describe the same board meetings, so a day
+        # whose agenda is already posted must not be published twice. The label is the
+        # better of the two — it names the committee — so the generic entry yields to it.
+        if day < on_or_after or any("board" in title.lower() for title in labelled.get(day, [])):
+            continue
+        out.append(_meeting(day, "Full board or public hearing", None, None))
+    return out
+
+
 #: Board code to the reader that understands that board's page. One per board, on purpose.
 HTML_READERS = {
+    "313": read_brooklyn_cb13,
+    "411": read_queens_cb11,
+    "414": read_queens_cb14,
     "103": read_manhattan_cb3,
     "304": read_brooklyn_cb4,
     "315": read_brooklyn_cb15,

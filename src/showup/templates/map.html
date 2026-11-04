@@ -10,11 +10,23 @@
 {% block body %}
 <h1 class="visually-hidden">Map of council districts and community boards</h1>
 
-<!-- The basemap, here rather than in the module so changing it is a one-line diff.
-     OpenFreeMap publishes liberty, bright, positron, dark and fiord; `map.mjs` strips the
-     road layers out of whichever is named. positron is the desaturated one, and the
-     districts and their selection read on top of it, which they do not on liberty's orange
-     highways or fiord's navy. Screenshots of each are in screenshots/style-*.png.
+<!-- The basemap, here rather than in the module so changing it is a one-line diff. The
+     names come from `BASEMAPS` in `map.mjs`; a bare style URL also works.
+
+     OpenFreeMap publishes liberty, bright, positron, dark and fiord, and `map.mjs` uses
+     each exactly as its author wrote it. There is no `3d` style — that URL 404s; liberty
+     already carries a `building-3d` fill-extrusion layer at zoom 14 and up, so the 3D
+     buildings come with it.
+
+     `liberty-contrast` is the default, and it is a compromise between two things the owner
+     asked for on 2026-11-04 that pull against each other: OpenFreeMap's styles look better,
+     and the high-contrast colours are worth keeping. liberty's labels and roads are what
+     makes it look better and also what makes a district boundary hard to find on it, so
+     this is liberty entire with only the water repainted to the navy the district fill uses
+     — one hue at two weights, which is what separates the coast from the land.
+
+     `satnav` is the earlier look, kept as an option: positron with its roads stripped and
+     the early-2000s palette painted over it, measured in docs/design.md §2.
 
      `esri-light-gray` is also available by name — Esri's Light Gray Canvas, the basemap
      howfar.nyc uses, rendered in screenshots/esri-lightgray.png. Choosing it takes TWO
@@ -24,7 +36,7 @@
      confirmed the keyless endpoints are licensed for this use, so widening the policy for
      it has to be somebody's decision rather than a default. -->
 <div id="map" class="map"
-     data-basemap="https://tiles.openfreemap.org/styles/positron"></div>
+     data-basemap="liberty-contrast"></div>
 
 <!-- Bottom-left over the canvas, not in a card: a map control belongs on the map. The
      visible glyph is a symbol, so each button carries an aria-label — "+" is not a name.

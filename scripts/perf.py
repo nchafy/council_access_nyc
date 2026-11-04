@@ -31,6 +31,11 @@ from serve import background_server
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BUDGET_FILE = REPO_ROOT / "perf-budget.json"
 
+#: How long the CDP socket may wait on a throttled load before giving up. Well past the
+#: 3 s threshold being gated, because the point is to *measure* a slow page rather than to
+#: lose the connection to it.
+THROTTLED_SOCKET_S = 180.0
+
 #: One page of each type; siblings differ only in data, and throttled loads are the runtime.
 TIMED_PAGES = ("/", "/district/35/", "/board/302/")
 
@@ -96,7 +101,12 @@ def measure_cold_load(
     pre-rendered page. First contentful paint is collected and printed but not gated.
     """
     samples: dict[str, list[float]] = {path: [] for path in paths}
-    with background_server(root) as base, Browser() as browser:
+    # A throttled load is slow by design, and the CDP socket's own read timeout has to
+    # outlast it or the measurement dies mid-frame rather than reporting a number. The
+    # default 30 s was enough until the basemap became liberty on 2026-11-04, whose sprite
+    # sheet and 111 layers pushed a 3G-fast load past it: the gate failed with "connection
+    # closed mid-frame" twice, which looks like a budget breach and is not one.
+    with background_server(root) as base, Browser(timeout=THROTTLED_SOCKET_S) as browser:
         page = browser.page()
         page.throttle(
             download_bps=profile["download_bps"],

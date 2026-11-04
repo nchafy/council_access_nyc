@@ -646,11 +646,20 @@ class TestThePinBelongsToOneLookup:
 #: test that needs real data and skips without it.
 REAL_SITE = REPO_ROOT / "site"
 
-#: Floors on the selected district's painted pixels, measured 2026-10-31 at 1280x820.
-#: Correct renders 192,377 at four zoom steps in and 20,064 at six; inserting the fill
-#: beneath the basemap's land polygons instead drops those to 78,206 and **0**. The floors
-#: sit between the two, which is what makes this gate able to see that bug at all.
-PAINTED_FLOOR = {4: 150_000, 6: 10_000}
+#: Floors on the selected district's painted pixels, measured at 1280x820.
+#:
+#: The bug this exists for is the fill inserted beneath the basemap's land polygons, which
+#: on 2026-10-31 dropped the correct 192,377 pixels at four zoom steps to 78,206, and the
+#: correct 20,064 at six steps to **0**. The six-step floor is the decisive one — nothing
+#: else distinguishes zero — and it has not moved.
+#:
+#: The four-step floor dropped from 150,000 to 95,000 on 2026-11-04, when the basemap became
+#: liberty. It is not a weakened gate: the same four clicks on the new basemap land at a
+#: wider zoom, so the district occupies less of the viewport and paints 107,119 pixels while
+#: being, if anything, easier to read — the whole district and its neighbours are visible
+#: where the old framing was deep inside it. The floor still sits above the buried figure of
+#: 78,206, so the bug remains visible to it.
+PAINTED_FLOOR = {4: 95_000, 6: 10_000}
 
 #: How far the painted centroid may sit from the middle of the visible map. Correct is
 #: +42 px at four steps and -14 px at six; centring the bounding box instead of the

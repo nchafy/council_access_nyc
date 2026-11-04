@@ -19,7 +19,7 @@ const toggle = document.getElementById('map-toggle');
 // an owner decision in product-brief.md §5.
 //: Overridden by `data-basemap` on the container, which is where the choice actually
 //: lives; this is the fallback if the attribute is missing.
-const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';
+const BASEMAP_STYLE = 'liberty-contrast';
 
 //: Esri's Light Gray Canvas, as howfar.nyc uses it: a raster base plus a separate label
 //: layer, which is why its labels sit above an overlay. Selected with
@@ -52,6 +52,41 @@ const ESRI_LIGHT_GRAY = {
 
 //: Styles this module knows by name rather than by URL.
 const NAMED_STYLES = { 'esri-light-gray': ESRI_LIGHT_GRAY };
+
+//: The deep navy that makes a coastline read. The same value the district fill uses at low
+//: opacity, which is why a navy wash over land and navy water at full opacity separate so
+//: cleanly: one hue, two weights.
+const WATER_NAVY = '#1b3f7a';
+
+//: The basemaps `data-basemap` can name, each a published OpenFreeMap style plus whatever
+//: this project does to it. A recipe with no `drop` and no `paint` is that style exactly as
+//: its author wrote it.
+//:
+//: Owner's decisions, 2026-11-04: OpenFreeMap's own styles look better than the rewrite,
+//: and the high-contrast colours are worth keeping. Those pull in opposite directions —
+//: liberty's labels and roads are what makes it look better, and they are also what makes
+//: a district boundary hard to find on it — so `liberty-contrast` is the pair of them:
+//: liberty entire, with only the water repainted. One override, because the contrast comes
+//: from the water and not from the rest of the palette.
+const BASEMAPS = {
+  liberty: { url: 'https://tiles.openfreemap.org/styles/liberty' },
+  bright: { url: 'https://tiles.openfreemap.org/styles/bright' },
+  positron: { url: 'https://tiles.openfreemap.org/styles/positron' },
+  dark: { url: 'https://tiles.openfreemap.org/styles/dark' },
+  fiord: { url: 'https://tiles.openfreemap.org/styles/fiord' },
+  'liberty-contrast': {
+    url: 'https://tiles.openfreemap.org/styles/liberty',
+    paint: {
+      water: { 'fill-color': WATER_NAVY },
+      water_intermittent: { 'fill-color': WATER_NAVY },
+      waterway: { 'line-color': WATER_NAVY },
+    },
+  },
+  satnav: {
+    url: 'https://tiles.openfreemap.org/styles/positron',
+    drop: true,
+  },
+};
 //: Source layers dropped from the basemap before MapLibre ever sees it. Roads at the same
 //: visual weight as a district boundary mean neither reads, and the point of a basemap under
 //: a data overlay is to recede. `transportation` is the 20 road and pier layers;
@@ -309,30 +344,61 @@ function waterMaskLayer(style) {
   return { ...water, id: 'water-mask', filter: water.filter || ['all'] };
 }
 
-/** The basemap style with its road layers removed, or null if it could not be had. */
-async function loadBasemapStyle(url) {
-  // A named style is ours already; there is nothing to fetch and no roads to strip.
-  if (NAMED_STYLES[url]) return NAMED_STYLES[url];
+//: A property OpenFreeMap's liberty style compares numerically without checking that the
+//: feature has it. `["<=", ["get", "ref_length"], 6]` throws on a road with no `ref_length`,
+//: MapLibre reports "Expected value to be of type number, but found null" and falls back to
+//: `false` — so the two highway-shield layers are disabled and no shield ever draws.
+//: Measured 2026-11-04 on liberty via the console gate, which is what caught it.
+//:
+//: Repaired rather than dropped, because the shields are wanted: the fix is to give the
+//: comparison a number when the property is missing. Keyed on the expression and not on a
+//: layer id, so it survives them renaming the layers.
+const FRAGILE_NUMERIC_PROPS = new Set(['ref_length']);
+
+/** A style filter with its unguarded numeric property reads made safe. */
+function repairFilter(node) {
+  if (!Array.isArray(node)) return node;
+  if (node.length === 2 && node[0] === 'get' && FRAGILE_NUMERIC_PROPS.has(node[1])) {
+    return ['coalesce', node, 0];
+  }
+  return node.map(repairFilter);
+}
+
+/** The basemap style, or null if it could not be had.
+ *
+ * A published style is returned untouched. Only `satnav` is rewritten — its roads stripped
+ * and its palette replaced — because that look is ours and not OpenFreeMap's.
+ */
+async function loadBasemapStyle(name) {
+  // A named style is ours already; there is nothing to fetch.
+  if (NAMED_STYLES[name]) return NAMED_STYLES[name];
+  // A bare URL stays supported so a style can be tried without editing this table.
+  const recipe = BASEMAPS[name] || { url: name };
+  const paints = recipe.drop ? PAINT_OVERRIDES : recipe.paint || {};
   try {
-    const style = await fetchJson(url);
-    const kept = (style.layers || [])
+    const style = await fetchJson(recipe.url);
+    const layers = (style.layers || [])
       .filter(
         (layer) =>
-          !DROPPED_SOURCE_LAYERS.has(layer['source-layer']) || KEPT_ROAD_LAYERS.has(layer.id)
+          !recipe.drop ||
+          !DROPPED_SOURCE_LAYERS.has(layer['source-layer']) ||
+          KEPT_ROAD_LAYERS.has(layer.id)
       )
       .map((layer) => {
-        const paint = PAINT_OVERRIDES[layer.id];
-        const level = LAYER_OVERRIDES[layer.id];
-        if (!paint && !level) return layer;
+        const paint = paints[layer.id];
+        const level = recipe.drop ? LAYER_OVERRIDES[layer.id] : null;
+        const filter = layer.filter ? repairFilter(layer.filter) : null;
+        if (!paint && !level && !filter) return layer;
         return {
           ...layer,
           ...(level || {}),
+          ...(filter ? { filter } : {}),
           ...(paint ? { paint: { ...layer.paint, ...paint } } : {}),
         };
       });
-    // Filtered here rather than hidden after load, so the roads never paint at all and
-    // there is no flash of them on a slow connection.
-    return { ...style, layers: kept };
+    // Filtered here rather than hidden after load, so a dropped layer never paints at all
+    // and there is no flash of it on a slow connection.
+    return { ...style, layers };
   } catch {
     return null;
   }
@@ -502,6 +568,12 @@ function addFillLayer(map, layer, data, beforeId) {
       // three states fade as the reader zooms in. `['zoom']` MUST stay the top level of
       // the expression — nested, MapLibre discards the whole style silently
       // (docs/design.md §4, docs/OBSERVATIONS.md 2026-10-27).
+      //
+      // The selected value rose from 0.55 to 0.72 on 2026-11-04, when the basemap became
+      // liberty. A selection tint is read against the land under it, and liberty's land is
+      // near-white where the old palette's was olive — the same 0.55 that was emphatic on
+      // olive is a wash on beige. The painted-pixels gate measured it: 80,931 pixels
+      // against a floor of 150,000.
       'fill-opacity': [
         'interpolate',
         ['linear'],
@@ -510,10 +582,10 @@ function addFillLayer(map, layer, data, beforeId) {
         [
           'case',
           ['boolean', ['feature-state', 'selected'], false],
-          0.55,
+          0.72,
           ['boolean', ['feature-state', 'hovered'], false],
-          0.35,
-          0.12,
+          0.45,
+          0.16,
         ],
         MAX_ZOOM,
         [

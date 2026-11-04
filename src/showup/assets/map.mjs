@@ -9,147 +9,35 @@
 // Every polygon in a layer carries the same fill; the only one that differs is the one the
 // reader selected, because a shaded map reads as a ranking whatever the legend says.
 
+import { createBaseMap } from '/vendor/basemap.mjs';
+
+//: Set once the page's one-time setup has run. The base map rebuilds the district layers
+//: on every basemap change and calls `draw` again; the camera floor and the DOM bindings
+//: must not be redone with them.
+let settled = false;
+
+//: liberty compares `ref_length` without checking the feature carries it, so MapLibre
+//: disables both highway-shield layers and no shield ever draws. Repaired on the loaded
+//: style rather than before it, because the base map owns style loading.
+function repairShieldFilters(map) {
+  for (const layer of map.getStyle().layers || []) {
+    const filter = layer.filter;
+    if (!Array.isArray(filter)) continue;
+    const repaired = JSON.parse(
+      JSON.stringify(filter).replaceAll('["get","ref_length"]', '["coalesce",["get","ref_length"],0]')
+    );
+    if (JSON.stringify(repaired) !== JSON.stringify(filter)) map.setFilter(layer.id, repaired);
+  }
+}
+
 const container = document.getElementById('map');
 const status = document.getElementById('map-status');
 const toggle = document.getElementById('map-toggle');
 
-// OpenFreeMap, which publishes no SLA, so `FALLBACK_STYLE` is not decoration: when the
-// style request fails the districts must still draw and hit-test (outline §"Failure and
-// staleness behaviour"). Adding this host withdrew the no-third-party promise, recorded as
-// an owner decision in product-brief.md §5.
-//: Overridden by `data-basemap` on the container, which is where the choice actually
-//: lives; this is the fallback if the attribute is missing.
-const BASEMAP_STYLE = 'liberty-contrast';
-
-//: Esri's Light Gray Canvas, as howfar.nyc uses it: a raster base plus a separate label
-//: layer, which is why its labels sit above an overlay. Selected with
-//: `data-basemap="esri-light-gray"`.
-//:
-//: NOT the default, and the reason is licensing rather than looks. `server.arcgisonline.com`
-//: is Esri's commercial ArcGIS Online service. The keyless endpoints are widely used — they
-//: ship as a Leaflet provider preset — but Esri's terms govern ArcGIS Online basemaps and
-//: generally contemplate an account for application use. Nobody here has confirmed this use
-//: is licensed. Attribution to Esri is required and is set on the source below.
-const ESRI_TILE = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
-const ESRI_LIGHT_GRAY = {
-  version: 8,
-  sources: {
-    'esri-base': {
-      type: 'raster',
-      tiles: [`${ESRI_TILE}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`],
-      tileSize: 256,
-      attribution: 'Tiles &copy; Esri — Esri, DeLorme, NAVTEQ',
-    },
-    'esri-reference': {
-      type: 'raster',
-      tiles: [`${ESRI_TILE}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`],
-      tileSize: 256,
-    },
-  },
-  // The reference layer is added after the districts in `draw`, so labels stay on top.
-  layers: [{ id: 'esri-base', type: 'raster', source: 'esri-base' }],
-};
-
-//: Styles this module knows by name rather than by URL.
-const NAMED_STYLES = { 'esri-light-gray': ESRI_LIGHT_GRAY };
-
-//: The deep navy that makes a coastline read. The same value the district fill uses at low
-//: opacity, which is why a navy wash over land and navy water at full opacity separate so
-//: cleanly: one hue, two weights.
-const WATER_NAVY = '#1b3f7a';
-
-//: The basemaps `data-basemap` can name, each a published OpenFreeMap style plus whatever
-//: this project does to it. A recipe with no `drop` and no `paint` is that style exactly as
-//: its author wrote it.
-//:
-//: Owner's decisions, 2026-11-04: OpenFreeMap's own styles look better than the rewrite,
-//: and the high-contrast colours are worth keeping. Those pull in opposite directions —
-//: liberty's labels and roads are what makes it look better, and they are also what makes
-//: a district boundary hard to find on it — so `liberty-contrast` is the pair of them:
-//: liberty entire, with only the water repainted. One override, because the contrast comes
-//: from the water and not from the rest of the palette.
-const BASEMAPS = {
-  liberty: { url: 'https://tiles.openfreemap.org/styles/liberty' },
-  bright: { url: 'https://tiles.openfreemap.org/styles/bright' },
-  positron: { url: 'https://tiles.openfreemap.org/styles/positron' },
-  dark: { url: 'https://tiles.openfreemap.org/styles/dark' },
-  fiord: { url: 'https://tiles.openfreemap.org/styles/fiord' },
-  'liberty-contrast': {
-    url: 'https://tiles.openfreemap.org/styles/liberty',
-    paint: {
-      water: { 'fill-color': WATER_NAVY },
-      water_intermittent: { 'fill-color': WATER_NAVY },
-      waterway: { 'line-color': WATER_NAVY },
-    },
-  },
-  satnav: {
-    url: 'https://tiles.openfreemap.org/styles/positron',
-    drop: true,
-  },
-};
-//: Source layers dropped from the basemap before MapLibre ever sees it. Roads at the same
-//: visual weight as a district boundary mean neither reads, and the point of a basemap under
-//: a data overlay is to recede. `transportation` is the 20 road and pier layers;
-//: `transportation_name` is the 6 road labels and highway shields. What survives is water,
-//: waterways, parks, landuse, buildings, administrative boundaries and place labels — enough
-//: to know where you are without competing with the thing being shown.
-const DROPPED_SOURCE_LAYERS = new Set(['transportation', 'transportation_name']);
-
-//: Road layers kept despite their source layer being dropped. An early-2000s satnav screen is
-//: *defined* by fat yellow arterials over saturated green, so dropping every road loses the
-//: look entirely — but minor roads and paths were what made the districts unreadable, and
-//: those stay out. Railways stay out too: a GPS unit drew roads, not timetables.
-const KEPT_ROAD_LAYERS = new Set([
-  'highway_motorway_casing',
-  'highway_motorway_inner',
-  'highway_motorway_bridge_casing',
-  'highway_motorway_bridge_inner',
-  'highway_major_casing',
-  'highway_major_inner',
-  'tunnel_motorway_casing',
-  'tunnel_motorway_inner',
-]);
-
-//: Paint overrides applied to the basemap style once the roads are out. positron is a
-//: pale grey canvas; this is the early-2000s satnav palette, whose values and measured
-//: contrast live in docs/design.md §2.
-const LAYER_OVERRIDES = {
-  landcover_wood: { minzoom: 0 },
-};
-
-const PAINT_OVERRIDES = {
-  // The satnav palette: land a flat olive-green, water a deep navy, parks a darker green,
-  // arterials a bright yellow over a dark casing. Saturated on purpose — these screens were
-  // read at a glance in daylight, which is why nothing on them was subtle.
-  background: { 'background-color': '#cfd9a8' },
-  landuse_residential: { 'fill-color': '#d8dfb2', 'fill-opacity': 0.85 },
-  park: { 'fill-color': '#9ec27a' },
-  landcover_wood: {
-    'fill-color': '#8fb86c',
-    // Woods faded in between zoom 8 and 12, so they appeared only once well zoomed in.
-    // Flat, not a zoom ramp: the ramp faded woods in across zoom 8-12, which was the other
-    // half of why one park appeared in pieces.
-    'fill-opacity': 0.95,
-  },
-  landcover_glacier: { 'fill-color': '#e8eef2' },
-  water: { 'fill-color': '#1b3f7a' },
-  waterway: { 'line-color': '#1b3f7a' },
-  building: { 'fill-color': '#c2ca9c', 'fill-opacity': 0.7 },
-  highway_motorway_casing: { 'line-color': '#8a6b12' },
-  highway_motorway_inner: { 'line-color': '#ffd23f' },
-  highway_motorway_bridge_casing: { 'line-color': '#8a6b12' },
-  highway_motorway_bridge_inner: { 'line-color': '#ffd23f' },
-  tunnel_motorway_casing: { 'line-color': '#8a6b12' },
-  tunnel_motorway_inner: { 'line-color': '#f3cf6a' },
-  highway_major_casing: { 'line-color': '#9a7c1d' },
-  highway_major_inner: { 'line-color': '#ffe27a' },
-};
-
-const FALLBACK_STYLE = {
-  version: 8,
-  sources: {},
-  layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#f6f7f9' } }],
-};
+// The base map is the vendored `30daymapchallenge` module, which owns the style, the three
+// map types and the failure behaviour: a style request that fails leaves the districts
+// drawn and hit-testable on their own. Its tile hosts withdrew the no-third-party promise,
+// recorded as an owner decision in product-brief.md §5 and justified in `_headers`.
 
 //: The zoom window. The floor is computed per viewport — whatever zoom fits the whole city is
 //: as far out as the map goes, so it can never be zoomed out to a continent. The ceiling is
@@ -310,30 +198,6 @@ function afterFirstPaint() {
   });
 }
 
-/** The id of the basemap's first label layer, or undefined if it has none.
- *
- * Our district layers are inserted before it, so place and water names draw *on top of*
- * the overlay instead of under it. This is the trick Esri's Light Gray Canvas gets by
- * shipping its labels as a second tile layer; with a vector style it is one argument.
- */
-function firstLabelLayerId(style) {
-  const label = (style.layers || []).find((layer) => layer.type === 'symbol');
-  return label && label.id;
-}
-
-/** Where the district overlay goes: above the roads, below the bridges.
- *
- * The only slot that is above the land polygons and roads (below them they painted over
- * the tint), below the water mask added last in this slot (which clips the overlay to the
- * coastline), and below the bridges (so the mask does not swallow them). docs/design.md §4.
- */
-function overlayInsertionId(style) {
-  const bridge = (style.layers || []).find(
-    (layer) => layer['source-layer'] === 'transportation' && /bridge/.test(layer.id)
-  );
-  return (bridge && bridge.id) || firstLabelLayerId(style);
-}
-
 /** The basemap's water fill, drawn again above the overlay to clip it to the coastline.
  *  A copy of the style's layer, so its colour tracks the basemap rather than drifting. */
 function waterMaskLayer(style) {
@@ -342,66 +206,6 @@ function waterMaskLayer(style) {
   );
   if (!water) return null;
   return { ...water, id: 'water-mask', filter: water.filter || ['all'] };
-}
-
-//: A property OpenFreeMap's liberty style compares numerically without checking that the
-//: feature has it. `["<=", ["get", "ref_length"], 6]` throws on a road with no `ref_length`,
-//: MapLibre reports "Expected value to be of type number, but found null" and falls back to
-//: `false` — so the two highway-shield layers are disabled and no shield ever draws.
-//: Measured 2026-11-04 on liberty via the console gate, which is what caught it.
-//:
-//: Repaired rather than dropped, because the shields are wanted: the fix is to give the
-//: comparison a number when the property is missing. Keyed on the expression and not on a
-//: layer id, so it survives them renaming the layers.
-const FRAGILE_NUMERIC_PROPS = new Set(['ref_length']);
-
-/** A style filter with its unguarded numeric property reads made safe. */
-function repairFilter(node) {
-  if (!Array.isArray(node)) return node;
-  if (node.length === 2 && node[0] === 'get' && FRAGILE_NUMERIC_PROPS.has(node[1])) {
-    return ['coalesce', node, 0];
-  }
-  return node.map(repairFilter);
-}
-
-/** The basemap style, or null if it could not be had.
- *
- * A published style is returned untouched. Only `satnav` is rewritten — its roads stripped
- * and its palette replaced — because that look is ours and not OpenFreeMap's.
- */
-async function loadBasemapStyle(name) {
-  // A named style is ours already; there is nothing to fetch.
-  if (NAMED_STYLES[name]) return NAMED_STYLES[name];
-  // A bare URL stays supported so a style can be tried without editing this table.
-  const recipe = BASEMAPS[name] || { url: name };
-  const paints = recipe.drop ? PAINT_OVERRIDES : recipe.paint || {};
-  try {
-    const style = await fetchJson(recipe.url);
-    const layers = (style.layers || [])
-      .filter(
-        (layer) =>
-          !recipe.drop ||
-          !DROPPED_SOURCE_LAYERS.has(layer['source-layer']) ||
-          KEPT_ROAD_LAYERS.has(layer.id)
-      )
-      .map((layer) => {
-        const paint = paints[layer.id];
-        const level = recipe.drop ? LAYER_OVERRIDES[layer.id] : null;
-        const filter = layer.filter ? repairFilter(layer.filter) : null;
-        if (!paint && !level && !filter) return layer;
-        return {
-          ...layer,
-          ...(level || {}),
-          ...(filter ? { filter } : {}),
-          ...(paint ? { paint: { ...layer.paint, ...paint } } : {}),
-        };
-      });
-    // Filtered here rather than hidden after load, so a dropped layer never paints at all
-    // and there is no flash of it on a slow connection.
-    return { ...style, layers };
-  } catch {
-    return null;
-  }
 }
 
 function fetchJson(url) {
@@ -425,20 +229,15 @@ async function main() {
   let geometry;
   let basemap;
   try {
-    const [lib, council, board, style, lookup, facts] = await Promise.all([
-      import('/vendor/maplibre-gl.mjs'),
+    const [council, board, lookup, facts] = await Promise.all([
       fetchJson(LAYERS.council.url),
       fetchJson(LAYERS.board.url),
-      loadBasemapStyle(container.dataset.basemap || BASEMAP_STYLE),
       // Names and the panel's facts are both niceties: a failure in either must not cost
       // the map, which still draws, hit-tests and links through to the full page.
       fetchJson('/data/lookup.json').catch(() => null),
       fetchJson('/data/preview.json').catch(() => null),
     ]);
-    MapLibre = lib;
-    library = lib;
     geometry = { council, board };
-    basemap = style;
     if (lookup) indexNames(lookup);
     preview = facts;
   } catch (error) {
@@ -447,58 +246,42 @@ async function main() {
     return;
   }
 
-  const map = new MapLibre.Map({
+  const base = await createBaseMap({
     container,
-    // The style object, already stripped of roads. Null when the host could not be
-    // reached, which is what OpenFreeMap publishing no SLA means in practice.
-    style: basemap || FALLBACK_STYLE,
     center: [-73.95, 40.7],
     zoom: 9,
-    maxZoom: MAX_ZOOM,
-    attributionControl: false,
     // The boundaries are the content; tilting or spinning them helps nobody read one.
-    pitchWithRotate: false,
-    dragRotate: false,
-    touchZoomRotate: false,
+    tilt: false,
+    // Re-run against a clean slate after every basemap change, so it carries no
+    // "already added?" guard and keeps no state of its own.
+    draw(map, ctx) {
+      for (const name of Object.keys(LAYERS)) {
+        addFillLayer(map, LAYERS[name], geometry[name], ctx.beforeId);
+      }
+      for (const name of Object.keys(LAYERS)) {
+        addLineLayer(map, LAYERS[name], ctx.beforeId);
+      }
+      // Clips the district tint to the coastline so a district does not wash over water.
+      // Absent on a raster basemap, which has no water layer to clone.
+      const mask = waterMaskLayer(map.getStyle());
+      if (mask) map.addLayer(mask, ctx.beforeId);
+      repairShieldFilters(map);
+      settleOnce(map);
+    },
   });
 
-  // A style that 404s or times out arrives here, not at `load`, so the fallback is armed
-  // before the first paint rather than after a reader has stared at nothing.
-  let usingFallback = false;
-  map.on('error', (event) => {
-    const message = (event && event.error && event.error.message) || 'unknown error';
-    if (!usingFallback && /style|sprite|glyph|tiles\.openfreemap/i.test(message)) {
-      usingFallback = true;
-      say('The basemap did not load, so the districts are drawn on their own.');
-      map.setStyle(FALLBACK_STYLE);
-      return;
-    }
-    if (!usingFallback) {
-      say(`The map reported an error (${message}). Everything is listed below.`);
-    }
-  });
+  if (!base) return;
+  MapLibre = base.library;
+  library = base.library;
 
-  const draw = () => {
-    // Bottom to top: basemap land, roads, district fills, district boundaries, a second
-    // copy of the water fill, bridges, labels. Successive inserts before one `beforeId`
-    // stack in call order, which is what puts the mask above the overlay it clips. Every
-    // position here is load-bearing — see `overlayInsertionId`.
-    const style = basemap ? map.getStyle() : null;
-    const insertion = style ? overlayInsertionId(style) : undefined;
-    for (const name of Object.keys(LAYERS)) {
-      addFillLayer(map, LAYERS[name], geometry[name], insertion);
-    }
-    for (const name of Object.keys(LAYERS)) {
-      addLineLayer(map, LAYERS[name], insertion);
-    }
-    const mask = style ? waterMaskLayer(style) : null;
-    if (mask && !map.getLayer(mask.id)) map.addLayer(mask, insertion);
-    // Esri ships its labels as their own tile layer, so they go on last to sit above the
-    // districts. A vector style needs no equivalent: `beforeId` above does the same job.
-    if (map.getSource('esri-reference') && !map.getLayer('esri-reference')) {
-      map.addLayer({ id: 'esri-reference', type: 'raster', source: 'esri-reference' });
-    }
-
+  function settleOnce(map) {
+    // Called from the first `draw`, not beside it: the camera floor and the View both need
+    // the district layers to exist, and `draw` is where they come into being. Runs once —
+    // the layers are rebuilt on every basemap change, but the feature index, the zoom floor
+    // and the DOM bindings are properties of the page.
+    if (settled) return;
+    settled = true;
+    map.setMaxZoom(MAX_ZOOM);
     // `LAYERS`, `geometry` and `featureBounds` are all keyed by source name, so one key
     // walks all three.
     for (const name of Object.keys(LAYERS)) {
@@ -534,14 +317,7 @@ async function main() {
     bindZoom(map);
     bindSelection(view);
     bindAddress(view);
-  };
-
-  // `styledata` rather than `load`, because `setStyle` discards every layer we added and
-  // fires it again; `load` fires once and would leave the fallback empty.
-  map.on('styledata', () => {
-    if (map.getSource('council')) return;
-    draw();
-  });
+  }
 }
 
 function addFillLayer(map, layer, data, beforeId) {

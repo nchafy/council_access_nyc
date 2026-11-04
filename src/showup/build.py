@@ -7,6 +7,7 @@ is left in place.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import date, datetime
 from pathlib import Path
@@ -88,6 +89,25 @@ VENDOR_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "maplibre-gl"
 #: licence still travels with the code.
 VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
 
+#: The base map and window chrome, pinned by `scripts/fetch_basemap.py`. The map route
+#: imports these from `/vendor/`; the build only copies them.
+BASEMAP_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "basemap"
+BASEMAP_FILES = ("basemap.mjs", "chrome.mjs", "xp.css")
+
+#: Hosts the base map names only in its attribution links, which a reader clicks and the
+#: page never fetches. Everything else it names is a tile, glyph or sprite source and must
+#: appear in `connect-src`, so anything new upstream fails the build until it is classified
+#: here or allowed there.
+BASEMAP_LINK_ONLY_HOSTS = frozenset(
+    {
+        "https://creativecommons.org",
+        "https://openfreemap.org",
+        "https://opentopomap.org",
+        "https://www.esri.com",
+        "https://www.openstreetmap.org",
+    }
+)
+
 
 def _copy_vendor(staging: Path) -> None:
     """Copy the pinned MapLibre files into `site/vendor/`.
@@ -101,10 +121,86 @@ def _copy_vendor(staging: Path) -> None:
             f"no vendored MapLibre in {VENDOR_CACHE} (missing {', '.join(missing)}). "
             "Run `make maplibre-fetch` once; it is pinned by checksum and cached."
         )
+    absent = [name for name in BASEMAP_FILES if not (BASEMAP_CACHE / name).is_file()]
+    if absent:
+        raise BuildError(
+            f"no vendored base map in {BASEMAP_CACHE} (missing {', '.join(absent)}). "
+            "Run `make basemap-fetch` once; it is pinned by commit and checksum."
+        )
     vendor = staging / "vendor"
     vendor.mkdir(parents=True, exist_ok=True)
     for name in VENDOR_FILES:
         shutil.copy2(VENDOR_CACHE / name, vendor / name)
+    for name in BASEMAP_FILES:
+        shutil.copy2(BASEMAP_CACHE / name, vendor / name)
+    _assert_policy_covers_basemap()
+
+
+#: A `https://` origin in the base map, with `${...}` left in place so a templated
+#: subdomain is recognised as the pattern it is.
+_ORIGIN = re.compile(r"https://[A-Za-z0-9.$~{}_-]+")
+
+
+#: A templated subdomain, as the base map spells one: `https://${s}.tile.example.org`.
+_TEMPLATED_SUBDOMAIN = re.compile(r"\$\{[A-Za-z0-9_]+\}")
+
+
+def _basemap_fetch_origins() -> set[str]:
+    """Every origin the base map fetches from, templated subdomains left as patterns."""
+    text = (BASEMAP_CACHE / "basemap.mjs").read_text(encoding="utf-8")
+    origins = set()
+    for match in _ORIGIN.finditer(text):
+        parts = match.group().split("/")
+        if len(parts) >= 3:
+            origins.add(f"{parts[0]}//{parts[2]}")
+    return origins - BASEMAP_LINK_ONLY_HOSTS
+
+
+#: Stands in for a templated subdomain while the rest of the origin is escaped. Letters
+#: only, because `re.escape` would otherwise escape the sentinel along with everything else
+#: and the placeholder would never be substituted back.
+_WILDCARD_SENTINEL = "SUBDOMAINWILDCARD"
+
+
+def _origin_allowed(origin: str, hosts: list[str]) -> bool:
+    """Whether one origin, or a templated one's subdomains, is allowed.
+
+    A templated origin is satisfied by any one matching host, because the pattern carries
+    no list of the subdomains it stands for. So a policy naming only `a.tile.example.org`
+    passes while the base map also fetches `b` and `c`, and the missing two would fail in a
+    reader's browser. The check catches an unallowed *host*; it does not prove a templated
+    set is complete.
+    """
+    if "${" not in origin:
+        return origin in hosts
+    masked = _TEMPLATED_SUBDOMAIN.sub(_WILDCARD_SENTINEL, origin)
+    pattern = re.compile("^" + re.escape(masked).replace(_WILDCARD_SENTINEL, "[^.]+") + "$")
+    return any(pattern.match(host) for host in hosts)
+
+
+def _assert_policy_covers_basemap() -> None:
+    """Fail the build when the base map would fetch a host `connect-src` forbids.
+
+    Nothing else compares the policy against what the vendored base map actually requests,
+    so without this a new upstream tile host ships a map that passes every local check and
+    is blocked in production.
+    """
+    policy = (Path(__file__).resolve().parents[2] / "_headers").read_text(encoding="utf-8")
+    # The served header, not the first mention: `connect-src` is discussed in the comments
+    # above it, and matching those collected prose instead of hosts.
+    served = next((line for line in policy.splitlines() if "Content-Security-Policy:" in line), "")
+    allowed = re.search(r"connect-src ([^;]+)", served)
+    hosts = allowed.group(1).split() if allowed else []
+    uncovered = [
+        origin for origin in sorted(_basemap_fetch_origins()) if not _origin_allowed(origin, hosts)
+    ]
+    if uncovered:
+        raise BuildError(
+            f"the vendored base map fetches {', '.join(uncovered)}, which connect-src in "
+            f"`_headers` does not allow. Add them there and to ALLOWED_ORIGINS in "
+            f"tests/unit/test_csp.py, or record them as link-only in "
+            f"BASEMAP_LINK_ONLY_HOSTS."
+        )
 
 
 def _check_floor(name: str, count: int) -> None:

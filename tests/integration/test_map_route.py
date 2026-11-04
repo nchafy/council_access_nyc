@@ -18,7 +18,7 @@ from pageset import every_page
 from perf import budget, gzipped_size
 
 from showup import render
-from showup.build import VENDOR_FILES, BuildError, build_site
+from showup.build import BASEMAP_FILES, VENDOR_FILES, BuildError, build_site
 from showup.fetch import cache_path
 from showup.model import BOARD_COUNT, DISTRICT_COUNT
 from showup.render import PREVIEW_REQUESTS, preview_payload
@@ -79,7 +79,11 @@ class TestTheMapIsItsOwnRoute:
         assert 'data-layer="council" aria-pressed="true"' in html
 
     def test_every_vendored_file_ships(self, site):
-        assert {path.name for path in (site / "vendor").iterdir()} == set(VENDOR_FILES)
+        """MapLibre and the base map both, because the map route imports from each."""
+        assert {path.name for path in (site / "vendor").iterdir()} == {
+            *VENDOR_FILES,
+            *BASEMAP_FILES,
+        }
 
     def test_the_licence_ships_beside_the_library(self, site):
         """BSD-3-Clause travels with the code or we are not complying with it."""

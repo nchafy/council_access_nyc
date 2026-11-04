@@ -26,10 +26,13 @@ fetch: ## refresh the upstream cache (~9 min cold; skips fresh sources)
 fetch-calendar: ## refresh just the daily-changing calendar
 	uv run showup fetch --only calendar --force
 
+basemap-fetch: ## download the pinned base map into .cache/ (verified, idempotent)
+	uv run python scripts/fetch_basemap.py
+
 maplibre-fetch: ## download the pinned MapLibre into .cache/ (verified, idempotent)
 	uv run python scripts/fetch_maplibre.py
 
-build: maplibre-fetch ## build the static site into site/
+build: maplibre-fetch basemap-fetch ## build the static site into site/
 	uv run showup build
 
 serve: build ## build, then serve locally with the real security headers

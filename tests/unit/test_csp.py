@@ -77,6 +77,12 @@ class TestConnectSrc:
     ALLOWED_ORIGINS = (
         "https://geosearch.planninglabs.nyc",
         "https://tiles.openfreemap.org",
+        # The vendored base map's Satellite and Geography types. `build` fails rather than
+        # letting this list drift from what that base map actually fetches.
+        "https://server.arcgisonline.com",
+        "https://a.tile.opentopomap.org",
+        "https://b.tile.opentopomap.org",
+        "https://c.tile.opentopomap.org",
     )
 
     def test_connect_src_names_exactly_the_decided_hosts(self):

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from showup.build import VENDOR_FILES, BuildError, _copy_vendor
+from showup.build import BASEMAP_FILES, VENDOR_FILES, BuildError, _copy_vendor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
@@ -30,24 +30,57 @@ from fetch_maplibre import (
 )
 
 
-def _cache_with(tmp_path: Path, names) -> Path:
-    cache = tmp_path / "maplibre-gl"
-    cache.mkdir()
+def _cache_with(tmp_path: Path, names, *, dirname: str = "maplibre-gl") -> Path:
+    cache = tmp_path / dirname
+    cache.mkdir(exist_ok=True)
     for name in names:
         (cache / name).write_bytes(b"x" * 16)
     return cache
 
 
+def _stub_caches(tmp_path, monkeypatch, *, maplibre=None, basemap=None) -> None:
+    """Point both vendor caches at fixtures, and skip the policy check.
+
+    `_copy_vendor` also asserts `connect-src` covers what the base map fetches, which reads
+    the real pinned file. These tests are about copying, so the stub base map carries no
+    hosts and the assertion is stubbed out rather than fed a fake policy.
+    """
+    monkeypatch.setattr(
+        "showup.build.VENDOR_CACHE",
+        _cache_with(tmp_path, VENDOR_FILES if maplibre is None else maplibre),
+    )
+    monkeypatch.setattr(
+        "showup.build.BASEMAP_CACHE",
+        _cache_with(
+            tmp_path,
+            BASEMAP_FILES if basemap is None else basemap,
+            dirname="basemap",
+        ),
+    )
+    monkeypatch.setattr("showup.build._assert_policy_covers_basemap", lambda: None)
+
+
 class TestTheBuildRefusesAMapWithoutItsLibrary:
     def test_every_file_is_copied(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("showup.build.VENDOR_CACHE", _cache_with(tmp_path, VENDOR_FILES))
+        _stub_caches(tmp_path, monkeypatch)
         staging = tmp_path / "site"
         staging.mkdir()
         _copy_vendor(staging)
-        assert {path.name for path in (staging / "vendor").iterdir()} == set(VENDOR_FILES)
+        assert {path.name for path in (staging / "vendor").iterdir()} == {
+            *VENDOR_FILES,
+            *BASEMAP_FILES,
+        }
+
+    def test_an_absent_base_map_fails_the_build(self, tmp_path, monkeypatch):
+        """A map route whose base map 404s is worse than a build that stopped."""
+        _stub_caches(tmp_path, monkeypatch, basemap=[])
+        staging = tmp_path / "site"
+        staging.mkdir()
+        with pytest.raises(BuildError, match="no vendored base map"):
+            _copy_vendor(staging)
 
     def test_an_empty_cache_fails_the_build(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("showup.build.VENDOR_CACHE", _cache_with(tmp_path, []))
+        _stub_caches(tmp_path, monkeypatch, maplibre=[])
         staging = tmp_path / "site"
         staging.mkdir()
         with pytest.raises(BuildError, match="no vendored MapLibre"):
@@ -114,3 +147,54 @@ class TestThePinIsEnforced:
         payload = buffer.getvalue()
         with pytest.raises(ChecksumError, match="not a plain file"):
             read_verified_members(payload, integrity=tarball_integrity(payload))
+
+
+class TestThePolicyMustCoverTheBaseMap:
+    """Nothing else compares `connect-src` against what the vendored base map requests, so
+    without this a new upstream tile host ships a map that passes every local check and is
+    blocked in a reader's browser."""
+
+    def test_the_pinned_base_map_is_covered_by_the_real_policy(self):
+        from showup.build import _assert_policy_covers_basemap
+
+        _assert_policy_covers_basemap()
+
+    def test_the_fetch_origins_exclude_attribution_links(self):
+        """The base map names Esri, OpenStreetMap and Creative Commons in links a reader
+        clicks. A link is not a fetch, and putting those in `connect-src` would widen the
+        policy for nothing."""
+        from showup.build import _basemap_fetch_origins
+
+        origins = _basemap_fetch_origins()
+        assert "https://www.openstreetmap.org" not in origins
+        assert "https://creativecommons.org" not in origins
+        assert "https://tiles.openfreemap.org" in origins
+
+    @pytest.mark.parametrize(
+        ("origin", "hosts", "allowed"),
+        [
+            ("https://a.example.org", ["https://a.example.org"], True),
+            ("https://a.example.org", ["https://b.example.org"], False),
+            # A templated subdomain matches any one host under the same domain.
+            ("https://${s}.tile.example.org", ["https://a.tile.example.org"], True),
+            ("https://${s}.tile.example.org", ["https://a.tile.evil.org"], False),
+            ("https://${s}.tile.example.org", [], False),
+        ],
+    )
+    def test_which_origins_a_policy_allows(self, origin, hosts, allowed):
+        from showup.build import _origin_allowed
+
+        assert _origin_allowed(origin, hosts) is allowed
+
+    def test_an_uncovered_host_names_itself_in_the_refusal(self, tmp_path, monkeypatch):
+        """The message has to be enough to make the fix from."""
+        from showup.build import _assert_policy_covers_basemap
+
+        cache = tmp_path / "basemap"
+        cache.mkdir()
+        (cache / "basemap.mjs").write_text(
+            "const T = 'https://tiles.example.test/styles/x';", encoding="utf-8"
+        )
+        monkeypatch.setattr("showup.build.BASEMAP_CACHE", cache)
+        with pytest.raises(BuildError, match=r"tiles\.example\.test"):
+            _assert_policy_covers_basemap()

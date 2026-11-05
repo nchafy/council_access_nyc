@@ -314,7 +314,7 @@ async function main() {
     view.show('council');
     bindToggle(view);
     bindClose(view);
-    bindZoom(map);
+    revealZoom();
     bindSelection(view);
     bindAddress(view);
   }
@@ -835,14 +835,14 @@ function lockPanAtMinZoom(map) {
   apply();
 }
 
-function bindZoom(map) {
+/** Reveal the zoom control, which is hidden until the map exists to drive.
+ *
+ * The base map binds `#map-zoom-in` and `#map-zoom-out` itself. Binding them here as well
+ * put two click listeners on each button, so one press zoomed two steps.
+ */
+function revealZoom() {
   const group = document.getElementById('map-zoom');
-  const zoomIn = document.getElementById('map-zoom-in');
-  const zoomOut = document.getElementById('map-zoom-out');
-  if (!group || !zoomIn || !zoomOut) return;
-  zoomIn.addEventListener('click', () => map.zoomIn());
-  zoomOut.addEventListener('click', () => map.zoomOut());
-  group.hidden = false;
+  if (group) group.hidden = false;
 }
 
 function bindSelection(view) {

@@ -835,3 +835,47 @@ class TestTheMapDrewTheSelection:
             f"at {steps} zoom steps the selected district's centroid is {error:.0f} px "
             f"from the centre of the visible map: {case}"
         )
+
+
+#: Controls the vendored base map binds itself. Binding them here as well puts two
+#: listeners on one button, and the press does its job twice.
+BASE_MAP_OWNED_CONTROLS = ("map-zoom-in", "map-zoom-out")
+
+
+def _click_listener_counts(browser, base, ids):
+    """How many click listeners each element carries, read over CDP."""
+    page = browser.page()
+    page.navigate(base + "/map/")
+    deadline = time.monotonic() + 40
+    while time.monotonic() < deadline:
+        if not page.evaluate("(document.getElementById('map-toggle') || {}).hidden !== false"):
+            break
+        time.sleep(0.25)
+    time.sleep(2.0)
+
+    counts = {}
+    for element_id in ids:
+        handle = page.call(
+            "Runtime.evaluate",
+            expression=f"document.getElementById({element_id!r})",
+            returnByValue=False,
+        )
+        object_id = handle["result"].get("objectId")
+        if not object_id:
+            counts[element_id] = None
+            continue
+        listeners = page.call("DOMDebugger.getEventListeners", objectId=object_id)["listeners"]
+        counts[element_id] = sum(1 for one in listeners if one["type"] == "click")
+    return counts
+
+
+class TestTheBaseMapOwnsItsControls:
+    """The base map binds the zoom buttons. This module binding them too gave each one two
+    click listeners, so a single press zoomed two steps — invisible to every other gate,
+    because the painted-pixels floor is a minimum and more zoom only paints more.
+    """
+
+    def test_each_zoom_button_has_exactly_one_click_listener(self, chrome):
+        with background_server(REAL_SITE) as base, Browser() as browser:
+            counts = _click_listener_counts(browser, base, BASE_MAP_OWNED_CONTROLS)
+        assert counts == dict.fromkeys(BASE_MAP_OWNED_CONTROLS, 1), counts

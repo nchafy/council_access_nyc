@@ -286,7 +286,7 @@ async function main() {
         addFillLayer(map, LAYERS[name], geometry[name], ctx.beforeId);
       }
       for (const name of Object.keys(LAYERS)) {
-        addLineLayer(map, LAYERS[name], ctx.beforeId);
+        addLineLayer(map, LAYERS[name], ctx.beforeId, ctx.basemap);
       }
       // Clips the district tint to the coastline so a district does not wash over water.
       // Absent on a raster basemap, which has no water layer to clone.
@@ -417,20 +417,40 @@ function addFillLayer(map, layer, data, beforeId) {
   }, beforeId);
 }
 
+//: The boundary's colour and weight per basemap.
+//:
+//: A boundary is read against whatever the basemap draws under it, and that is a different
+//: thing on each of the three: liberty's land is near-white, Esri's imagery is dark and
+//: mottled, and OpenTopoMap is busy at every value. The navy hairline that reads on the
+//: first disappears into the other two — switching basemap left the districts with no
+//: visible edge, which is the whole of how a district is read here (owner's report,
+//: 2026-11-06).
+//:
+//: A basemap with no entry falls back to `simple`'s, which is a readable default on a light
+//: style rather than a guess about an unknown one.
+const BOUNDARY = {
+  simple: { color: LINE, width: 1.1 },
+  //: White over imagery, and wider: a hairline is lost in the texture at any colour.
+  satellite: { color: '#ffffff', width: 1.9 },
+  //: Near-black over topography, whose own palette is light greens, yellows and white.
+  geography: { color: '#111111', width: 1.9 },
+};
+
 /** The boundary, above everything the basemap draws.
  *
  * Separate from the fill because the two want opposite ends of the stack: the fill has to
  * sit under the water mask, and under the water mask the boundary was also under the roads
  * and building footprints, which made it read as broken.
  */
-function addLineLayer(map, layer, beforeId) {
+function addLineLayer(map, layer, beforeId, basemap) {
+  const edge = BOUNDARY[basemap] || BOUNDARY.simple;
   map.addLayer(
     {
       id: `${layer.source}-line`,
       type: 'line',
       source: layer.source,
       layout: { visibility: 'none' },
-      paint: { 'line-color': LINE, 'line-width': 1.1 },
+      paint: { 'line-color': edge.color, 'line-width': edge.width },
     },
     beforeId
   );

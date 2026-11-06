@@ -1,0 +1,38 @@
+{% extends "window.html" %}
+{% import "macros.html" as m %}
+{% block extra_head %}<link rel="stylesheet" href="/assets/document.css">{% endblock %}
+{% block body %}
+{# A community board is not a council district, and this is the page a reader lands on having
+   confused the two, so the distinction is stated before the list. #}
+<p class="distinction">
+  A <strong>community board</strong> is the most local unit of City government, advising on
+  zoning, budget priorities and local services for one community district. It is <em>not</em>
+  a council district.
+</p>
+
+{# The no-JavaScript path to all 59. The dropdown needs `site.js` to navigate; the list under
+   it does not, which is why both are here rather than one or the other. #}
+<section class="picker">
+  <h2>Jump to a board</h2>
+  <form id="board-form" action="/board/" method="get">
+    <label for="board-select">Community board</label>
+    <select id="board-select" name="board">
+      <option value="">Select a community board…</option>
+{% for b in boards %}
+    <option value="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</option>
+{% endfor %}
+    </select>
+    <button type="submit">Go</button>
+  </form>
+  <p class="hint">City lookup: {{ m.link("https://communityprofiles.planning.nyc.gov/", "Community district profiles") }}.</p>
+</section>
+
+<section class="all-districts">
+  <h2>All {{ boards|length }} community boards</h2>
+  <ul class="district-list">
+{% for b in boards %}
+    <li><a href="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</a></li>
+{% endfor %}
+  </ul>
+</section>
+{% endblock %}

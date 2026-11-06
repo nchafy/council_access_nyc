@@ -19,9 +19,10 @@ from .urls import safe_url
 
 __all__ = [
     "preview_payload",
+    "render_board_index",
     "render_district",
+    "render_district_index",
     "render_index",
-    "render_listing",
     "render_map",
     "render_not_found",
     "render_references",
@@ -135,7 +136,7 @@ def render_index(
 
     It carries no map — that is a route of its own, so the 449 KB library is paid for only by
     a reader who asks for it. The two index pages used to share this template and now have
-    `render_listing`.
+    `render_district_index` and `render_board_index`.
     """
     return templates.render(
         "index.html",
@@ -230,34 +231,62 @@ def _board_card(board: DistrictBoard) -> str:
     return templates.fragment("board_card", board)
 
 
-def render_listing(
+def _district_rows(districts: list[District]) -> list[dict[str, object]]:
+    return [
+        {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
+        for d in districts
+    ]
+
+
+def _board_rows(boards: list[DistrictBoard]) -> list[dict[str, object]]:
+    return [
+        {
+            "code": b.code,
+            "label": b.label,
+            "hood": _short(b.neighborhoods, 44) if b.neighborhoods else None,
+        }
+        for b in boards
+    ]
+
+
+def render_district_index(
     districts: list[District],
+    *,
+    built_at: datetime,
+    window_end: date | None,
+) -> str:
+    """`/district/`: all 51 in full, and the dropdown.
+
+    Its own page since 2026-11-06. `/district/` and `/board/` were one template listing both,
+    so the two taskbar buttons opened the same window — a council district and a community
+    board are different things, and each index now answers about one of them.
+
+    Separate from the landing page since 2026-10-22: that is a map button and an address box,
+    and this is where the no-JavaScript path actually lives.
+    """
+    return templates.render(
+        "districts.html",
+        title=f"All {len(districts)} council districts",
+        here="districts",
+        districts=_district_rows(districts),
+        built_at=built_at,
+        window_end=window_end,
+    )
+
+
+def render_board_index(
     boards: list[DistrictBoard],
     *,
     built_at: datetime,
     window_end: date | None,
 ) -> str:
-    """`/district/` and `/board/`: both lists in full, and the two dropdowns.
-
-    Separate from the landing page since 2026-10-22. The landing page is a map button and an
-    address box; these are where the no-JavaScript path actually lives.
-    """
+    """`/board/`: all 59 in full, and the dropdown. The counterpart to
+    `render_district_index`."""
     return templates.render(
-        "listing.html",
-        title="All council districts and community boards",
-        here="districts",
-        districts=[
-            {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
-            for d in districts
-        ],
-        boards=[
-            {
-                "code": b.code,
-                "label": b.label,
-                "hood": _short(b.neighborhoods, 44) if b.neighborhoods else None,
-            }
-            for b in boards
-        ],
+        "boards.html",
+        title=f"All {len(boards)} community boards",
+        here="boards",
+        boards=_board_rows(boards),
         built_at=built_at,
         window_end=window_end,
     )

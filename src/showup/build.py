@@ -38,9 +38,10 @@ from .render import (
     board_source_health,
     preview_payload,
     render_board,
+    render_board_index,
     render_district,
+    render_district_index,
     render_index,
-    render_listing,
     render_map,
     render_not_found,
     render_references,
@@ -418,12 +419,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     district_root = staging / "district"
     district_root.mkdir()
     (district_root / "index.html").write_text(
-        render_listing(
-            districts,
-            sorted(boards_by_code.values(), key=lambda b: b.code),
-            built_at=now,
-            window_end=window_end,
-        ),
+        render_district_index(districts, built_at=now, window_end=window_end),
         encoding="utf-8",
     )
 
@@ -464,8 +460,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     if boards_written != BOARD_COUNT:
         raise BuildError(f"wrote {boards_written} board pages, expected {BOARD_COUNT}")
     (board_root / "index.html").write_text(
-        render_listing(
-            districts,
+        render_board_index(
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
             window_end=window_end,

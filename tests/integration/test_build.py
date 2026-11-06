@@ -18,7 +18,12 @@ from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
 from showup.model import Committee, District, DistrictBoard, Member, Office
-from showup.render import render_district, render_index, render_listing
+from showup.render import (
+    render_board_index,
+    render_district,
+    render_district_index,
+    render_index,
+)
 from showup.sources.calendar import parse_calendar, upcoming
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -174,7 +179,7 @@ class TestIndex:
         return [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
 
     def test_the_landing_page_is_a_map_button_and_an_address_box(self):
-        """Owner's decision 2026-10-22. The lists moved to `render_listing`."""
+        """Owner's decision 2026-10-22. The lists moved to the two index pages."""
         html = render_index(
             self._districts(),
             self._boards(),
@@ -197,27 +202,42 @@ class TestIndex:
         assert 'href="/district/"' in html
         assert 'href="/board/"' in html
 
-    def test_the_listing_pages_list_every_district(self):
-        html = render_listing(
-            self._districts(),
-            self._boards(),
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
+    def _district_index(self):
+        return render_district_index(
+            self._districts(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
         )
+
+    def _board_index(self):
+        return render_board_index(
+            self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+        )
+
+    def test_the_district_index_lists_every_district(self):
+        html = self._district_index()
         for n in (1, 25, 51):
             assert f'href="/district/{n}/"' in html
-        assert "<select" in html
-
-    def test_the_listing_pages_offer_both_views(self):
-        html = render_listing(
-            self._districts(),
-            self._boards(),
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
         assert 'id="district-select"' in html
-        assert 'id="board-select"' in html
+
+    def test_the_board_index_lists_every_board(self):
+        html = self._board_index()
         assert 'href="/board/302/"' in html
+        assert 'id="board-select"' in html
+
+    def test_each_index_answers_about_one_geography(self):
+        """The two were one template listing both, so the taskbar's two buttons opened the
+        same window. A council district and a community board are different things."""
+        districts, boards = self._district_index(), self._board_index()
+        assert 'id="board-select"' not in districts
+        assert 'href="/board/302/"' not in districts
+        assert 'id="district-select"' not in boards
+        assert 'href="/district/1/"' not in boards
+
+    def test_each_index_still_reaches_the_other(self):
+        """Through the taskbar, which is the site's whole navigation: without it a reader on
+        one index has no route to the other."""
+        for html in (self._district_index(), self._board_index()):
+            assert 'href="/district/"' in html
+            assert 'href="/board/"' in html
 
 
 class TestCrosswalk:

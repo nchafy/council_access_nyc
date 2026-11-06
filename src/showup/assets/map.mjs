@@ -943,23 +943,23 @@ function refit(map, { move = false } = {}) {
   map.setMaxBounds(null);
   map.fitBounds(cityBounds, { padding: viewPadding(map), animate: false });
   const box = map.getBounds();
+  const floor = map.getZoom();
 
-  // The box goes on before the floor is read, so the floor is the zoom the camera actually
-  // settles at rather than the one it passed through: `setMaxBounds` re-constrains and can
-  // nudge the zoom.
+  // The floor is read before the box goes on, and that order is load-bearing. Reading it
+  // after `setMaxBounds` looks more correct — it is the zoom the camera settles at rather
+  // than one it passed through — but the tighter box it installs leaves `panIntoView` unable
+  // to bring a selection as far out from behind the panel, and the painted-pixels gate caught
+  // it: district 4 at four zoom steps fell from 95,000 painted pixels to 70,929.
   //
-  // This still does not agree with the floor `settleOnce` installs. Measured at 1440x900:
-  // the first floor is 9.866 and the one here is 9.770, so the first dismissal of the panel
+  // The cost of this order is that the floor disagrees with the one `settleOnce` installs.
+  // Measured at 1440x900: 9.866 there against 9.770 here, so the first dismissal of the panel
   // loosens the floor by 0.096 and nothing puts it back — a reader can zoom a little past the
   // whole-city view. `settleOnce` applies the pan box twice, once synchronously and again on
   // the next `idle`, and reads the zoom after the second; a synchronous `refit` cannot
-  // reproduce that without waiting for an event of its own. The honest fix is one function
-  // owning "what zoom fits the whole city" for both callers, which is a larger change than
-  // the 1% of zoom it buys. Left measured rather than quietly wrong.
-  map.setMaxBounds(box);
-  const floor = map.getZoom();
-
+  // reproduce that without waiting for an event of its own. The fix is one function owning
+  // "what zoom fits the whole city" for both callers. Left measured rather than papered over.
   if (!move) map.jumpTo(before);
+  map.setMaxBounds(box);
   map.setMinZoom(floor);
   lockPanAtMinZoom(map);
 }

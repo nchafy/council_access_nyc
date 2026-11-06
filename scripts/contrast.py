@@ -71,7 +71,7 @@ def tokens(css: str, *, dark: bool) -> dict[str, str]:
 
 
 #: Foreground, background, threshold, and what the pair is. Read against the dark block of
-#: `theme.css`, which is the one set of steps this project chose rather than inherited.
+#: `site.css`, which is the one set of steps this project chose rather than inherited.
 DARK_PAIRS: tuple[tuple[str, str, float, str], ...] = (
     ("--ink", "--face", TEXT_MINIMUM, "body text on a control or panel face"),
     ("--ink", "--bg", TEXT_MINIMUM, "text in an input"),
@@ -96,11 +96,11 @@ def report() -> int:
     fetched rather than committed, so measuring them here would make this tool depend on a
     build having run; white on `--title-a` is 14.25:1 and is that stylesheet's own to keep.
     """
-    css = (ASSETS / "theme.css").read_text(encoding="utf-8")
+    css = (ASSETS / "site.css").read_text(encoding="utf-8")
     dark, light = tokens(css, dark=True), tokens(css, dark=False)
 
     failures = 0
-    print("dark steps, from src/showup/assets/theme.css")
+    print("dark steps, from src/showup/assets/site.css")
     for foreground, background, need, why in DARK_PAIRS:
         measured = ratio(dark[foreground], dark[background])
         ok = measured >= need

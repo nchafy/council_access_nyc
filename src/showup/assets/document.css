@@ -2,7 +2,7 @@
  *
  * Each is a window whose client area holds a document, so everything here lives inside
  * `.window-body` and nothing here styles chrome — `xp.css` owns the frame, the taskbar and
- * the group boxes, and `theme.css` owns the state colours and the dark pass. Not loaded on
+ * the group boxes, and `site.css` owns the state colours and the dark pass. Not loaded on
  * `/map/`, which has no prose.
  *
  * Every colour comes from a token `xp.css` declares. This file introduces none. */
@@ -58,16 +58,6 @@ dd, a, .nolink { overflow-wrap: anywhere; }
 .why, .hint, .distinction, .gap { color: var(--muted); font-size: .92rem; }
 .gap { font-style: italic; }
 
-/* A link that is the whole of its own line is a target rather than prose. `xp.css` sets a
-   group box in 13px type with .1rem line margins, which leaves two stacked links about 17px
-   tall and 2px apart — under the 24px SC 2.5.8 floor, and axe flags the pair in the landing
-   page's meeting box. Padding rather than a line-height, so the text keeps its position and
-   only the hit area grows. */
-.group-line > a:only-child {
-  display: inline-block;
-  padding: .22rem 0;
-}
-
 dl { margin: .5rem 0; }
 dt {
   font-weight: 700;
@@ -117,7 +107,7 @@ summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .request summary::marker { color: var(--muted); }
 .source { margin: .7rem 0 0; }
 
-/* The share badge beside a board's name — a figure, not a bar. `.share-bar` in `theme.css`
+/* The share badge beside a board's name — a figure, not a bar. `.share-bar` in `site.css`
    is the graphic; this is the number in words. */
 .share {
   display: inline-block;
@@ -128,7 +118,7 @@ summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   color: var(--ink);
 }
 
-/* A state, not a decoration: the fill and the ink are a pair from `theme.css`, and the word
+/* A state, not a decoration: the fill and the ink are a pair from `site.css`, and the word
    beside it says the same thing, so the colour is never the only carrier. */
 .deadline { font-weight: 700; padding: .1rem .35rem; }
 .deadline.open { background: var(--ok-bg); color: var(--ok-ink); }

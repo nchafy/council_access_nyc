@@ -95,7 +95,7 @@ VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
 BASEMAP_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "basemap"
 #: `days.mjs` carries no content this site shows; `chrome.mjs` imports it at the top level, so
 #: without it the module graph fails and the map never draws. See `scripts/fetch_basemap.py`.
-BASEMAP_FILES = ("basemap.mjs", "chrome.mjs", "days.mjs", "xp.css")
+BASEMAP_FILES = ("basemap.mjs", "chrome.mjs", "days.mjs", "index.css", "xp.css")
 
 #: Hosts the base map names only in its attribution links, which a reader clicks and the
 #: page never fetches. Everything else it names is a tile, glyph or sprite source and must
@@ -400,15 +400,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     staging.mkdir(parents=True)
 
     (staging / "index.html").write_text(
-        render_index(
-            districts,
-            sorted(boards_by_code.values(), key=lambda b: b.code),
-            built_at=now,
-            window_end=window_end,
-            meetings=ahead,
-            today=day,
-            now=now,
-        ),
+        render_index(built_at=now, window_end=window_end),
         encoding="utf-8",
     )
     (staging / "404.html").write_text(
@@ -627,7 +619,14 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     map_root = staging / "map"
     map_root.mkdir()
     (map_root / "index.html").write_text(
-        render_map(built_at=now, window_end=window_end), encoding="utf-8"
+        render_map(
+            built_at=now,
+            window_end=window_end,
+            meetings=ahead,
+            today=day,
+            now=now,
+        ),
+        encoding="utf-8",
     )
 
     references_root = staging / "references"

@@ -43,7 +43,7 @@ class TestBuild:
         assert (out / "index.html").is_file()
         assert (out / "404.html").is_file()
         assert (out / "manifest.json").is_file()
-        for name in ("theme.css", "document.css", "map.css"):
+        for name in ("site.css", "document.css", "map.css"):
             assert (out / "assets" / name).is_file(), name
         assert (out / "assets" / "site.js").is_file()
         for number in (1, 25, 51):
@@ -178,27 +178,29 @@ class TestIndex:
     def _districts(self):
         return [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
 
-    def test_the_landing_page_is_a_map_button_and_an_address_box(self):
-        """Owner's decision 2026-10-22. The lists moved to the two index pages."""
-        html = render_index(
-            self._districts(),
-            self._boards(),
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
-        assert 'href="/map/"' in html
-        assert 'id="address-input"' in html
+    def test_the_landing_page_is_a_desktop_of_icons(self):
+        """Owner's decision 2026-11-06. It carries no content of its own: the address box was
+        already on `/map/` verbatim, and the citywide meeting moved there."""
+        html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
+        assert 'class="desktop"' in html
+        assert 'id="icons"' in html
         assert "<select" not in html
-        assert 'href="/district/1/"' not in html
+        assert 'id="address-input"' not in html
+
+    def test_the_desktop_needs_no_script_to_be_usable(self):
+        """The base map's own desktop generates thirty-one icons and is empty without a
+        script. Four fixed destinations are written out, so this one is not."""
+        html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
+        for href in ("/map/", "/district/", "/board/", "/references/"):
+            assert f'href="{href}"' in html
+        # The icon art is inline SVG, not a `data:` URI background: `img-src 'self'` governs
+        # CSS images too, and a `data:` one draws nothing and logs nothing.
+        assert html.count('class="icon-glyph"') == 4
+        assert "data:image" not in html
 
     def test_the_landing_page_still_reaches_both_lists(self):
-        """R6's location-free path: one link each, rather than 110 of them."""
-        html = render_index(
-            self._districts(),
-            self._boards(),
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
+        """R6's location-free path: one icon each, rather than 110 links."""
+        html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
         assert 'href="/district/"' in html
         assert 'href="/board/"' in html
 

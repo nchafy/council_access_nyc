@@ -25,9 +25,14 @@ GEOCODER_HOST = "geosearch.planninglabs.nyc"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+#: The one page that offers the address box. It was the landing page until 2026-11-06, which
+#: is now a desktop of icons.
+ADDRESS_PAGE = "/map/"
+
+
 def _submit_address(page, base_url, query, settle_seconds=6.0):
     """Type `query` into the address box, submit, and return (path, status text)."""
-    page.navigate(base_url + "/")
+    page.navigate(base_url + ADDRESS_PAGE)
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if not page.evaluate("document.getElementById('address-section').hasAttribute('hidden')"):
@@ -102,15 +107,54 @@ class TestLocalResolutionStaysLocal:
         _, requested = network_trace
         assert any("/data/lookup.json" in url for url in requested)
 
-    def test_the_geometry_is_not_fetched_for_a_district_number(self, network_trace):
-        """226 KB gzipped across both layers; only a street address needs any of it.
-
-        This held, then briefly did not: with the map on the landing page every visit
-        fetched both layers. Moving the map to `/map/` put the promise back, which is a
-        second reason that route exists.
-        """
+    def test_the_index_is_fetched_once_not_per_keystroke(self, network_trace):
         _, requested = network_trace
-        assert not [url for url in requested if ".geo.json" in url]
+        assert requested.count("/data/lookup.json") <= 1, requested
+
+
+@pytest.fixture(scope="module")
+def desktop_trace(chrome, built_site):
+    """Every URL the landing page requests, with nothing typed."""
+    with background_server(built_site) as base_url, Browser() as browser:
+        page = browser.page()
+        page.call("Network.enable")
+        page.drain_events()
+        page.navigate(base_url + "/")
+        time.sleep(3.0)
+        return [
+            event["params"]["request"]["url"]
+            for event in page.consume_events()
+            if event["method"] == "Network.requestWillBeSent"
+        ]
+
+
+class TestTheEntryPageIsCheap:
+    """What the landing page costs a reader who has asked for nothing yet.
+
+    This replaces an assertion that the front page fetched no geometry while resolving a
+    district number. That check was about page composition rather than about `address.js`,
+    and its subject moved: the address box is on `/map/` since 2026-11-06, where the geometry
+    and the basemap are fetched for the map's own reasons. The promise it protected — the way
+    in costs almost nothing — belongs to the desktop now, and is stronger there.
+    """
+
+    def test_no_geometry(self, desktop_trace):
+        """226 KB gzipped across both layers, and the desktop needs neither."""
+        assert not [url for url in desktop_trace if ".geo.json" in url], desktop_trace
+
+    def test_no_maplibre(self, desktop_trace):
+        """449 KB gzipped, paid for only by a reader who opens the map."""
+        assert not [url for url in desktop_trace if "maplibre" in url], desktop_trace
+
+    def test_nothing_off_our_own_origin(self, desktop_trace):
+        """No basemap here, so the strong version of the promise holds: opening the site
+        discloses nothing to anyone but us."""
+        external = [url for url in desktop_trace if not url.startswith("http://127.0.0.1")]
+        assert not external, external
+
+    def test_it_really_loaded_the_desktop(self, desktop_trace):
+        """A trace of nothing would pass all three above."""
+        assert any(url.endswith("/vendor/index.css") for url in desktop_trace), desktop_trace
 
 
 @pytest.fixture(scope="module")
@@ -195,7 +239,7 @@ class TestErrorMessagesBlameTheRightThing:
             Browser() as browser,
         ):
             landed, status = _submit_address(browser.page(), base_url, "350 Jay Street")
-        assert landed == "/", "the lookup should not have succeeded with the index blocked"
+        assert landed == ADDRESS_PAGE, "the lookup should not have succeeded with the index blocked"
         assert "fault here, not with the City" in status, status
         assert "City's address lookup did not respond" not in status, (
             "blamed the geocoder for a same-origin fetch that the CSP refused"
@@ -225,7 +269,7 @@ class TestErrorMessagesBlameTheRightThing:
         # A street address highlights on the map rather than navigating, so the page stays
         # put and the selection link is the resolved district. With no map loaded the old
         # behaviour still applies, which is why either outcome passes.
-        resolved = selection if landed == "/" else landed
+        resolved = selection if landed == ADDRESS_PAGE else landed
         assert resolved and re.fullmatch(r"/district/\d{1,2}/", resolved), (
             f"a real street address left path {landed!r}, selection {selection!r}, "
             f"status {status!r}"
@@ -475,7 +519,7 @@ def autocomplete(chrome, built_site):
             })();
             """,
         )
-        page.navigate(base + "/")
+        page.navigate(base + ADDRESS_PAGE)
 
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
@@ -554,11 +598,33 @@ class TestTheAddressBoxCompletesLocally:
         offenders = [url for url in autocomplete["requests"] if GEOCODER_HOST in url]
         assert not offenders, offenders
 
-    def test_only_our_own_origin_was_fetched(self, autocomplete):
-        """And the index is fetched once, not once per keystroke."""
-        external = [url for url in autocomplete["requests"] if url.startswith("http")]
-        assert not external, external
-        assert autocomplete["requests"].count("/data/lookup.json") == 1, autocomplete["requests"]
+    def test_typing_discloses_nothing_to_the_geocoder(self, autocomplete):
+        """The privacy promise, and the one that matters: what a reader types is matched
+        against the committed index in their own browser, and the geocoder is not asked until
+        they submit a street address.
+
+        This asserted no off-origin request at all until 2026-11-06. That was only achievable
+        because the box sat on a page with nothing else on it; it is on `/map/` now, which
+        fetches basemap tiles by an owner decision recorded in product-brief.md §5. The
+        no-off-origin form of the promise is asserted on the desktop instead, by
+        `TestTheEntryPageIsCheap`. What is checked here is the part that is about the box.
+        """
+        assert not [url for url in autocomplete["requests"] if GEOCODER_HOST in url]
+
+    def test_the_index_is_not_refetched_per_keystroke(self, autocomplete):
+        """Four queries of several characters each go in, and the index is read once by each
+        module that wants it — `address.js` for the suggestions and `map.mjs` for its name
+        index — rather than once per keystroke.
+
+        It was `== 1` until 2026-11-06, when the box moved to `/map/`, which is the one page
+        where a second module wants the same file. Two modules fetching one URL is a real if
+        small duplication and worth collapsing; what this check is for is the behaviour that
+        would actually hurt, a fetch on every key.
+        """
+        fetches = autocomplete["requests"].count("/data/lookup.json")
+        typed = sum(len(query) for query in ("fort gr", "35", "112", "350 jay street"))
+        assert fetches <= 2, autocomplete["requests"]
+        assert fetches < typed, f"{fetches} fetches for {typed} keystrokes"
 
 
 @pytest.fixture(scope="module")

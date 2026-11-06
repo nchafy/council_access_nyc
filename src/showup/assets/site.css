@@ -119,6 +119,86 @@ select,
 .share-track { fill: #d8d4c2; stroke: #8f8a76; stroke-width: 1; }
 .share-fill { fill: #3a6ea5; }
 
+/* A link that is the whole of its own line is a target rather than prose. `xp.css` sets a
+   group box in 13px type with .1rem line margins, which leaves two stacked links about 17px
+   tall and 2px apart — under the 24px SC 2.5.8 floor. Padding rather than a line-height, so
+   the text keeps its position and only the hit area grows.
+
+   Here rather than in `document.css` because the map carries group lines too: its citywide
+   meeting card is built from the same shape, and axe caught the links in it. */
+.group-line > a:only-child {
+  display: inline-block;
+  padding: .22rem 0;
+}
+
+/* ---------------------------------------------------------------------------
+   The desktop's icons.
+
+   The wallpaper, the hill, the grid, the labels and the hover state are all the base map's
+   `index.css`. What belongs to this site is the art.
+
+   The base draws its icon art as a `data:image/svg+xml` CSS `background-image`. That cannot
+   work here: the shipped policy is `img-src 'self'`, and `img-src` governs images loaded from
+   CSS as much as from markup, so the image is refused.
+
+   Measured on 2026-11-06 against this project's own setup — the policy as a response header
+   from `_headers`, `default-src 'none'`, Chrome driven over CDP. A 32x32 span with the right
+   `background-image` computed painted nothing: a 64x64 screenshot of it came back 165 bytes
+   of uniform white, against 191 for the same square drawn inline. **No console entry was
+   logged**, which is what makes it expensive to find and is the same trap `docs/design.md` §3
+   records for MapLibre's 39 control icons.
+
+   Worth knowing that this is environment-specific. The upstream author measured the same
+   block under a `<meta>` policy of `default-src 'self'` in Chrome 141 and *did* get an
+   `img-src` violation at error level. Blank-and-logged is a much cheaper bug than
+   blank-and-silent; under a header policy with `default-src 'none'` this one is silent.
+
+   So these are inline `<svg>` in the markup, which is no fetch at all and needs no policy —
+   the window title bar's globe and the address pin are inline for the same reason. The box
+   below mirrors the base's `.icon-art` geometry so the grid and labels line up with it.
+   --------------------------------------------------------------------------- */
+
+.icon-glyph {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 40%));
+}
+
+/* XP printed its edition and build number in the desktop's bottom-right corner. This is that
+   corner, carrying what every other page carries in its status bar. Shadowed rather than
+   boxed, because a panel here would read as a window with nothing in it. */
+.watermark {
+  position: fixed;
+  right: .6rem;
+  bottom: calc(var(--taskbar-h) + .5rem);
+  z-index: 1;
+  margin: 0;
+  text-align: right;
+  pointer-events: none;
+}
+.watermark p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #fff;
+  /* The same contrast trick the base map's icon labels use: white on the pale end of the sky
+     is about 1.9:1 alone, and the shadow is what makes it legible over sky and hill both. */
+  text-shadow: 0 1px 2px rgb(0 0 0 / 85%), 0 0 3px rgb(0 0 0 / 70%);
+}
+/* The staleness notice is a warning, so it keeps its fill and leaves the watermark's
+   shadowed-white treatment behind. */
+.watermark .staleness {
+  display: inline-block;
+  margin-top: .2rem;
+  padding: .1rem .3rem;
+  color: var(--urgent-ink);
+  background: var(--urgent-bg);
+  text-shadow: none;
+  pointer-events: auto;
+}
+
 /* ---------------------------------------------------------------------------
    The status bar. Every window has one, and it carries the page's provenance: when the data
    was fetched, how far forward the calendar runs, and the link to what it was built from.

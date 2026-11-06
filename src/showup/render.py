@@ -122,46 +122,21 @@ def _short(value: str | None, limit: int = 58) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip(" ,;") + "…"
 
 
-def render_index(
-    districts: list[District],
-    boards: list[DistrictBoard],
-    *,
-    built_at: datetime,
-    window_end: date | None,
-    meetings: list[Meeting] | None = None,
-    today: date | None = None,
-    now: datetime | None = None,
-) -> str:
-    """The landing page: a map button, an address box, and the next citywide meeting.
+def render_index(*, built_at: datetime, window_end: date | None) -> str:
+    """The landing page: a Windows XP desktop, and an icon per destination.
 
-    It carries no map — that is a route of its own, so the 449 KB library is paid for only by
-    a reader who asks for it. The two index pages used to share this template and now have
-    `render_district_index` and `render_board_index`.
+    It has no content of its own as of 2026-11-06. It had a map button, an address box and
+    the next citywide meeting; a desktop has nowhere to put any of them, and the first two
+    were already on `/map/` verbatim. The citywide meeting went to `/map/` as a card of its
+    own — see `render_map`.
+
+    So this takes no data but the build stamp: the four icons are written out in the template
+    rather than generated, which is what lets the desktop work with no JavaScript.
     """
     return templates.render(
         "index.html",
         title="Council districts and community boards",
         here="home",
-        districts=[
-            {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
-            for d in districts
-        ],
-        boards=[
-            {
-                "code": b.code,
-                "label": b.label,
-                "hood": _short(b.neighborhoods, 44) if b.neighborhoods else None,
-            }
-            for b in boards
-        ],
-        # Citywide, which is why it sits here and not on a district. Council and committee
-        # meetings belong to no district; it was moved off the map's district panel on
-        # 2026-10-27 for that reason.
-        next_meeting=(
-            _meeting_card(meetings[0], today=today or date.today(), now=now or datetime.now())
-            if meetings
-            else None
-        ),
         built_at=built_at,
         window_end=window_end,
     )
@@ -524,13 +499,32 @@ def _pb_meta(participation: Participation | None) -> dict | None:
     }
 
 
-def render_map(*, built_at: datetime, window_end: date | None) -> str:
+def render_map(
+    *,
+    built_at: datetime,
+    window_end: date | None,
+    meetings: list[Meeting] | None = None,
+    today: date | None = None,
+    now: datetime | None = None,
+) -> str:
     """The full-screen map. Its own route because a map inside a scrolling page steals the
-    wheel: the reader scrolls and the map zooms instead. Here nothing scrolls."""
+    wheel: the reader scrolls and the map zooms instead. Here nothing scrolls.
+
+    It carries the next citywide meeting as of 2026-11-06, when the landing page became a
+    desktop of icons and had nowhere to put it. The card is citywide and sits over the canvas,
+    not in a district's panel — which is the distinction the 2026-10-27 decision was about:
+    Council and committee meetings belong to no district, so attaching one to a district was
+    wrong. Attaching it to the city is not.
+    """
     return templates.render(
         "map.html",
         title="Map of council districts and community boards",
         here="map",
+        next_meeting=(
+            _meeting_card(meetings[0], today=today or date.today(), now=now or datetime.now())
+            if meetings
+            else None
+        ),
         built_at=built_at,
         window_end=window_end,
     )

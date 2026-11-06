@@ -41,8 +41,26 @@ INTERACTIVE_ROLES = frozenset(
     {"link", "button", "textbox", "combobox", "listbox", "checkbox", "radio", "menuitem"}
 )
 
-#: Landmarks every page owes a screen-reader user; `contentinfo` holds the staleness notice.
+#: Landmarks a page owes a screen-reader user. `main` is the content, and `contentinfo` is
+#: where the fetch date and the staleness notice live, so both are owed by every page.
+#:
+#: `banner` is owed by a window, whose title bar is one. The desktop at `/` is not a window:
+#: it is a wallpaper, an icon grid and the taskbar, with no title bar and no site identity
+#: outside the taskbar — so requiring a `banner` there would only produce an empty one, which
+#: is noise in the accessibility tree rather than orientation. It owes `navigation` instead,
+#: which is the taskbar, and which the windows get for free from the same bar.
 REQUIRED_LANDMARKS = ("banner", "main", "contentinfo")
+
+#: Paths whose shape is not a window, and the landmarks they owe instead.
+LANDMARKS_BY_PATH = {
+    "/": ("main", "contentinfo", "navigation"),
+}
+
+
+def required_landmarks(path: str) -> tuple[str, ...]:
+    """Which landmarks `path` owes. A window owes `REQUIRED_LANDMARKS`."""
+    return LANDMARKS_BY_PATH.get(path, REQUIRED_LANDMARKS)
+
 
 #: Tags each focusable element with its DOM-order index. `summary` is in the selector
 #: because a disclosure is a real tab stop (docs/OBSERVATIONS.md, 2026-10-07).
@@ -315,7 +333,8 @@ def audit_tree(page: Session, path: str) -> list[Check]:
     checks: list[Check] = []
     roles = {role_of(node) for node in exposed_nodes}
 
-    missing_landmarks = [landmark for landmark in REQUIRED_LANDMARKS if landmark not in roles]
+    wanted = required_landmarks(path)
+    missing_landmarks = [landmark for landmark in wanted if landmark not in roles]
     checks.append(
         Check(
             path,
@@ -396,10 +415,15 @@ def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
         reachable = page.evaluate(
             'document.querySelectorAll(\'a[href="/district/"], a[href="/board/"]\').length'
         )
+        # The address box moved off the landing page on 2026-11-06, when it became a desktop
+        # of icons. `/map/` is the one page that offers it, so that is where the promise now
+        # has to hold: a form that cannot work without a script must not be offered.
+        page.navigate(base + "/map/")
         address_hidden = page.evaluate(
             "!!document.getElementById('address-section')"
             " && document.getElementById('address-section').hasAttribute('hidden')"
         )
+        page.navigate(base + "/")
         scripts_off = page.evaluate("typeof window.__ranScript === 'undefined'")
     finally:
         page.call("Emulation.setScriptExecutionDisabled", value=False)
@@ -437,9 +461,12 @@ def audit_address_box_by_keyboard(browser: Browser, base: str) -> list[Check]:
     """Reach the address box, type into it and submit, using only the keyboard.
 
     A district number resolves locally, so this stays hermetic.
+
+    On `/map/` since 2026-11-06. The box was on the landing page, which is now a desktop of
+    icons; the map is the one page that offers it, so that is where the promise has to hold.
     """
     page = browser.page()
-    page.navigate(base + "/")
+    page.navigate(base + "/map/")
     # The section ships `hidden`, so its reveal is also the readiness signal.
     _poll(page, "!document.getElementById('address-section').hasAttribute('hidden')")
 
@@ -448,15 +475,15 @@ def audit_address_box_by_keyboard(browser: Browser, base: str) -> list[Check]:
         if page.evaluate("document.activeElement.id") == "address-input":
             break
     else:
-        return [Check("/", "the address box is reachable by Tab", False, "never focused it")]
+        return [Check("/map/", "the address box is reachable by Tab", False, "never focused it")]
 
     page.type_text("35")
     page.press("Enter")
     # Submitting fetches /data/lookup.json first, so the navigation is two async hops away.
-    landed_path = _poll(page, "location.pathname", until=lambda value: value != "/") or "/"
+    landed_path = _poll(page, "location.pathname", until=lambda value: value != "/map/") or "/map/"
     return [
         Check(
-            "/",
+            "/map/",
             "the address box submits from the keyboard alone",
             landed_path == "/district/35/",
             f"Enter in the address box landed on {landed_path!r}, expected '/district/35/'",

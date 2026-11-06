@@ -1,6 +1,6 @@
 /* The map route's window: the canvas, its floating chrome, and the detail panel.
  *
- * `xp.css` draws the frame and `theme.css` the state colours, the dark pass and the status
+ * `xp.css` draws the frame and `site.css` the state colours, the dark pass and the status
  * bar — all three windows share those. This file is only what the map adds, and it restates
  * nothing either of them already carries. `document.css` is not loaded here: there is no
  * prose on this route. */
@@ -34,7 +34,7 @@
 .card .card-search label { display: block; font-weight: 600; font-size: .9rem; }
 .card .card-search { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
 
-/* The 44px floor these two need is in `theme.css`, with the rest of the form controls: it is
+/* The 44px floor these two need is in `site.css`, with the rest of the form controls: it is
    a target-size requirement rather than this layout's business. */
 .card .card-search input { flex: 1 1 10rem; min-width: 0; font: inherit; }
 .card .card-search button { font: inherit; padding: 0 .9rem; }
@@ -92,7 +92,8 @@
      than a child for this reason — it is the live region that announces a selection, and it
      has to survive them. */
   body.has-selection .card-controls,
-  body.has-selection .card-basemap { display: none; }
+  body.has-selection .card-basemap,
+  body.has-selection .card-citywide { display: none; }
 
   /* The sheet is full width and reaches the bottom of the client area, so it lands squarely
      on top of the zoom buttons: both were still in the tab order, with a focus ring drawn

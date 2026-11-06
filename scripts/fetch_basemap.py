@@ -27,8 +27,24 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-#: A version bump is a five-line diff: this, and the four digests below.
+#: A version bump is a six-line diff: this, and the five digests below.
 BASEMAP_COMMIT = "4f97759a084402bf50c3cf4c9e5d032e3736fc11"
+
+#: Files taken from a different commit than `BASEMAP_COMMIT`, and why.
+#:
+#: `index.css` is the desktop — the wallpaper, the icon grid and the icon labels — which
+#: landed upstream after this pin. The rest of the base map deliberately stays behind it: at
+#: `be71566` `mountChrome()` calls `renderTaskbar(document.querySelector('.task-items'))`
+#: unconditionally, and that function clears the container when its open-window list is empty,
+#: which it always is for a host that is not the map challenge. Taking the modules from there
+#: would blank this site's server-rendered taskbar on `/map/`. Reported upstream on
+#: 2026-11-06; this collapses back to one commit when the fix lands.
+#:
+#: A stylesheet has no such coupling — `index.css` reads `--taskbar-h` and nothing else, and
+#: that token is identical at both commits — so it is safe to take forward on its own.
+FILE_COMMITS = {
+    "index.css": "be71566aac65333968083366c47194ac26984de0",
+}
 
 #: sha256 per file. Taken at the pin above on 2026-11-04 and verified on every run, so a
 #: silently rewritten upstream file fails the fetch instead of reaching a reader.
@@ -44,6 +60,7 @@ BASEMAP_SHA256 = {
     "basemap.mjs": "9114df4beff968a87ec51c6986af6b28c28c90065996c1b29a309b739fcd5720",
     "chrome.mjs": "d4b680d644829b81c171f49f9cb29ac01c6274fe9db88c0f7216359485c54cda",
     "days.mjs": "bcb2b21a95192664f0bea349e75996ae3b2e1bb6d7117cf3dcfa1e5adb55ce18",
+    "index.css": "3fd440bc38078a9015e5b4c61b27ac66a890586481e9d90c1b0d98283bba921f",
     "xp.css": "825c1fdf3355710b60b02d439df56790d486ef32ba8f6e8f89c2bf5af8bbb75b",
 }
 
@@ -65,8 +82,8 @@ class ChecksumError(RuntimeError):
 
 
 def source_url(name: str) -> str:
-    """Where one file lives at the pinned commit."""
-    return f"{BASEMAP_SOURCE}/{BASEMAP_COMMIT}/assets/{name}"
+    """Where one file lives, at its own pin if it has one."""
+    return f"{BASEMAP_SOURCE}/{FILE_COMMITS.get(name, BASEMAP_COMMIT)}/assets/{name}"
 
 
 def verify(name: str, payload: bytes) -> None:

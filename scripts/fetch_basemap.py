@@ -27,14 +27,23 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-#: A version bump is a four-line diff: this, and the three digests below.
+#: A version bump is a five-line diff: this, and the four digests below.
 BASEMAP_COMMIT = "4f97759a084402bf50c3cf4c9e5d032e3736fc11"
 
 #: sha256 per file. Taken at the pin above on 2026-11-04 and verified on every run, so a
 #: silently rewritten upstream file fails the fetch instead of reaching a reader.
+#:
+#: `days.mjs` is the map challenge's thirty themes, which this site has no use for. It is here
+#: because `chrome.mjs` imports it at the top level, for one function — `renderDayList`,
+#: reachable only from a Start menu, which `/map/` deliberately does not have. A missing file
+#: there is not a degraded Start menu: the import fails, the module graph fails with it, and
+#: `map.mjs` never runs at all (measured 2026-11-05 — a 404 on `/vendor/days.mjs` left the
+#: page with no map and no controls). Vendoring what we import is the honest fix until
+#: `mountChrome` upstream takes its menu as data.
 BASEMAP_SHA256 = {
     "basemap.mjs": "9114df4beff968a87ec51c6986af6b28c28c90065996c1b29a309b739fcd5720",
     "chrome.mjs": "d4b680d644829b81c171f49f9cb29ac01c6274fe9db88c0f7216359485c54cda",
+    "days.mjs": "bcb2b21a95192664f0bea349e75996ae3b2e1bb6d7117cf3dcfa1e5adb55ce18",
     "xp.css": "825c1fdf3355710b60b02d439df56790d486ef32ba8f6e8f89c2bf5af8bbb75b",
 }
 

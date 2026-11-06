@@ -74,6 +74,33 @@ project draws its own buttons. A control that depends on a `data:` URI MUST NOT 
 
 Dark mode re-steps `--rule` to `#333a42` rather than inverting the light value.
 
+### 3.1 Three stylesheets, two token sets
+
+`/map/` is the vendored base map's XP window and wears its tokens; the other 109 pages wear
+the site's. The split is not a preference — `xp.css` and `site.css` both declare `:root`,
+`body`, `a`, `button`, `.card`, `.group*` and `.detail*`, and they give 13 of the same custom
+properties different values, so a page loading both hands every one of them to whichever
+sheet came last.
+
+| Sheet | Loaded by | Carries |
+|---|---|---|
+| `site.css` | `layout.html`, so every document page | the site's tokens, records, tables, the front page |
+| `/vendor/xp.css` | `map.html` only | the base map's tokens, the window, taskbar, panel, cards |
+| `map.css` | `map.html` only | what the base map has no opinion about, and the map's dark steps |
+| `shared.css` | both | the components rendered on both: the skip link, the suggestion list, a board's share bars |
+
+Three rules follow:
+
+- A component that appears on a document page **and** in the map's panel MUST go in
+  `shared.css`, written only against a property both sheets declare — `--ink`, `--bg`,
+  `--rule`, `--accent`, `--title-b`, `--muted`. A second copy per theme is how the two drift.
+- `map.css` MUST NOT restate a rule `xp.css` already carries. Its one exception is the dark
+  mode, which `xp.css` has none of; the control border is re-stepped there because the light
+  value is a literal `#003c74` upstream and measures 1.06:1 on a dark face.
+- A colour added to either dark block MUST be measured, not judged. `scripts/contrast.py`
+  prints the table and `tests/unit/test_contrast.py` reads the values out of `map.css`, so a
+  colour edited without re-measuring fails the run.
+
 ## 4. The map
 
 - **A map MUST NOT sit inside a scrolling page.** Owner, 2026-10-21: "never have a scroll
@@ -157,7 +184,7 @@ decoration.
 ## 9. Verifying a visual change
 
 A layout defect is invisible to an HTTP assertion. These MUST run on any change to
-`site.css`, `map.mjs`, or a template:
+`map.mjs`, a template, or a stylesheet — `site.css`, `map.css` or `shared.css`:
 
 | Gate | Catches |
 |---|---|

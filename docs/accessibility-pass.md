@@ -2,8 +2,9 @@
 
 **A real screen-reader pass has never been run.** It is the one open Phase 1 item (§4).
 
-Run this before any release, and after any change to `render.py`, `site.css`, `site.js` or
-`address.js`. R39 requires a documented keyboard-only and screen-reader pass per release.
+Run this before any release, and after any change to `render.py`, `site.js`, `address.js` or
+any stylesheet — `site.css` for the document pages, `map.css` for the map, `shared.css` for
+what both carry. R39 requires a documented keyboard-only and screen-reader pass per release.
 
 ## 1. The automated gates
 

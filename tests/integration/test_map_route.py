@@ -50,9 +50,16 @@ class TestTheMapIsItsOwnRoute:
         assert 'href="/map/"' in (site / "index.html").read_text(encoding="utf-8")
 
     def test_the_map_page_locks_the_viewport(self, site):
-        """`body.app` is what stops the page scrolling, which is the whole reason this is a
-        separate route."""
-        assert '<body class="app">' in (site / "map" / "index.html").read_text(encoding="utf-8")
+        """Nothing on this route scrolls, which is the whole reason it is a separate one: a
+        map inside a scrolling page swallows the wheel.
+
+        The lock is `html, body { height: 100% }` and `body { overflow: hidden }` in the base
+        map's stylesheet, so what this asserts is that the page loads it. That the page then
+        really does not scroll is measured in the browser, by
+        `test_console.py::TestTheWindowFillsTheViewport`."""
+        html = (site / "map" / "index.html").read_text(encoding="utf-8")
+        assert '<link rel="stylesheet" href="/vendor/xp.css">' in html
+        assert '<body class="app">' not in html, "the app body class was retired with site.css"
 
     def test_both_layers_ship_their_geometry(self, site):
         assert (site / "data" / "districts.geo.json").is_file()
@@ -170,10 +177,17 @@ class TestTheMapIsNeverTheOnlyWay:
         # Matched per attribute rather than as one string: they are on the same tag but not
         # adjacent, and an earlier version of this assertion broke when one was inserted
         # between them.
-        assert 'id="map-card"' in html
+        #
+        # These are the base map's `Panel` contract, which is why they are ids and classes
+        # rather than this page's own names: `mountChrome` finds `#detail`, and the panel
+        # finds its own heading, body, foot and close button inside it. The link onward is
+        # built into `.detail-foot` by `panelFoot` in map.mjs, so the markup carries the
+        # container and not the link.
+        assert 'id="detail"' in html
         assert "hidden" in html
-        assert 'id="map-selection"' in html
-        assert 'id="map-card-close"' in html
+        assert 'class="detail-body"' in html
+        assert 'class="detail-foot"' in html
+        assert 'class="detail-close title-box close"' in html
 
 
 class TestSelectingCentresOnWhatCanBeSeen:

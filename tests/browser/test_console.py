@@ -219,7 +219,7 @@ class TestErrorMessagesBlameTheRightThing:
             page = browser.page()
             landed, status = _submit_address(page, base_url, "350 Jay Street", settle_seconds=12.0)
             selection = page.evaluate(
-                "(() => { const a = document.getElementById('map-selection');"
+                "(() => { const a = document.querySelector('.map-selection');"
                 " return a && !a.hidden ? a.getAttribute('href') : null; })()"
             )
         # A street address highlights on the map rather than navigating, so the page stays
@@ -307,24 +307,22 @@ def loaded_map(chrome, built_site):
                     {detail: {district: 35, lon: -73.9549, lat: 40.6736}, cancelable: true}))"""
             )
             time.sleep(0.05)
-            opening = page.evaluate(
-                "getComputedStyle(document.getElementById('map-card')).transform"
-            )
+            opening = page.evaluate("getComputedStyle(document.getElementById('detail')).transform")
             time.sleep(1.0)
-            if page.evaluate("!document.getElementById('map-card').hidden") is True:
+            if page.evaluate("!document.getElementById('detail').hidden") is True:
                 break
         time.sleep(1.0)
         after = json.loads(
             page.evaluate(
                 """(() => {
-                    const card = document.getElementById('map-card');
+                    const card = document.getElementById('detail');
                     const box = card.hidden ? null : card.getBoundingClientRect();
                     const frame = document.getElementById('map').getBoundingClientRect();
                     return JSON.stringify({
                         cardOpen: !card.hidden,
-                        groups: document.querySelectorAll('#map-card-body .group').length,
-                        tables: document.querySelectorAll('#map-card-body .group-table').length,
-                        headers: [...document.querySelectorAll('#map-card-body th[scope="col"]')]
+                        groups: document.querySelectorAll('.detail-body .group').length,
+                        tables: document.querySelectorAll('.detail-body .group-table').length,
+                        headers: [...document.querySelectorAll('.detail-body th[scope="col"]')]
                             .map((th) => th.textContent),
                         pins: document.querySelectorAll('.map-pin').length,
                         panelLeft: box ? Math.round(box.left) : null,
@@ -364,14 +362,14 @@ def loaded_map(chrome, built_site):
         # The slide, sampled rather than described: a transform read 50 ms after the class
         # lands is the only evidence that the panel travels instead of snapping.
         probe = """(() => {
-            const card = document.getElementById('map-card');
+            const card = document.getElementById('detail');
             return JSON.stringify({
                 hidden: card.hidden,
                 isOpen: card.classList.contains('is-open'),
                 transform: getComputedStyle(card).transform,
             });
         })()"""
-        page.evaluate("document.getElementById('map-card-close').click()")
+        page.evaluate("document.querySelector('.detail-close').click()")
         time.sleep(0.05)
         closing = json.loads(page.evaluate(probe))
         time.sleep(0.9)
@@ -613,7 +611,7 @@ def pin_lifecycle(chrome, built_site):
             " boards:['306','302','308']}, cancelable:true}))",
         )
         run("address once more", address)
-        run("closed", "document.getElementById('map-card-close').click()")
+        run("closed", "document.querySelector('.detail-close').click()")
         yield counts
 
 
@@ -718,7 +716,7 @@ def _painted_selection(browser, base, zoom_steps):
     shot = page.call("Page.captureScreenshot", format="png")["data"]
     # Read the DOM before navigating away: `browser.page()` returns the same tab.
     panel_left = page.evaluate(
-        "Math.round(document.getElementById('map-card').getBoundingClientRect().left)"
+        "Math.round(document.getElementById('detail').getBoundingClientRect().left)"
     )
     frame_top = page.evaluate(
         "Math.round(document.getElementById('map').getBoundingClientRect().top)"
@@ -879,3 +877,98 @@ class TestTheBaseMapOwnsItsControls:
         with background_server(REAL_SITE) as base, Browser() as browser:
             counts = _click_listener_counts(browser, base, BASE_MAP_OWNED_CONTROLS)
         assert counts == dict.fromkeys(BASE_MAP_OWNED_CONTROLS, 1), counts
+
+
+#: Viewports the window is measured at: a laptop, and the narrow phone the reflow gate uses.
+#: Both ends, because a window that fits one can overflow the other.
+WINDOW_VIEWPORTS = ((1440, 900), (390, 780))
+
+#: A scrollbar's worth of slack. Sub-pixel layout rounding puts `scrollHeight` a fraction
+#: over `clientHeight` on a page that does not scroll.
+SCROLL_TOLERANCE_PX = 2
+
+
+def _window_geometry(page, base, width, height):
+    page.call(
+        "Emulation.setDeviceMetricsOverride",
+        width=width,
+        height=height,
+        deviceScaleFactor=1,
+        mobile=False,
+    )
+    page.navigate(base + "/map/")
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if page.evaluate("document.documentElement.dataset.ready || null") == "map":
+            break
+        time.sleep(0.25)
+    return json.loads(
+        page.evaluate(
+            """(() => {
+                const root = document.scrollingElement;
+                const rect = (selector) => {
+                    const node = document.querySelector(selector);
+                    if (!node) return null;
+                    const box = node.getBoundingClientRect();
+                    return {top: Math.round(box.top), bottom: Math.round(box.bottom),
+                            height: Math.round(box.height)};
+                };
+                return JSON.stringify({
+                    scrollHeight: root.scrollHeight,
+                    clientHeight: root.clientHeight,
+                    scrollWidth: root.scrollWidth,
+                    clientWidth: root.clientWidth,
+                    innerHeight: window.innerHeight,
+                    taskbar: rect('.taskbar'),
+                    status: rect('.window-status'),
+                    map: rect('#map'),
+                });
+            })()"""
+        )
+    )
+
+
+@pytest.fixture(scope="module")
+def geometry(chrome, built_site):
+    """`/map/` measured at both ends, in one browser."""
+    with background_server(built_site) as base, Browser() as browser:
+        page = browser.page()
+        return {size: _window_geometry(page, base, *size) for size in WINDOW_VIEWPORTS}
+
+
+class TestTheWindowFillsTheViewport:
+    """`/map/` is one maximised XP window and nothing on it scrolls.
+
+    This is the whole reason the map is a route of its own: inside a scrolling page it
+    swallows the wheel, so the reader scrolls and the map zooms instead. The lock moved out of
+    `site.css` and into the base map's stylesheet when the page adopted the XP window, so this
+    is where the invariant is measured rather than inferred from a body class.
+    """
+
+    @pytest.mark.parametrize("size", WINDOW_VIEWPORTS, ids=lambda size: f"{size[0]}x{size[1]}")
+    def test_the_page_does_not_scroll(self, geometry, size):
+        measured = geometry[size]
+        assert measured["scrollHeight"] <= measured["clientHeight"] + SCROLL_TOLERANCE_PX, (
+            f"at {size[0]}x{size[1]} the page scrolls: {measured['scrollHeight']} px of "
+            f"content in a {measured['clientHeight']} px viewport"
+        )
+        assert measured["scrollWidth"] <= measured["clientWidth"] + SCROLL_TOLERANCE_PX
+
+    @pytest.mark.parametrize("size", WINDOW_VIEWPORTS, ids=lambda size: f"{size[0]}x{size[1]}")
+    def test_the_taskbar_and_status_bar_are_both_on_screen(self, geometry, size):
+        """The window is inset by the taskbar's height, so neither may be pushed off: the
+        status bar carries the basemap credit, which is a licence term."""
+        measured = geometry[size]
+        assert measured["taskbar"], "no taskbar"
+        assert measured["status"], "no status bar"
+        assert measured["taskbar"]["bottom"] <= measured["innerHeight"] + SCROLL_TOLERANCE_PX
+        assert measured["status"]["bottom"] <= measured["taskbar"]["top"] + SCROLL_TOLERANCE_PX
+
+    @pytest.mark.parametrize("size", WINDOW_VIEWPORTS, ids=lambda size: f"{size[0]}x{size[1]}")
+    def test_the_map_gets_the_height_the_chrome_does_not(self, geometry, size):
+        """A canvas that collapsed to nothing still passes every request-level check."""
+        measured = geometry[size]
+        assert measured["map"], "no map container"
+        assert measured["map"]["height"] > size[1] * 0.4, (
+            f"the map got {measured['map']['height']} px of a {size[1]} px viewport"
+        )

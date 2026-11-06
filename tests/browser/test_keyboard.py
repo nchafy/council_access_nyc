@@ -14,6 +14,10 @@ pytestmark = pytest.mark.browser
 
 #: Pinned so a renamed or deleted check fails loudly rather than reducing coverage.
 PER_PAGE_CHECKS = (
+    # A page carrying `data-ready-when` must set `data-ready` before anything below it is
+    # measured. `/map/` reveals four controls once MapLibre has drawn, and measuring a tab
+    # order that was about to grow reported its last two stops unreachable.
+    "the page became ready",
     "the page has focusable content",
     "no positive tabindex",
     "the first Tab lands on the skip link",

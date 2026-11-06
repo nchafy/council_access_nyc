@@ -1,0 +1,101 @@
+/* The components that appear both on a document page and inside the map's panel.
+ *
+ * Those two wear different token sets — the document pages `site.css`, the map the base map's
+ * `xp.css` (the reasoning is at the top of `templates/map.html`) — so a component on both
+ * would otherwise need one copy per theme. Every colour here comes from a custom property
+ * both sheets declare: --ink, --bg, --rule, --accent, --title-b and --muted. Neither theme's
+ * own shapes are restated.
+ *
+ * Loaded by `layout.html` for the document pages and by `map.html` for the map. */
+
+/* The skip link, on every page. Parked off-screen and pulled back on focus: the keyboard
+   gate asserts both halves, that the first Tab lands here and that the focused link is
+   on-screen. */
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 8px;
+  top: 8px;
+  z-index: 10;
+  background: var(--bg);
+  color: var(--ink);
+  padding: 8px 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   The address box's suggestion list and status line. The front page and the map both have
+   the box; `address.js` drives both.
+   --------------------------------------------------------------------------- */
+
+/* In normal flow under the input, so there is no popover to keep positioned at 320 px or
+   over the map panel. Rows are 24px minimum for SC 2.5.8 even though they are pointer
+   targets rather than focusable: focus stays in the input and `aria-activedescendant` names
+   the active row. */
+.suggest {
+  list-style: none;
+  margin: .3rem 0 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.suggest[hidden] { display: none; }
+.suggest [role="option"] {
+  padding: .4rem .55rem;
+  min-height: 24px;
+  font-size: .9rem;
+  cursor: pointer;
+  border-top: 1px solid var(--rule);
+}
+.suggest [role="option"]:first-child { border-top: 0; }
+.suggest [role="option"].is-active,
+.suggest [role="option"]:hover {
+  background: var(--title-b);
+  color: #fff;
+}
+
+.address-status {
+  margin: .6rem 0 0;
+  font-size: .93rem;
+  color: var(--muted);
+  /* Reserved, so the box does not jump by a line the first time it has something to say. */
+  min-height: 1.3em;
+}
+/* `--warn-bg` and `--warn-ink` are declared by whichever sheet the page loaded: `site.css`
+   has them, and `map.css` declares them for the map because `xp.css` carries no state
+   colours. */
+.address-status.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  padding: .55rem .75rem;
+}
+
+/* ---------------------------------------------------------------------------
+   One board's share of a district: the figure, and a bar beneath it.
+
+   Rendered twice from one shape — `macros.html` builds it for a district page and `map.mjs`
+   builds it for the panel — which is why the styling cannot live in either theme.
+   --------------------------------------------------------------------------- */
+
+/* Bars, not a stacked bar: the shares are measured per board and do not sum to 100 (44 + 29
+   + 23 for district 35), so one stacked bar would imply a partition it does not make. One
+   series, so one hue and no legend: the row header names each bar.
+
+   Width is an SVG geometry attribute, not CSS: `style-src 'self'` refuses a style attribute.
+   The track carries no data and measures only 1.45:1 against the group background, so it
+   gets a border rather than relying on fill alone. */
+.share-value { display: block; font-variant-numeric: tabular-nums; font-weight: 700; }
+.share-bar { display: block; width: 100%; min-width: 3.5rem; height: 9px; margin-top: .1rem; }
+.share-track { fill: #d8d4c2; stroke: #8f8a76; stroke-width: 1; }
+.share-fill { fill: #3a6ea5; }
+
+@media (prefers-color-scheme: dark) {
+  /* The track is a light fill above, which on a dark panel reads as the bar rather than as
+     the space behind it. Both themes re-step to the same pair: 3.70:1 for the track's edge
+     on a record's face, and the fill is the accent both modes already use for a link. */
+  .share-track { fill: #2a2d31; stroke: #7d858d; }
+  .share-fill { fill: #9cc3ff; }
+}

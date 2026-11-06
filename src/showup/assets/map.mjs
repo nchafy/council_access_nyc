@@ -10,6 +10,7 @@
 // reader selected, because a shaded map reads as a ranking whatever the legend says.
 
 import { createBaseMap } from '/vendor/basemap.mjs';
+import { mountChrome } from '/vendor/chrome.mjs';
 
 //: Set once the page's one-time setup has run. The base map rebuilds the district layers
 //: on every basemap change and calls `draw` again; the camera floor and the DOM bindings
@@ -175,6 +176,17 @@ function say(text) {
   if (status) status.textContent = text;
 }
 
+/** Tell the page's readers that nothing more will appear.
+ *
+ * Answers the `data-ready-when` promise in `map.html`: the accessibility gate waits for this
+ * before it measures the tab order, because four controls here are revealed by script. Set on
+ * every settled outcome and not only the happy one — a browser with no WebGL still has a
+ * final, stable page, and a gate that failed it would be reporting the wrong thing.
+ */
+function declareReady() {
+  document.documentElement.dataset.ready = 'map';
+}
+
 // WebGL2 before MapLibre: a 449 KB download that can only fail is worth skipping, and
 // every answer on this page is reachable without it.
 function hasWebgl2() {
@@ -216,9 +228,18 @@ function fetchJson(url) {
 }
 
 async function main() {
-  if (!container) return;
+  // The shell first, and outside every early return below: the clock, the title bar's close
+  // box and the panel are the window's own furniture, and a map that cannot draw is exactly
+  // when the reader still needs the page to look finished.
+  const { panel } = mountChrome();
+
+  if (!container) {
+    declareReady();
+    return;
+  }
   if (!hasWebgl2()) {
     say('This browser has no WebGL, so the map cannot draw. Everything is listed below.');
+    declareReady();
     return;
   }
 
@@ -243,8 +264,14 @@ async function main() {
   } catch (error) {
     // Named, not swallowed: a reader who sees nothing should be told whose fault it is.
     say(`The map could not load (${error.message}). Everything is listed below.`);
+    declareReady();
     return;
   }
+
+  //: Assigned by `settleOnce` and read back in `draw`, which is why it lives out here: a
+  //: basemap change rebuilds the style and calls `draw` again, and what the reader had
+  //: selected is the one thing that must survive it.
+  let view = null;
 
   const base = await createBaseMap({
     container,
@@ -267,10 +294,17 @@ async function main() {
       if (mask) map.addLayer(mask, ctx.beforeId);
       repairShieldFilters(map);
       settleOnce(map);
+      // Which layer is showing and what is highlighted are both style state, and the style
+      // is what was just thrown away: without this, switching basemaps reveals both
+      // geographies at once and drops the selection the panel is still describing.
+      if (view) view.repaint();
     },
   });
 
-  if (!base) return;
+  if (!base) {
+    declareReady();
+    return;
+  }
   MapLibre = base.library;
   library = base.library;
 
@@ -310,13 +344,19 @@ async function main() {
       });
     }
 
-    const view = new View(map);
+    view = new View(map, panel);
     view.show('council');
     bindToggle(view);
-    bindClose(view);
+    // The panel owns its own close button; this is what the dismissal has to mean here.
+    // `deselect` and not `clear`, because `Panel.close` runs this before it marks itself
+    // hidden, and a handler that closed the panel again would never stop.
+    if (panel) panel.onClose = () => view.deselect();
     revealZoom();
     bindSelection(view);
     bindAddress(view);
+    // Last: the zoom buttons have just entered the tab order, and address.js revealed the
+    // search box long before this.
+    declareReady();
   }
 }
 
@@ -398,8 +438,9 @@ function addLineLayer(map, layer, beforeId) {
 
 /** Which layer is showing, and which feature in it is selected. */
 class View {
-  constructor(map) {
+  constructor(map, panel) {
     this.map = map;
+    this.panel = panel;
     this.name = 'council';
     this.selected = null;
     this.many = null;
@@ -413,12 +454,31 @@ class View {
     if (!LAYERS[name]) return;
     this.clear({ recenter: false });
     this.name = name;
+    this.repaint();
+    say(`Showing ${this.layer.noun}s. Select one to open its page.`);
+  }
+
+  /** Put back everything that lives on the style rather than on this object.
+   *
+   * Layer visibility and feature state are both properties of a loaded style, so a basemap
+   * change takes them with it. Called from `show`, where it is the whole job, and from
+   * `draw`, where it is the repair.
+   */
+  repaint() {
     for (const other of Object.keys(LAYERS)) {
-      const visibility = other === name ? 'visible' : 'none';
+      const visibility = other === this.name ? 'visible' : 'none';
       this.map.setLayoutProperty(`${LAYERS[other].source}-fill`, 'visibility', visibility);
       this.map.setLayoutProperty(`${LAYERS[other].source}-line`, 'visibility', visibility);
     }
-    say(`Showing ${this.layer.noun}s. Select one to open its page.`);
+    for (const id of this.many || []) {
+      this.map.setFeatureState({ source: this.layer.source, id }, { selected: true });
+    }
+    if (this.selected !== null) {
+      this.map.setFeatureState(
+        { source: this.layer.source, id: this.selected },
+        { selected: true }
+      );
+    }
   }
 
   /** Drop the selection.
@@ -428,6 +488,18 @@ class View {
    * produced a zoom out and back in on every click from one district to the next.
    */
   clear({ recenter = true } = {}) {
+    this.deselect({ recenter });
+    if (this.panel) this.panel.close();
+  }
+
+  /** Drop the selection without touching the panel.
+   *
+   * Split from `clear` because the panel's own close button arrives here through
+   * `Panel.onClose`, which runs inside `Panel.close`: closing it again from there would
+   * recurse. Whoever opened the panel closes it; this undoes the map.
+   */
+  deselect({ recenter = true } = {}) {
+    const wasShowing = Boolean(this.panel && this.panel.isOpen);
     for (const id of this.many || []) {
       this.map.setFeatureState({ source: this.layer.source, id }, { selected: false });
     }
@@ -444,16 +516,21 @@ class View {
       );
     }
     this.selected = null;
+    document.body.classList.remove('has-selection');
+    // Only on a real dismissal, and only if something was up. Replacing one selection with
+    // another keeps the frame.
+    if (wasShowing) refit(this.map, { move: recenter });
+  }
 
-    const card = document.getElementById('map-card');
-    // Only resize when the split actually collapses, or every clear costs a reflow.
-    const wasSplit = document.body.classList.contains('has-selection');
-    if (card) closePanel(card);
-    if (wasSplit) {
-      this.map.resize();
-      // Only on a real dismissal. Replacing one selection with another keeps the frame.
-      refit(this.map, { move: recenter });
-    }
+  /** Open the panel on this selection, and tell the page a sheet is up.
+   *
+   * `has-selection` is read by `map.css`, which takes the control cards away underneath a
+   * phone's bottom sheet: compacting them still left only 124 px of map between the two.
+   */
+  showPanel(title, body, foot) {
+    if (!this.panel) return;
+    document.body.classList.add('has-selection');
+    this.panel.open(title, body, foot);
   }
 
   /** Several features at once, with a card that names what they have in common. */
@@ -467,26 +544,21 @@ class View {
     for (const id of ids) {
       this.map.setFeatureState({ source: this.layer.source, id }, { selected: true });
     }
-    const card = document.getElementById('map-card');
-    const heading = document.getElementById('map-card-title');
-    const body = document.getElementById('map-card-body');
-    const link = document.getElementById('map-selection');
-    if (!card || !heading || !body || !link) return;
-    heading.textContent = title;
     // Whichever layer is showing: a ZIP resolves against both, so switching layers with a
     // ZIP on screen answers the same question about the other geography.
     const plural = `${this.layer.noun}s`;
-    body.replaceChildren(
+    this.showPanel(
+      title,
       group(`Covering this ZIP`, {
         caption: `${ids.length} ${ids.length === 1 ? this.layer.noun : plural}`,
         columns: [this.name === 'council' ? 'District' : 'Board'],
         rows: ids.map((id) => [[this.layer.label(id), this.layer.href(id)]]),
-      })
+      }),
+      panelFoot(
+        'Select one on the map for its details',
+        this.name === 'council' ? '/district/' : '/board/'
+      )
     );
-    link.textContent = 'Select one on the map for its details';
-    link.href = this.name === 'council' ? '/district/' : '/board/';
-    openPanel(card);
-    this.map.resize();
     refit(this.map);
     // Frame everything highlighted, in the part of the map the panel leaves visible.
     frameBounds(this.map, unionBounds(this.layer.source, ids));
@@ -503,35 +575,29 @@ class View {
 
   /** The detail panel: headline facts for whatever was selected, then a link onward. */
   fillCard(id) {
-    const card = document.getElementById('map-card');
-    const title = document.getElementById('map-card-title');
-    const body = document.getElementById('map-card-body');
-    const link = document.getElementById('map-selection');
-    const asOf = document.getElementById('map-card-asof');
-    if (!card || !title || !body || !link) return;
-
-    title.textContent = this.layer.label(id);
     // Built with DOM calls and textContent, never innerHTML: these values are ours, but the
     // rule in CLAUDE.md is that nothing reaches the page as markup.
-    body.replaceChildren();
+    const sections = [];
     for (const [heading, rows, headingHref] of this.layer.sections(id)) {
       if (!rowCount(rows)) continue;
-      body.append(group(heading, rows, headingHref));
+      sections.push(group(heading, rows, headingHref));
     }
-    link.textContent = `Full page for ${this.layer.label(id)}`;
-    link.href = this.layer.href(id);
-    if (asOf && preview && preview.as_of) {
-      // Stated once for the panel rather than per field; the page carries the per-fact
-      // provenance, which is what the link above is for.
-      asOf.textContent = `Summary of ${this.layer.href(id)}, built ${formatAsOf(preview.as_of)}.`;
-    }
-    openPanel(card);
-    // MapLibre does not watch its container: without this the canvas keeps the full-width
-    // size and the city sits off-centre behind the panel. The floor has to be recomputed
-    // too — it was the zoom that fitted the city across the *full* width, so once the panel
-    // takes 25rem the city no longer fits at that zoom and pan is locked, leaving it
-    // half-hidden with no way to recover.
-    this.map.resize();
+    this.showPanel(
+      this.layer.label(id),
+      sections,
+      panelFoot(
+        `Full page for ${this.layer.label(id)}`,
+        this.layer.href(id),
+        // Stated once for the panel rather than per field; the page carries the per-fact
+        // provenance, which is what the link above is for.
+        preview && preview.as_of
+          ? `Summary of ${this.layer.href(id)}, built ${formatAsOf(preview.as_of)}.`
+          : null
+      )
+    );
+    // The panel docks over the canvas rather than beside it, so the container never changes
+    // size and there is no `resize` to do. The camera floor still gets recomputed: the fit
+    // has to account for the part of the frame the panel is covering.
     refit(this.map);
     // Pan, never zoom. Owner's decision, 2026-10-28: selecting a district is navigation,
     // and re-fitting to each polygon kept taking away the zoom the reader had chosen.
@@ -714,11 +780,26 @@ function formatAsOf(iso) {
   return Number.isNaN(when.getTime()) ? iso : when.toLocaleDateString();
 }
 
-/** The panel's close button puts the map back to full width. */
-function bindClose(view) {
-  const close = document.getElementById('map-card-close');
-  if (!close) return;
-  close.addEventListener('click', () => view.clear());
+/** The panel's foot: the link onward, and the provenance line under it.
+ *
+ * `Panel.open` takes one node for the foot, so these two arrive as a fragment. The link
+ * carries the class the stylesheet pins to the bottom of the panel — it is the one thing the
+ * panel exists to offer, and a long committee list otherwise pushes it below the fold.
+ */
+function panelFoot(text, href, asOf = null) {
+  const foot = document.createDocumentFragment();
+  const link = document.createElement('a');
+  link.className = 'map-selection';
+  link.textContent = text;
+  link.href = href;
+  foot.append(link);
+  if (asOf) {
+    const line = document.createElement('p');
+    line.className = 'detail-asof';
+    line.textContent = asOf;
+    foot.append(line);
+  }
+  return foot;
 }
 
 function bindToggle(view) {
@@ -1035,43 +1116,8 @@ function unionBounds(source, ids) {
   ]);
 }
 
-//: How long the panel takes to slide, matching the transition in site.css. The element is
-//: marked `hidden` only once the close has finished, so it is never seen vanishing
-//: mid-slide, and it stays out of the tab order the rest of the time.
-const PANEL_SLIDE_MS = 220;
-
-let closeTimer = null;
-
-/** Reveal the panel, then let CSS slide it in from the edge.
- *
- * `hidden` comes off first and the class goes on in a later frame: setting both in one go
- * gives the browser no start state to animate from, so it snaps. Two nested
- * `requestAnimationFrame` calls guarantee a layout in between.
- */
-function openPanel(card) {
-  if (closeTimer !== null) {
-    clearTimeout(closeTimer);
-    closeTimer = null;
-  }
-  card.classList.remove('is-open');
-  card.hidden = false;
-  document.body.classList.add('has-selection');
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => card.classList.add('is-open'));
-  });
-}
-
-/** Slide the panel out, and only hide it once the slide has finished. */
-function closePanel(card) {
-  document.body.classList.remove('has-selection');
-  if (card.hidden) return;
-  card.classList.remove('is-open');
-  if (closeTimer !== null) clearTimeout(closeTimer);
-  closeTimer = setTimeout(() => {
-    card.hidden = true;
-    closeTimer = null;
-  }, PANEL_SLIDE_MS);
-}
+// The panel's reveal, slide and deferred `hidden` are the base map's `Panel`, which this
+// page now uses rather than keeping a second copy of the same two-frame dance.
 
 //: The searched ZIP's own outline, fetched on the first ZIP lookup and never before:
 //: 51 KB gzipped against the 145 KB the rest of the map's data costs. Nothing is
@@ -1137,7 +1183,7 @@ function hideZipOutline(map) {
 function viewPadding(map) {
   const edge = 24;
   const flat = { top: edge, bottom: edge, left: edge, right: edge };
-  const card = document.getElementById('map-card');
+  const card = document.getElementById('detail');
   if (!card || card.hidden) return flat;
 
   const mapBox = map.getContainer().getBoundingClientRect();

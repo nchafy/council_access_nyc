@@ -7,6 +7,9 @@
 <meta name="description" content="City Council hearings and deadlines, council districts, and community boards.">
 <meta name="referrer" content="no-referrer">
 <link rel="stylesheet" href="/assets/site.css">
+{# The components the map's panel renders too, so neither carries a second copy. The map
+   route loads this file beside the base map's stylesheet instead of `site.css`. #}
+<link rel="stylesheet" href="/assets/shared.css">
 {% block extra_head %}{% endblock +%}
 </head>
 <body class="{% block body_class %}{% endblock +%}">

@@ -1,58 +1,17 @@
-<!DOCTYPE html>
-{# `data-ready-when` is a promise to the accessibility gate: this page reveals four controls
+{% extends "window.html" %}
+{# One maximised XP window like every other route, with two differences the map forces:
+   nothing in the client area scrolls — a map inside a scrolling page swallows the wheel, so
+   the reader scrolls and the map zooms instead — and the status bar carries the basemap
+   credit, which is a licence term and not a nicety.
+
+   `data-ready-when` is a promise to the accessibility gate: this page reveals four controls
    — the address box and the two zoom buttons — only once MapLibre has drawn, seconds after
    `load`. `map.mjs` sets `data-ready="map"` when that is done, and the gate waits for it
    rather than measuring a tab order that is about to change underneath it. #}
-<html lang="en" data-ready-when="map">
-{# The map is one maximised XP window, and it is the only route that does not extend
-   `layout.html`. The reason is the stylesheet, not the look: `xp.css` and `site.css` both
-   declare `:root`, `body`, `a`, `button`, `.card`, `.group*` and `.detail*`, and they give 13
-   of the same custom properties different values (`--ink` #000 against #16191d, `--accent`
-   #0000cc against #0b4fa8). Loading both would hand every one of those to whichever sheet
-   came last, and `xp.css`'s `input[type="text"] { min-height: 23px }` would take the address
-   box under the 24 px floor SC 2.5.8 asks for. One token set per document is the only
-   arrangement that is not a cascade race, so this page wears the base map's tokens and the
-   other 109 wear the site's.
-
-   The landmarks the keyboard gate requires survive the reframing: the title bar is the
-   `banner`, the client area is `main`, and the status bar is the `contentinfo`. #}
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }} — Show Up NYC</title>
-<meta name="description" content="City Council hearings and deadlines, council districts, and community boards.">
-<meta name="referrer" content="no-referrer">
-{# The pinned base map's stylesheet, fetched and checksummed by `scripts/fetch_basemap.py`.
-   `shared.css` carries the components the document pages have too — the suggestion list and
-   a board's share bars — so neither has a second copy; `map.css` is what this page adds on
-   top of the base map's tokens. #}
-<link rel="stylesheet" href="/vendor/xp.css">
-<link rel="stylesheet" href="/assets/shared.css">
-<link rel="stylesheet" href="/assets/map.css">
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-
-<div class="window">
-  <header class="window-title">
-    {# Inline SVG, not a file: one request fewer, and a strict `img-src` has nothing to
-       allow. #}
-    <svg class="window-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <circle cx="8" cy="8" r="7" fill="#3a6ea5" stroke="#dfe8f5" stroke-width="1"/>
-      <path d="M1 8h14M8 1c2.5 2 2.5 12 0 14M8 1C5.5 3 5.5 13 8 15" fill="none" stroke="#dfe8f5" stroke-width="1"/>
-    </svg>
-    <h1>{{ title }}</h1>
-    <span class="spacer"></span>
-    <div class="title-buttons">
-      {# Spans, not buttons: there is one window and nowhere to minimise it to, so these are
-         decoration and stay out of the tab order. The close box is real — the base map
-         dismisses the panel with it, and goes to the front page when nothing is open. #}
-      <span class="title-box is-decorative" aria-hidden="true">_</span>
-      <span class="title-box is-decorative" aria-hidden="true">&#9633;</span>
-      <button type="button" class="title-box close" id="window-close" aria-label="Close window">&#10005;</button>
-    </div>
-  </header>
-
+{% block html_attrs %} data-ready-when="map"{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="/assets/map.css">{% endblock %}
+{% block window_body %}
+  {# No `.sheet` and no scrolling: the client area is the canvas. #}
   <main id="main" class="window-body">
     {# The basemap is chosen by `createBaseMap`'s `basemap` option in `map.mjs`, not by an
        attribute here: the base map reads `options.basemap`, then whatever the reader last
@@ -160,36 +119,15 @@
       <p class="detail-foot"></p>
     </aside>
   </main>
-
-  {# The status bar is the page's `contentinfo`. An XP window had one regardless, so the
-     freshness line costs nothing aesthetically. `#map-attrib` is filled by the base map,
-     which owns the credit for whichever basemap is showing — a hardcoded line would be wrong
-     on two of the three, and the credit is a licence term rather than a nicety.
-
-     `footer.site` is the hook `site.js` looks for to insert a staleness notice. The
-     deferred-hearings caveat is the one footer line this page drops, for height. #}
-  <footer class="window-status site">
+{% endblock %}
+{% block status %}
+    {# Filled by the base map, which owns the credit for whichever basemap is showing. A
+       hardcoded line here would be wrong on two of the three. #}
     <p id="map-attrib" class="map-attrib"></p>
     <p class="freshness" data-built-at="{{ built_at.isoformat(timespec="seconds") }}">
-      Fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}.{% if window_end %} Through {{ window_end.strftime("%-d %B %Y") }}.{% endif %}
+      Fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}. {% if window_end %}Through {{ window_end.strftime("%-d %B %Y") }}.{% else %}No forward window could be determined from the calendar.{% endif +%}
       <a href="/references/">Sources</a>
     </p>
-  </footer>
-</div>
-
-{# One window, so one task button, and no Start menu: the base map's `mountChrome` fills a
-   Start menu with the map challenge's thirty days, which are not this site's pages. Giving
-   this page its own menu would mean a second copy of the open, close, Escape and
-   click-outside behaviour `chrome.mjs` already has. #}
-<nav class="taskbar" aria-label="Site">
-  <div class="task-items">
-    <span class="task-button">{{ title }}</span>
-  </div>
-  <div class="tray"><span id="clock"></span></div>
-</nav>
-
-<script src="/assets/site.js" defer></script>
-<script src="/assets/address.js" defer></script>
-<script type="module" src="/assets/map.mjs"></script>
-</body>
-</html>
+{% endblock %}
+{% block extra_script %}<script src="/assets/address.js" defer></script>
+<script type="module" src="/assets/map.mjs"></script>{% endblock %}

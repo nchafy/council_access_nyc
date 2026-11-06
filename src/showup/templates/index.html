@@ -1,12 +1,9 @@
-{% extends "layout.html" %}
+{% extends "window.html" %}
 {% import "macros.html" as m %}
+{% block extra_head %}<link rel="stylesheet" href="/assets/document.css">{% endblock %}
 {% block body %}
-<section class="intro">
-  {# The visible title is the wordmark in the header; this is here because a page needs
-     exactly one h1 and the accessibility gate checks for one. #}
-  <h1 class="visually-hidden">Council districts and community boards</h1>
-  <p class="cta-row"><a class="cta" href="/map/">Open the map</a></p>
-</section>
+{# No `h1` here: the window's title bar carries it, so this document starts at `h2`. #}
+<p class="cta-row"><a class="cta" href="/map/">Open the map</a></p>
 
 {# Shipped hidden and revealed by address.js: the box cannot work without the script, and a
    form that does nothing is worse than no form. The browse line below needs no script. #}

@@ -85,8 +85,8 @@ class BuildError(RuntimeError):
 #: puts these in the cache, pinned by checksum; the build only copies them.
 VENDOR_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "maplibre-gl"
 #: `maplibre-gl.css` is fetched and pinned but deliberately not shipped — 7 of its 135
-#: selectors matched anything on `/map/`, and those rules are copied into `site.css`. The
-#: licence still travels with the code.
+#: selectors matched anything on `/map/`, and the base map's own `xp.css` carries those seven
+#: at the foot of the file. The licence still travels with the code.
 VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
 
 #: The base map and window chrome, pinned by `scripts/fetch_basemap.py`. The map route

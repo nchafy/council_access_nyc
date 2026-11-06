@@ -879,9 +879,12 @@ class TestTheBaseMapOwnsItsControls:
         assert counts == dict.fromkeys(BASE_MAP_OWNED_CONTROLS, 1), counts
 
 
-#: Viewports the window is measured at: a laptop, and the narrow phone the reflow gate uses.
-#: Both ends, because a window that fits one can overflow the other.
-WINDOW_VIEWPORTS = ((1440, 900), (390, 780))
+#: Viewports the window is measured at. 320 px is the width SC 1.4.10 names and the one the
+#: reflow gate starts at, so it is the one that must be here; 390 is the common phone, and
+#: 1440 the laptop. Both ends and the middle, because a window that fits one can overflow
+#: another — and the status bar grows as the basemap credit wraps, which is exactly what eats
+#: a short viewport.
+WINDOW_VIEWPORTS = ((320, 480), (390, 780), (1440, 900))
 
 #: A scrollbar's worth of slack. Sub-pixel layout rounding puts `scrollHeight` a fraction
 #: over `clientHeight` on a page that does not scroll.

@@ -38,7 +38,8 @@ class TestBuild:
         assert (out / "index.html").is_file()
         assert (out / "404.html").is_file()
         assert (out / "manifest.json").is_file()
-        assert (out / "assets" / "site.css").is_file()
+        for name in ("theme.css", "document.css", "map.css"):
+            assert (out / "assets" / name).is_file(), name
         assert (out / "assets" / "site.js").is_file()
         for number in (1, 25, 51):
             assert (out / "district" / str(number) / "index.html").is_file()

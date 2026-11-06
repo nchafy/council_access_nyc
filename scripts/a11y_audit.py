@@ -30,7 +30,10 @@ from showup.model import BOARD_COUNT, DISTRICT_COUNT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: WCAG 2.4.7 wants a visible ring; the stylesheet's is 3px, so thinner means a rule broke.
+#: WCAG 2.4.7 wants a visible ring. The thinnest any sheet here draws is the base map's 2px
+#: on the map route (`xp.css`); the document pages draw 3px. The floor sits at the thinner of
+#: the two, which means a 3px ring dropping to 2px on a document page is not caught — a
+#: narrower check would have to know which sheet the page loaded.
 MINIMUM_OUTLINE_PX = 2.0
 
 #: Roles that a person operates, and must therefore be able to identify.

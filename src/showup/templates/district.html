@@ -1,12 +1,12 @@
-{% extends "layout.html" %}
+{% extends "window.html" %}
 {% import "macros.html" as m %}
 {% macro when(day, start_time, time_state_label) %}{{ day }} · {% if time_state_label %}<em>{{ time_state_label }}</em>{% else %}{{ start_time }}{% endif %}{% endmacro %}
 {% macro where(name, address) %}{{ name }}{% if address %}<br>{{ address }}{% endif %}{% endmacro %}
 {% macro written(state, stamp) %}<span class="deadline {{ state }}">Safe to file until {{ stamp }}</span><br><small>The real deadline is 72 hours after adjournment, which the Council does not publish. The time shown is a provable lower bound.</small>{% endmacro %}
 {% macro accommodation(stamp, passed) %}{% if passed %}<em>Deadline passed ({{ stamp }})</em>{% else %}Request by {{ stamp }}{% endif %}<br><small>EEOOfficer@council.nyc.gov · 212-788-6936 · translationservice@council.nyc.gov</small>{% endmacro %}
+{% block extra_head %}<link rel="stylesheet" href="/assets/document.css">{% endblock %}
 {% block body %}
 <section class="where">
-  <h1>Council District {{ district.number }}</h1>
 {% if district.neighborhoods %}<p class="neighborhoods">{{ district.neighborhoods }}</p>{% endif +%}
   <p class="distinction">
     A <strong>council district</strong> elects the member below. A

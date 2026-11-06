@@ -246,9 +246,7 @@ async function main() {
   await afterFirstPaint();
   say('Loading the map…');
 
-  let MapLibre;
   let geometry;
-  let basemap;
   try {
     const [council, board, lookup, facts] = await Promise.all([
       fetchJson(LAYERS.council.url),
@@ -305,7 +303,6 @@ async function main() {
     declareReady();
     return;
   }
-  MapLibre = base.library;
   library = base.library;
 
   function settleOnce(map) {
@@ -428,6 +425,23 @@ function addFillLayer(map, layer, data, beforeId) {
 //:
 //: A basemap with no entry falls back to `simple`'s, which is a readable default on a light
 //: style rather than a guess about an unknown one.
+//: Whether the panel is meant to be on screen, which the DOM cannot answer.
+//:
+//: `Panel.open` sets `hidden = false` at once and adds `is-open` two frames later;
+//: `Panel.close` removes `is-open` at once and sets `hidden` 220 ms later. So mid-open and
+//: mid-close are the *same* DOM state — not hidden, no `is-open` — with opposite intent, and
+//: `viewPadding` has to know which it is: reading the class padded the camera for a panel
+//: that was closing, and reading `hidden` padded for one that had not appeared yet. One
+//: zoomed the floor out below the city fit, the other put the selection 140 px off centre.
+let panelShowing = false;
+
+//: The width at which the base map's stylesheet turns the detail panel from a right-hand
+//: dock into a bottom sheet, copied verbatim from the `@media` in `xp.css` that does it.
+//: `map.css` uses the same string, and `viewPadding` takes its negation rather than spelling
+//: a `min-width` of its own — three independent spellings of one breakpoint disagreed at the
+//: boundary itself.
+const PANEL_SHEET_QUERY = '(max-width: 52rem)';
+
 const BOUNDARY = {
   simple: { color: LINE, width: 1.1 },
   //: White over imagery, and wider: a hairline is lost in the texture at any colour.
@@ -464,6 +478,9 @@ class View {
     this.name = 'council';
     this.selected = null;
     this.many = null;
+    //: The ZIP whose outline is drawn, kept so `repaint` can put it back after a basemap
+    //: change rebuilds the style.
+    this.zcta = null;
   }
 
   get layer() {
@@ -485,6 +502,12 @@ class View {
    * `draw`, where it is the repair.
    */
   repaint() {
+    // The ceiling is ours, not the basemap's: `setBasemap` installs the preset's own
+    // (`maxZoom` 17 on geography, 19 on satellite), so two switches let the reader past the
+    // 15 this project caps at — where a boundary simplified to 2.2 m starts to look like a
+    // decision rather than a coastline.
+    this.map.setMaxZoom(MAX_ZOOM);
+
     for (const other of Object.keys(LAYERS)) {
       const visibility = other === this.name ? 'visible' : 'none';
       this.map.setLayoutProperty(`${LAYERS[other].source}-fill`, 'visibility', visibility);
@@ -499,6 +522,11 @@ class View {
         { selected: true }
       );
     }
+
+    // The ZIP outline is a source and a layer of its own, so the rebuild took both with it
+    // while the panel went on answering about that ZIP and the highlights survived. Half an
+    // answer is worse than none: the dashed line is what says the ZIP was the question.
+    if (this.zcta) showZipOutline(this.map, this.zcta);
   }
 
   /** Drop the selection.
@@ -517,13 +545,22 @@ class View {
    * Split from `clear` because the panel's own close button arrives here through
    * `Panel.onClose`, which runs inside `Panel.close`: closing it again from there would
    * recurse. Whoever opened the panel closes it; this undoes the map.
+   *
+   * It therefore runs twice per `clear`: once directly, then again when `Panel.close` calls
+   * `onClose`. Everything here has to be idempotent, and the camera is the part that was
+   * not: `Panel.close` sets `hidden` 220 ms later, so `isOpen` is still true inside
+   * `onClose`, and reading it meant the second pass re-fitted with `recenter` back at its
+   * default of `true`. Selecting one district after another zoomed out to the whole city
+   * every time — exactly what `recenter: false` exists to prevent. The guard is this
+   * object's own state, which the first pass has already emptied.
    */
   deselect({ recenter = true } = {}) {
-    const wasShowing = Boolean(this.panel && this.panel.isOpen);
+    const hadSelection = this.selected !== null || Boolean(this.many && this.many.length);
     for (const id of this.many || []) {
       this.map.setFeatureState({ source: this.layer.source, id }, { selected: false });
     }
     this.many = null;
+    this.zcta = null;
     hideZipOutline(this.map);
     // The pin answers "where is this address". Selecting anything else, or looking up a
     // ZIP, makes it a leftover pointing at a previous question, so it goes with the rest
@@ -536,10 +573,11 @@ class View {
       );
     }
     this.selected = null;
+    panelShowing = false;
     document.body.classList.remove('has-selection');
     // Only on a real dismissal, and only if something was up. Replacing one selection with
     // another keeps the frame.
-    if (wasShowing) refit(this.map, { move: recenter });
+    if (hadSelection) refit(this.map, { move: recenter });
   }
 
   /** Open the panel on this selection, and tell the page a sheet is up.
@@ -549,6 +587,9 @@ class View {
    */
   showPanel(title, body, foot) {
     if (!this.panel) return;
+    // Before `open`, because the `refit` and `panIntoView` that follow in the same turn have
+    // to pad for a panel the browser has not painted yet.
+    panelShowing = true;
     document.body.classList.add('has-selection');
     this.panel.open(title, body, foot);
   }
@@ -700,7 +741,10 @@ function fillCell(target, value) {
   const a = document.createElement('a');
   a.textContent = text;
   a.href = href;
-  if (href.startsWith('http')) {
+  // Anchored and with the colon, matching `fillCell` in the vendored `chrome.mjs`: a bare
+  // `startsWith('http')` also caught a relative path beginning `http…`, so the two renderers
+  // of this one cell disagreed about whether it was off-site.
+  if (/^https?:/.test(href)) {
     // Same rule as the rest of the site: an off-site link carries no referrer.
     a.rel = 'noopener noreferrer';
   }
@@ -866,7 +910,7 @@ function dropPin(map, MapLibre, lon, lat) {
     return;
   }
   // MapLibre's default marker is an inline-styled SVG, which `style-src 'self'` would
-  // refuse. Ours carries no style attribute: the colours are a class in site.css and the
+  // refuse. Ours carries no style attribute: the colours are a class in the base map's
   // shape is geometry attributes, the same division the share bars use.
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'map-pin');
@@ -899,10 +943,23 @@ function refit(map, { move = false } = {}) {
   map.setMaxBounds(null);
   map.fitBounds(cityBounds, { padding: viewPadding(map), animate: false });
   const box = map.getBounds();
+
+  // The box goes on before the floor is read, so the floor is the zoom the camera actually
+  // settles at rather than the one it passed through: `setMaxBounds` re-constrains and can
+  // nudge the zoom.
+  //
+  // This still does not agree with the floor `settleOnce` installs. Measured at 1440x900:
+  // the first floor is 9.866 and the one here is 9.770, so the first dismissal of the panel
+  // loosens the floor by 0.096 and nothing puts it back — a reader can zoom a little past the
+  // whole-city view. `settleOnce` applies the pan box twice, once synchronously and again on
+  // the next `idle`, and reads the zoom after the second; a synchronous `refit` cannot
+  // reproduce that without waiting for an event of its own. The honest fix is one function
+  // owning "what zoom fits the whole city" for both callers, which is a larger change than
+  // the 1% of zoom it buys. Left measured rather than quietly wrong.
+  map.setMaxBounds(box);
   const floor = map.getZoom();
 
   if (!move) map.jumpTo(before);
-  map.setMaxBounds(box);
   map.setMinZoom(floor);
   lockPanAtMinZoom(map);
 }
@@ -1002,7 +1059,10 @@ function bindAddress(view) {
       // the outline is there the camera frames the ZIP rather than the union of whatever
       // covers it: the ZIP is what was typed, and the covering areas are listed in the
       // panel whether or not they fit in the frame.
-      showZipOutline(view.map, detail.zcta || detail.zip).then((box) => {
+      // Recorded on the View, not just drawn: a basemap change rebuilds the style and takes
+      // the outline's source and layer with it, and `repaint` needs to know what to put back.
+      view.zcta = detail.zcta || detail.zip;
+      showZipOutline(view.map, view.zcta).then((box) => {
         if (box) frameBounds(view.map, box);
       });
       return;
@@ -1203,17 +1263,25 @@ function hideZipOutline(map) {
 function viewPadding(map) {
   const edge = 24;
   const flat = { top: edge, bottom: edge, left: edge, right: edge };
+  // `panelShowing` is the intent; the element is only measured for its size. Neither
+  // `hidden` nor `is-open` can stand in for it — see the note on the flag.
   const card = document.getElementById('detail');
-  if (!card || card.hidden) return flat;
+  if (!card || !panelShowing) return flat;
 
   const mapBox = map.getContainer().getBoundingClientRect();
   if (!mapBox.width) return flat;
 
   // `offsetWidth`/`offsetHeight`, not a client rect: the panel is mid-slide for 220 ms
   // after it opens and a rect includes the transform, which would make the camera padding
-  // animate along with it. Docked-vs-stacked is the stylesheet's own breakpoint, for the
-  // same reason.
-  const docked = window.matchMedia('(min-width: 52rem)').matches;
+  // animate along with it.
+  //
+  // Docked is the exact complement of the query that makes the panel a sheet, not a
+  // separately spelled `min-width`. Spelled independently, the two disagreed at exactly
+  // 52rem — `max-width: 52rem` and `min-width: 52rem` both match at 832 px — so the panel
+  // laid out as a full-width bottom sheet while the camera padded for a right-hand dock and
+  // aimed the selection at the left quarter of a map nothing was covering, 15 px above the
+  // sheet's edge. One fact, one spelling, derived.
+  const docked = !window.matchMedia(PANEL_SHEET_QUERY).matches;
 
   if (docked) {
     const overlap = card.offsetWidth;

@@ -183,8 +183,12 @@ class TestTheMapIsNeverTheOnlyWay:
         # finds its own heading, body, foot and close button inside it. The link onward is
         # built into `.detail-foot` by `panelFoot` in map.mjs, so the markup carries the
         # container and not the link.
-        assert 'id="detail"' in html
-        assert "hidden" in html
+        # The `hidden` attribute is asserted on the panel itself, not anywhere in the
+        # document: a bare `"hidden" in html` passed with it removed, because three
+        # `aria-hidden`s and four other hidden elements also match. Without it `xp.css` stops
+        # applying `display: none`, the panel sits off-screen at `translateX(100%)`, and its
+        # close button and foot link are in the tab order on load.
+        assert '<aside class="detail" id="detail" aria-labelledby="detail-title" hidden>' in html
         assert 'class="detail-body"' in html
         assert 'class="detail-foot"' in html
         assert 'class="detail-close title-box close"' in html

@@ -1,8 +1,8 @@
-{% extends "layout.html" %}
+{% extends "window.html" %}
 {% import "macros.html" as m %}
+{% block extra_head %}<link rel="stylesheet" href="/assets/document.css">{% endblock %}
 {% block body %}
 <section class="intro">
-  <h1>Sources</h1>
   <p class="why">
     Every dataset this site reads, the identifier it is published under, the date it was
     last fetched, and the window after which it is treated as stale. Every finding on a

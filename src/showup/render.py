@@ -140,6 +140,7 @@ def render_index(
     return templates.render(
         "index.html",
         title="Council districts and community boards",
+        here="home",
         districts=[
             {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
             for d in districts
@@ -244,6 +245,7 @@ def render_listing(
     return templates.render(
         "listing.html",
         title="All council districts and community boards",
+        here="districts",
         districts=[
             {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
             for d in districts
@@ -499,6 +501,7 @@ def render_map(*, built_at: datetime, window_end: date | None) -> str:
     return templates.render(
         "map.html",
         title="Map of council districts and community boards",
+        here="map",
         built_at=built_at,
         window_end=window_end,
     )
@@ -518,7 +521,11 @@ def render_district(
     moment = now or datetime.now()
     return templates.render(
         "district.html",
-        title=f"District {district.number}",
+        # The title bar carries the page's one `h1`, so this is the district's name and
+        # not a shortened form of it.
+        title=f"Council District {district.number}",
+        here="districts",
+        open_window=f"District {district.number}",
         district=district,
         tables=district_tables(district, participation),
         cards=[_meeting_card(meeting, today=day, now=moment) for meeting in meetings],
@@ -676,6 +683,8 @@ def render_board(
     return templates.render(
         "board.html",
         title=board.label,
+        here="boards",
+        open_window=board.label,
         board=board,
         districts=districts,
         # Every contact field as something to act on: the neighbourhoods as Wikipedia
@@ -707,7 +716,7 @@ def render_board(
 
 def render_not_found(*, built_at: datetime, window_end: date | None) -> str:
     return templates.render(
-        "not_found.html", title="Not found", built_at=built_at, window_end=window_end
+        "not_found.html", title="Page not found", built_at=built_at, window_end=window_end
     )
 
 
@@ -781,6 +790,7 @@ def render_references(
     return templates.render(
         "references.html",
         title="Sources",
+        here="sources",
         sources=[{**source, "window": _window(source["max_age_hours"])} for source in sources],
         city_record_url=CITY_RECORD_URL,
         register_url=BUDGET_REGISTER_URL,

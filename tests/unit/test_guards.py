@@ -736,7 +736,7 @@ class TestTheStylesheetParses:
     symptom was that the site looked wrong. Counting braces is cheaper than any of that.
     """
 
-    @pytest.mark.parametrize("name", ["site.css"])
+    @pytest.mark.parametrize("name", ["theme.css", "document.css", "map.css"])
     def test_braces_balance(self, name: str):
         text = (REPO_ROOT / "src" / "showup" / "assets" / name).read_text(encoding="utf-8")
         assert text.count("{") == text.count("}"), (

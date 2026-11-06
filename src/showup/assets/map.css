@@ -1,47 +1,25 @@
-/* What the map route adds to the base map's `xp.css`.
+/* The map route's window: the canvas, its floating chrome, and the detail panel.
  *
- * Only this page loads it, and only this page loads `xp.css`: the reasoning for the split is
- * at the top of `templates/map.html`. Everything here is either a component the base map has
- * no opinion about (the skip link, the freshness line, a board's share bars) or a value the
- * base map leaves to its host (the warning fill, the dark steps). Nothing here restates a
- * rule `xp.css` already carries. */
-
-/* The warning fill for the address box's status line. `xp.css` has no state colours, so the
-   two the shared `address.css` asks for are declared here. Light 7.98:1, dark 9.33:1,
-   computed rather than judged. */
-:root {
-  --warn-bg: #fff6e5;
-  --warn-ink: #6b4400;
-}
-
-/* ---------------------------------------------------------------------------
-   The status bar. `xp.css` sizes it and dresses `.map-attrib`; the freshness line is this
-   site's own and sits beside the credit.
-   --------------------------------------------------------------------------- */
-
-/* Wraps, because at 320 px the credit and the fetch date do not share a 20px strip. The bar
-   grows instead of either line being clipped — the credit is a licence term and the fetch
-   date is the page's provenance. */
-.window-status { flex-wrap: wrap; gap: 0 .4rem; }
-.window-status .freshness,
-.window-status .staleness {
-  margin: 0;
-  padding: 1px .4rem;
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--ink);
-}
-/* Inserted by `site.js` ahead of everything else when a source is past its own max age, so
-   it reads before the fetch date it qualifies. */
-.window-status .staleness { font-weight: 700; }
+ * `xp.css` draws the frame and `theme.css` the state colours, the dark pass and the status
+ * bar — all three windows share those. This file is only what the map adds, and it restates
+ * nothing either of them already carries. `document.css` is not loaded here: there is no
+ * prose on this route. */
 
 /* ---------------------------------------------------------------------------
    The detail panel's foot. `Panel.open` puts both the link onward and the provenance line
    in `.detail-foot`, which `xp.css` sizes.
    --------------------------------------------------------------------------- */
 
-/* The one thing the panel exists to offer, so it reads as the action and not as more text. */
-.detail-foot .map-selection { display: block; font-weight: 700; }
+/* The one thing the panel exists to offer, so it reads as the action and not as more text.
+   The padding is a target-size requirement, not spacing: `.detail-foot` sets 11px type, which
+   gives a bare block link a 15.9px box — under the 24px SC 2.5.8 floor, and it is a block
+   link alone in its paragraph, so the inline exception does not cover it. */
+.detail-foot .map-selection {
+  display: block;
+  font-weight: 700;
+  padding: .45rem 0;
+  min-height: 24px;
+}
 .detail-foot .detail-asof {
   margin: .35rem 0 0;
   font-size: 10px;
@@ -56,11 +34,10 @@
 .card .card-search label { display: block; font-weight: 600; font-size: .9rem; }
 .card .card-search { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
 
-/* 44px on both, and it is a requirement rather than a look: a pointer target under 24px
-   fails SC 2.5.8, and this is the one control here a reader aims at in traffic. `xp.css`
-   gives an input and a button 23px, so these two rules are what carry the floor. */
-.card .card-search input { flex: 1 1 10rem; min-width: 0; min-height: 44px; font: inherit; }
-.card .card-search button { min-height: 44px; font: inherit; padding: 0 .9rem; }
+/* The 44px floor these two need is in `theme.css`, with the rest of the form controls: it is
+   a target-size requirement rather than this layout's business. */
+.card .card-search input { flex: 1 1 10rem; min-width: 0; font: inherit; }
+.card .card-search button { font: inherit; padding: 0 .9rem; }
 
 /* MapLibre puts `tabindex="0"` on its canvas, so a keyboard user lands on the map and can pan
    it with the arrow keys. Without this they land on it and see nothing — the accessibility
@@ -89,10 +66,13 @@
    boundary above it. */
 .detail-body .group:first-child { margin-top: 0; }
 
-/* The phone, where the panel is a bottom sheet rather than a dock. `max-width`, so none of
-   this reaches the docked layout — the breakpoint is the one `xp.css` switches the panel at,
-   and `viewPadding` in `map.mjs` reads the same 52rem for the same reason. */
-@media (max-width: 51.99rem) {
+/* The phone, where the panel is a bottom sheet rather than a dock.
+
+   The query is `xp.css`'s own, character for character, and `viewPadding` in `map.mjs` takes
+   its negation rather than spelling a `min-width`. A near-miss here — 51.99rem against the
+   base map's 52rem — left exactly 832 px with a full-width sheet, the control cards still on
+   top of it, and the camera padding for a dock. */
+@media (max-width: 52rem) {
   .overlays { padding: .4rem; gap: .4rem; }
 
   /* The label is two lines at this width. It stays in the accessibility tree — the input
@@ -113,63 +93,11 @@
      has to survive them. */
   body.has-selection .card-controls,
   body.has-selection .card-basemap { display: none; }
-}
 
-/* ---------------------------------------------------------------------------
-   After dark.
-
-   `xp.css` has no dark mode — Luna had none either — so this is the site's own dark pass
-   re-stated against the base map's tokens rather than a copy of anything. The shapes stay:
-   the bevels, the group boxes, the gradient title bars. The title bars keep the Luna blues,
-   which already carry white text (14.25:1 on --title-a, 5.31:1 on --title-b).
-
-   Every ratio is computed, not judged, by scripts/contrast.py over the values below. The
-   bevel's lit edge is a grey here rather than white and measures 1.72:1 on the face, which
-   is deliberate: a bevel is ornament, and what identifies a control under SC 1.4.11 is its
-   border, re-stepped below.
-   --------------------------------------------------------------------------- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #e8eaed;            /* 9.76:1 on --face, 13.39:1 on --bg, 11.48:1 on --panel */
-    --muted: #b6bcc4;          /* 6.15:1 on --face, 8.44:1 on --bg */
-    --bg: #1f2124;
-    --face: #35383d;           /* control and panel face */
-    --panel: #2a2d31;
-    --rule: #7d858d;           /* 3.14:1 on --face, 4.31:1 on --bg, 3.70:1 on --panel */
-    --accent: #9cc3ff;         /* 6.54:1 on --face, 8.96:1 on --bg */
-    --sunken: #8fa9c4;         /* input border, 6.64:1 on --bg */
-    --raised: #565b61;
-    --sunk: #15171a;
-    --attrib-bg: rgb(31 33 36 / 86%);
-    --desktop: #1a2740;
-    --warn-bg: #3a2f14;
-    --warn-ink: #f0d79a;
-    --legend: #b8c9e8;         /* 7.04:1 on --face, 8.27:1 on --panel */
-  }
-
-  /* Everything below reaches into the base map's own styling, and each one is here for the
-     same reason: upstream spells the light value as a literal rather than a token, so there
-     is no property to re-step. `xp.css` has no dark mode to disagree with.
-
-     A control's border is #003c74, which is 1.06:1 on the dark face — the control loses the
-     boundary SC 1.4.11 requires. */
-  button,
-  .btn { border-color: var(--rule); }                            /* 3.14:1 on --face */
-  .layer-switch button[aria-pressed="true"] { border-color: var(--sunken); }  /* 4.84:1 */
-
-  /* A group's legend and a card's heading are #0a2a5a, which measures 1.20:1 on the dark
-     face: the label disappears, and only the ones that happen to be links stay readable. A
-     desaturated blue rather than `--ink`, so a heading still reads as a label, and clear of
-     `--accent` so it does not read as a link. */
-  .card h2,
-  .group legend { color: var(--legend); }
-
-  /* The table's row separator is #e8e6dc, 11.06:1 on a dark panel — a divider that loud
-     reads as content rather than as the gap between two rows. */
-  .group-table tbody tr + tr th,
-  .group-table tbody tr + tr td { border-top-color: var(--rule); }
-
-  /* The pressed state is a light bisque gradient, which flashes white on a dark control. */
-  button:active,
-  .btn:active { background: linear-gradient(to bottom, #23262a 0%, #2d3135 100%); }
+  /* The sheet is full width and reaches the bottom of the client area, so it lands squarely
+     on top of the zoom buttons: both were still in the tab order, with a focus ring drawn
+     underneath an opaque panel. They go with the cards, and the sheet's close button brings
+     all three back in one tap. `display: none` and not `visibility`, so they leave the tab
+     order with the pixels. */
+  body.has-selection .map-zoom { display: none; }
 }

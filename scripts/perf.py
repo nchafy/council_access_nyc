@@ -31,6 +31,11 @@ from serve import background_server
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BUDGET_FILE = REPO_ROOT / "perf-budget.json"
 
+#: How long the CDP socket may wait on a throttled load before giving up. Well past the
+#: 3 s threshold being gated, because the point is to *measure* a slow page rather than to
+#: lose the connection to it.
+THROTTLED_SOCKET_S = 180.0
+
 #: One page of each type; siblings differ only in data, and throttled loads are the runtime.
 TIMED_PAGES = ("/", "/district/35/", "/board/302/")
 
@@ -96,7 +101,12 @@ def measure_cold_load(
     pre-rendered page. First contentful paint is collected and printed but not gated.
     """
     samples: dict[str, list[float]] = {path: [] for path in paths}
-    with background_server(root) as base, Browser() as browser:
+    # A throttled load is slow by design, and the CDP socket's own read timeout has to
+    # outlast it or the measurement dies mid-frame rather than reporting a number. The
+    # default 30 s was enough until the basemap became liberty on 2026-11-04, whose sprite
+    # sheet and 111 layers pushed a 3G-fast load past it: the gate failed with "connection
+    # closed mid-frame" twice, which looks like a budget breach and is not one.
+    with background_server(root) as base, Browser(timeout=THROTTLED_SOCKET_S) as browser:
         page = browser.page()
         page.throttle(
             download_bps=profile["download_bps"],
@@ -188,15 +198,37 @@ def main(argv: list[str] | None = None) -> int:
         f"({', '.join(f'{name} {size / 1024:.1f}' for name, size in sorted(scripts.items()))})"
     )
 
-    geometry_file = root / "data" / "districts.geo.json"
-    if geometry_file.exists():
-        geometry_size = gzipped_size(geometry_file.read_bytes())
+    # Both layers: the council geometry the address box needs, and the board geometry the
+    # map's second layer draws. The front page fetches both.
+    geometry_files = [
+        path
+        for name in ("districts.geo.json", "boards.geo.json")
+        if (path := root / "data" / name).exists()
+    ]
+    if geometry_files:
+        geometry_size = sum(gzipped_size(path.read_bytes()) for path in geometry_files)
         geometry_limit = settings["geometry_gzip_bytes"]
         within_geometry_budget = geometry_size <= geometry_limit
         failed = failed or not within_geometry_budget
         print(
             f"{'ok  ' if within_geometry_budget else 'FAIL'} geometry (after first paint) "
             f"{geometry_size / 1024:.0f} KB of the {geometry_limit / 1024:.0f} KB budget"
+        )
+
+    # The map library is dynamically imported, so it appears in no page's HTML and
+    # `page_weight` cannot see it. Weighed from the files instead, like the geometry above:
+    # a budget that silently excludes 449 KB the reader downloads is not a budget.
+    vendor_dir = root / "vendor"
+    vendor_files = sorted(vendor_dir.glob("maplibre-gl*")) if vendor_dir.is_dir() else []
+    if vendor_files:
+        library_size = sum(gzipped_size(path.read_bytes()) for path in vendor_files)
+        library_limit = settings["map_library_gzip_bytes"]
+        within_library_budget = library_size <= library_limit
+        failed = failed or not within_library_budget
+        print(
+            f"{'ok  ' if within_library_budget else 'FAIL'} map library (front page only, "
+            f"after first paint) {library_size / 1024:.0f} KB of the "
+            f"{library_limit / 1024:.0f} KB budget"
         )
 
     if args.weight_only:

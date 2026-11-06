@@ -2,8 +2,9 @@
 
 **A real screen-reader pass has never been run.** It is the one open Phase 1 item (§4).
 
-Run this before any release, and after any change to `render.py`, `site.css`, `site.js` or
-`address.js`. R39 requires a documented keyboard-only and screen-reader pass per release.
+Run this before any release, and after any change to `render.py`, `site.js`, `address.js` or
+any stylesheet — `site.css` for the document pages, `map.css` for the map, `shared.css` for
+what both carry. R39 requires a documented keyboard-only and screen-reader pass per release.
 
 ## 1. The automated gates
 
@@ -11,11 +12,11 @@ All five run in CI on every commit.
 
 | Gate | Command | What it proves |
 |---|---|---|
-| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 115 pre-rendered pages |
-| Keyboard + accessibility tree | `make a11y` | 148 checks over 11 page types, 0 failures |
+| axe, WCAG 2.2 AA | `make axe` | 0 violations, all 116 pre-rendered pages; **12 `color-contrast` incomplete**, one per page, which are the XP theme's gradients — resolved by computing the ratios, see §7 |
+| Keyboard + accessibility tree | `make a11y` | 161 checks over 12 page types, 0 failures |
 | Console and CSP | `make console` | 0 complaints — no page logs an error or trips its own policy |
-| Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 115 |
-| Weight and cold load | `make perf` | 12.8 KB heaviest page vs 60 KB; 865 ms p95 vs 3000 ms |
+| Reflow, WCAG 1.4.10 | `make reflow` | 0 violations at 320 px and 390 px; `ALL=1` covers all 116 |
+| Weight and cold load | `make perf` | 25.4 KB heaviest page (`/map/`) vs 60 KB; geometry 226 KB vs 300 KB; the map library 439 KB vs its own 500 KB budget |
 
 `make a11y` presses real `Tab` keys in a real browser and reads Chrome's accessibility tree: skip
 link, focus into `<main>`, DOM order, reachability, ≥2px ring, `Shift+Tab`; landmarks, accessible
@@ -128,9 +129,68 @@ Both 2026-09-23:
 | Gap | State |
 |---|---|
 | No real screen-reader pass (§4) | The largest gap, and the one open Phase 1 item |
+| Overlapping text passes every gate | Found 2026-10-22: the map panel rendered on top of the `h1` at 390 px and axe, a11y, console, reflow and perf were all green. Only a screenshot shows it. `make shot` is load-bearing, not decorative |
 | `make shot` still clamps at 500px | macOS minimum Chrome window width. No longer a gap in coverage — `make reflow` measures 320px and 390px over CDP, which the window size cannot reach — but the screenshots are still not phone-width |
 | `make gates` dies partway, roughly one run in two | A different gate each time, always `CDPError: lost the channel to Chrome: [Errno 54] Connection reset by peer`. Every gate passes run on its own, and CI is unaffected because it runs them as one pytest session (`make browser`, 85 passed). Observed 2026-10-20; not diagnosed |
 | Slow 3G measures 4.3–5.1 s, over 3 s | Reported, not gated — dominated by that profile's 2000 ms round trip, not our bytes. Reasoning in `perf-budget.json` |
 | No accessibility statement page (R41, a SHOULD) | Deferred with publishing; needs a working feedback address |
 | No readability gate on procedural copy (R41) | Deferred with publishing |
 | `/favicon.ico` 404s on every page load | Shipping one is an open owner decision (§7.3); `scripts/console_check.py` names it as an expected browser probe |
+
+## 7. The XP theme's contrast, computed
+
+axe cannot compute a contrast ratio against a gradient, so every page with the title bar
+reports one `color-contrast` **incomplete** — not a pass and not a failure, axe declining to
+decide. The ratios were computed against both gradient stops instead, which is the only
+honest way to clear them. Luna's own palette failed twice and both were changed rather than
+accepted:
+
+| Pair | Ratio | Verdict |
+|---|---|---|
+| Wordmark white on the title bar's light end `#3a6ea5` | 5.31:1 | pass |
+| Wordmark white on the dark end `#0a246a` | 14.25:1 | pass |
+| Tagline `#dfe8f5` on the light end — **Luna's own value** | **4.30:1** | **failed**, changed to white |
+| Ink `#000` on the control face `#ece9d8` | 17.21:1 | pass |
+| Muted `#3a3a3a` on the control face | 9.32:1 | pass |
+| Link `#0000cc` on white | 11.22:1 | pass |
+| Legend `#0a2a5a` on the group box | 13.70:1 | pass |
+| Button ink on the bevel's darkest stop `#d7d2bf` | 13.86:1 | pass |
+| Close glyph white on `#e8785a` — **Luna's own value** | **2.89:1** | **failed**, darkened to `#c8341a` |
+
+Re-run the computation on any change to these colours. A gradient stop is invisible to the
+gate, so the only thing standing behind these numbers is that somebody worked them out.
+
+## 8. The dark theme's contrast, computed
+
+Added 2026-10-31, with the dark variant itself. Until then `prefers-color-scheme: dark`
+had no effect at all: the block that set a dark palette sat *above* the XP theme, which
+resets `--ink` and `--bg` in `:root` unconditionally, so a dark-mode reader got black text
+on bisque. The dark block is now last in `site.css`, which is the only thing that can beat
+an unconditional `:root`.
+
+Luna had no dark mode, so none of this is a reproduction. The shapes are kept — bevels,
+group boxes, gradient title bars — and the surfaces are re-stepped. Every figure is
+computed from the sRGB relative-luminance formula, not judged by eye.
+
+| Pair | Ratio | Needs | |
+|---|---|---|---|
+| `--ink` `#e8eaed` on `--bg` `#1f2124` | 13.39:1 | 4.5:1 | text |
+| `--ink` on `--panel` `#2a2d31` | 11.48:1 | 4.5:1 | text on a record |
+| `--ink` on `--face` `#35383d` | 9.76:1 | 4.5:1 | text on a control |
+| `--muted` `#b6bcc4` on `--bg` | 8.44:1 | 4.5:1 | secondary text |
+| `--muted` on `--panel` | 7.23:1 | 4.5:1 | secondary text |
+| `--accent` `#9cc3ff` on `--bg` | 8.96:1 | 4.5:1 | links |
+| `--accent` on `--panel` | 7.68:1 | 4.5:1 | links |
+| `--rule` `#7d858d` on `--panel` | 3.70:1 | 3.0:1 | SC 1.4.11, borders |
+| `--rule` on `--face` | 3.14:1 | 3.0:1 | SC 1.4.11, borders |
+| `--rule` on `--bg` | 4.31:1 | 3.0:1 | SC 1.4.11, borders |
+| `--sunken` `#8fa9c4` on `--bg` | 6.64:1 | 3.0:1 | input border |
+| `#fff` on `--title-a` `#0a246a` | 14.25:1 | 4.5:1 | title bars, unchanged |
+
+`--rule` is the one that needed working at. A border is non-text contrast under SC 1.4.11
+and needs 3:1; the first pick, `#5a6066`, managed **2.17:1** against the panel and was
+replaced.
+
+**Known gap.** `make axe` runs in the browser's default scheme only, so none of the dark
+theme is covered by an automated pass — these ratios are the whole of its evidence. A
+dark-mode axe run would be a real addition to the gates.

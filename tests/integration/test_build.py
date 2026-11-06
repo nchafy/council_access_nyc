@@ -18,7 +18,12 @@ from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
 from showup.model import Committee, District, DistrictBoard, Member, Office
-from showup.render import render_district, render_index
+from showup.render import (
+    render_board_index,
+    render_district,
+    render_district_index,
+    render_index,
+)
 from showup.sources.calendar import parse_calendar, upcoming
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +43,8 @@ class TestBuild:
         assert (out / "index.html").is_file()
         assert (out / "404.html").is_file()
         assert (out / "manifest.json").is_file()
-        assert (out / "assets" / "site.css").is_file()
+        for name in ("site.css", "document.css", "map.css"):
+            assert (out / "assets" / name).is_file(), name
         assert (out / "assets" / "site.js").is_file()
         for number in (1, 25, 51):
             assert (out / "district" / str(number) / "index.html").is_file()
@@ -169,24 +175,71 @@ class TestIndex:
             for code in ("301", "302")
         ]
 
-    def test_lists_every_district(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
-        html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+    def _districts(self):
+        return [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
+
+    def test_the_landing_page_is_a_desktop_of_icons(self):
+        """Owner's decision 2026-11-06. It carries no content of its own: the address box was
+        already on `/map/` verbatim, and the citywide meeting moved there."""
+        html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
+        assert 'class="desktop"' in html
+        assert 'id="icons"' in html
+        assert "<select" not in html
+        assert 'id="address-input"' not in html
+
+    def test_the_desktop_needs_no_script_to_be_usable(self):
+        """The base map's own desktop generates thirty-one icons and is empty without a
+        script. Four fixed destinations are written out, so this one is not."""
+        html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
+        for href in ("/map/", "/district/", "/board/", "/references/"):
+            assert f'href="{href}"' in html
+        # The icon art is inline SVG, not a `data:` URI background: `img-src 'self'` governs
+        # CSS images too, and a `data:` one draws nothing and logs nothing.
+        assert html.count('class="icon-glyph"') == 4
+        assert "data:image" not in html
+
+    def test_the_landing_page_still_reaches_both_lists(self):
+        """R6's location-free path: one icon each, rather than 110 links."""
+        html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
+        assert 'href="/district/"' in html
+        assert 'href="/board/"' in html
+
+    def _district_index(self):
+        return render_district_index(
+            self._districts(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
         )
+
+    def _board_index(self):
+        return render_board_index(
+            self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
+        )
+
+    def test_the_district_index_lists_every_district(self):
+        html = self._district_index()
         for n in (1, 25, 51):
             assert f'href="/district/{n}/"' in html
-        assert "<select" in html
-
-    def test_offers_both_views(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
-        html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
-        )
         assert 'id="district-select"' in html
-        assert 'id="board-select"' in html
+
+    def test_the_board_index_lists_every_board(self):
+        html = self._board_index()
         assert 'href="/board/302/"' in html
-        assert "most local unit" in html
+        assert 'id="board-select"' in html
+
+    def test_each_index_answers_about_one_geography(self):
+        """The two were one template listing both, so the taskbar's two buttons opened the
+        same window. A council district and a community board are different things."""
+        districts, boards = self._district_index(), self._board_index()
+        assert 'id="board-select"' not in districts
+        assert 'href="/board/302/"' not in districts
+        assert 'id="district-select"' not in boards
+        assert 'href="/district/1/"' not in boards
+
+    def test_each_index_still_reaches_the_other(self):
+        """Through the taskbar, which is the site's whole navigation: without it a reader on
+        one index has no route to the other."""
+        for html in (self._district_index(), self._board_index()):
+            assert 'href="/district/"' in html
+            assert 'href="/board/"' in html
 
 
 class TestCrosswalk:
@@ -283,7 +336,9 @@ class TestBoardView:
         build_site(raw_dir, out, today=date(2026, 9, 22))
         page = " ".join((out / "board" / "302" / "index.html").read_text().split())
         assert "The City's dataset records the board office, not the meeting venue" in page
-        assert "<dd>350 Jay Street, 8th Floor, Brooklyn, NY 11201<br><small>" in page
+        # The address is a maps link now (owner, 2026-10-31), so the note follows the
+        # anchor rather than the bare text. The note is the point of this test.
+        assert "350 Jay Street, 8th Floor, Brooklyn, NY 11201</a><br><small>" in page
 
     def test_the_board_page_does_not_catalogue_what_is_missing(self, raw_dir, tmp_path):
         """Owner, 2026-10-07: absences nobody asked about are padding, not honesty.
@@ -325,7 +380,9 @@ class TestBoardView:
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         board_page = (out / "board" / "302" / "index.html").read_text()
-        assert "of this board" in board_page
+        # The denominator moved from a phrase on every row to the column header, which is
+        # where it belongs once the shares are a table.
+        assert "Share of board" in board_page
         district_page = (out / "district" / "35" / "index.html").read_text()
         assert "of this council district" in district_page
 
@@ -494,6 +551,37 @@ class TestShippedData:
             assert code.isdigit() and len(code) == 5
             assert districts and all(1 <= n <= 51 for n in districts)
 
+    def test_an_unreadable_pb_roster_fails_closed(self, raw_dir, tmp_path):
+        """A roster that cannot be read must stop the build, not render 51 districts as
+        "not taking part" — a wrong answer is worse than a missing page."""
+        (raw_dir / "participatory_budgeting.json").write_text("{", encoding="utf-8")
+        with pytest.raises(BuildError, match=r"participatory_budgeting\.json"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_pb_roster_below_the_floor_fails_closed(self, raw_dir, tmp_path):
+        """The floor is enforced in the parser, so it surfaces here as a BuildError."""
+        payload = json.loads((raw_dir / "participatory_budgeting.json").read_text())
+        payload["idea_map_html"] = '<div data-district="1"></div>'
+        (raw_dir / "participatory_budgeting.json").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="floor is"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_broken_board_calendar_fails_closed(self, raw_dir, tmp_path):
+        """A thin calendar ingest stops the build rather than quietly emptying 21 board
+        pages: a board page with no calendar reads as "this board holds no meetings"."""
+        (raw_dir / "board_meetings.json").write_text(json.dumps({"feeds": {}}), encoding="utf-8")
+        with pytest.raises(BuildError, match="floor is"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_thin_zip_geometry_fails_closed(self, raw_dir, tmp_path):
+        """The ZIP outline is only a hint, but a half-read file would draw the wrong
+        boundary for a ZIP, which is worse than drawing none."""
+        payload = json.loads((raw_dir / "modzcta.geojson").read_text())
+        payload["features"] = payload["features"][:3]
+        (raw_dir / "modzcta.geojson").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="ZIP geometry has 3 features"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
     def test_a_wrong_district_count_fails_closed(self, raw_dir, tmp_path):
         (raw_dir / "districts.geojson").write_text(
             json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"
@@ -581,8 +669,9 @@ class TestReferencesPage:
 
     def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
         page = self._page(raw_dir, tmp_path)
-        # Six of the eight: the two geometry files are not in this fixture's cache.
-        assert page.count("<dt>Fetched</dt>") == 6
+        # Ten of the eleven. Only the shoreline-clipped council file is absent, since
+        # nothing in a build reads it — it is the crosswalk's denominator.
+        assert page.count("<dt>Fetched</dt>") == 10
 
     def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
         """Deleting a disclosure paragraph may relocate a citation, never lose one."""

@@ -71,7 +71,7 @@ Where an answer is a proxy, the site says which proxy and why. Where a fact is p
 nowhere official — the testimony registration cut-off and the per-speaker time limit both
 are — it says so and gives you the number to call instead of a guess.
 
-## Two views, because they answer different questions
+## A map, and two kinds of page behind it
 
 - **`/district/{1-51}`** — who legislates for you, their committees, the next five Council
   meetings, and how to testify.
@@ -80,6 +80,27 @@ are — it says so and gives you the number to call instead of a guess.
 
 Both are reachable from the front page by dropdown, by a plain link list, or by typing an
 address, a ZIP, a neighbourhood, or just a district number.
+
+**`/map/` is a full-screen map**, and it is a route of its own rather than part of the
+landing page for a concrete reason: a map embedded in a scrolling document swallows the
+wheel, so scrolling the page zooms the map instead. On `/map/` nothing scrolls —
+`scrollHeight` equals `clientHeight` — and the map takes every pixel the compact header and
+footer do not.
+
+Information arrives as cards floating on the map: one holding the layer toggle, the address
+box and the zoom buttons, and one naming whatever is selected, with the link that opens it.
+Each is hidden until it has something to say, so the map is never covered by an empty box.
+
+The 51 council districts and the 59 community boards are one layer at a time behind the
+toggle, every polygon in a layer the same colour. The landing page is a search box and a
+button to the map, and it loads no map library at all. Selecting one highlights it
+and offers a link to its page rather than navigating, so the toggle stays useful for
+comparing where the two sets of lines fall. Typing a street address highlights the district
+or board containing it; typing a district number, ZIP or neighbourhood still goes straight
+to the page, because that path promises ≤200 ms and a highlight would add a click.
+
+The map needs JavaScript and WebGL. Without either, the page says so and the full lists of
+51 districts and 59 boards are right there, as are the dropdowns and the address box.
 
 ## Speed
 
@@ -126,11 +147,22 @@ measurement on a reference profile, and the gate's own output says so in those w
 - **Runtime dependencies: jinja2 and beautifulsoup4**, both build-time only — they render
   `site/` and read scraped HTML, and neither reaches a reader
   ([docs/dependencies.md](docs/dependencies.md))
-- **Third parties in the browser: none, and this one is a rule.** No analytics, no tag
-  manager, no hosted fonts, no map tiles — it is a CSP-enforced promise to readers.
-  The address you type goes to the NYC geocoder and nowhere else, and never enters a URL,
-  cookie, storage or log
-- **Planned, not present:** MapLibre GL JS + OpenFreeMap for the interactive map, and
+- **Third parties in the browser: exactly two, each a recorded decision.** The CSP names
+  `geosearch.planninglabs.nyc` for geocoding an address, and — since 2026-10-22 —
+  `tiles.openfreemap.org` for the basemap. Nothing else: no analytics, no tag manager, no
+  hosted fonts, no CDN-served script. `tests/unit/test_csp.py` holds that to an explicit
+  two-host allowlist, so a third is a decision somebody has to make on purpose.
+  **What changed, and it is a real loss:** the site used to promise that no third party saw
+  a reader's request. It no longer does. A tile host can observe which area is being looked
+  at and roughly how closely. It cannot see a typed address — that still goes only to the
+  City geocoder, and never enters a URL, cookie, storage or log. The trade and the refusal
+  it replaced are written down in [product-brief.md](product-brief.md) §5
+- **MapLibre GL JS 6.15.0**, vendored and served from our own origin, on the `/map/` route
+  only and imported after first paint, so no other page pays its 449 KB. OpenFreeMap
+  publishes **no SLA**, so a failed style request falls back to a self-hosted no-basemap
+  style and the districts still draw and hit-test. Self-hosted tiles remain the intended
+  end state
+- **Planned, not present:**
   Cloudflare Pages for hosting. Both deliberately out of Phase 1
 
 ## What is done and what is not
@@ -139,9 +171,16 @@ measurement on a reference profile, and the gate's own output says so in those w
 
 - **M0–M2** — the skeleton, the live calendar with fail-closed refresh, and the deadline
   ledger (the 72-hour written-testimony bound and accommodation deadlines in business days)
-- **M3, partly** — address / ZIP / neighbourhood / district-number lookup and
-  keyboard-navigable lists. The interactive **map is deliberately cut** from Phase 1;
-  geometry ships for *resolution only*, never for display
+- **M3, mostly** — address / ZIP / neighbourhood / district-number lookup and
+  keyboard-navigable lists, plus the **full-screen map at `/map/`**: 51 council districts and
+  59 community boards, one layer at a time behind a toggle, each in one uniform fill, with
+  the selection shown in a floating card. A geocoded address highlights the polygon
+  containing it; a district number, ZIP or neighbourhood still goes straight to its page,
+  because that path promises ≤200 ms. No basemap and no choropleth — the site ranks nothing.
+  Both layers reuse the geometry built for *resolution*; at phone width one pixel is about
+  100 m, so 2.2 m detail needs no separate display artifact. The map being its own route is
+  what keeps the landing page at 5 KB with no library, and keeps geometry on the
+  street-address path only
 - **M4** — district pages, members, and community boards joined by geometry
 - The fetch stage: eight sources, each with a freshness window, a size floor and a body
   invariant

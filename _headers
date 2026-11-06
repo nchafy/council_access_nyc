@@ -13,9 +13,33 @@
 # /manifest.json. Omitting it broke local address resolution and the staleness notice
 # (docs/OBSERVATIONS.md, 2026-09-23). tests/unit/test_csp.py now checks this list
 # against every URL the frontend fetches.
+#
+# The base map is the `30daymapchallenge` repo, vendored and pinned, and it offers three
+# map types. Each names its own tile hosts, and `build._assert_policy_covers_basemap`
+# fails the build when this list does not cover them — otherwise a new upstream host
+# ships a map that passes every local check and is blocked here.
+#
+#   Simple     tiles.openfreemap.org
+#   Satellite  server.arcgisonline.com
+#   Geography  {a,b,c}.tile.opentopomap.org
+#
+# Two of those carry an obligation beyond attribution. Esri's keyless endpoints have
+# unconfirmed licensing for this use. OpenTopoMap is CC-BY-SA and asks that its tiles not
+# carry heavy traffic. Both are the owner's choice, made on 2026-11-04 having been told so.
+#
+# server.arcgisonline.com serves the basemap: Esri's Light Gray Canvas, chosen 2026-10-26
+# over OpenFreeMap's positron for its park colours and its labelling at lower zoom. Raster
+# tiles, and MapLibre fetches those, so connect-src is the only directive needed — img-src,
+# worker-src and blob: were each measured unnecessary on 2026-10-22 and the same holds here.
+# Esri sends `Access-Control-Allow-Origin: *`.
+#
+# Two things this line carries. It withdrew the "no third party sees a reader's request"
+# promise, recorded as an owner decision in product-brief.md §5. And it is a *commercial*
+# Esri service whose keyless endpoints nobody here has confirmed are licensed for this use;
+# the owner chose them knowing that. Attribution is set on the source in map.mjs.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://geosearch.planninglabs.nyc https://tiles.openfreemap.org https://server.arcgisonline.com https://a.tile.opentopomap.org https://b.tile.opentopomap.org https://c.tile.opentopomap.org; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Strict-Transport-Security: max-age=31536000; includeSubDomains

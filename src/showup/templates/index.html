@@ -1,92 +1,108 @@
-{% extends "layout.html" %}
-{% import "macros.html" as m %}
-{% block body %}
-<section class="intro">
-  <h1>Districts and boards</h1>
-</section>
+<!DOCTYPE html>
+{% import "chrome.html" as chrome %}
+<html lang="en">
+{#- The desktop. Every other route is a window over this one, and the taskbar switches
+    between them.
 
-<section class="picker" id="address-section" hidden>
-  <h2>Address lookup</h2>
-  <p class="why">
-    The typed address goes to the City's address lookup only when Find is pressed,
-    with logging switched off, and never enters the page URL.
-  </p>
-  <form id="address-form" action="#" method="get" autocomplete="off">
-    <label for="address-input">Address, ZIP, neighbourhood or district number</label>
-    <input
-      id="address-input"
-      name="q"
-      type="text"
-      inputmode="text"
-      autocomplete="off"
-      autocorrect="off"
-      spellcheck="false"
-      placeholder="350 Jay Street, or 11217, or Fort Greene, or 35">
-    <button type="submit">Find</button>
-  </form>
-  <p id="address-status" class="address-status" role="status" aria-live="polite"></p>
-  <div id="address-results"></div>
-</section>
+    The wallpaper, the hill, the icon grid and the icon labels are all the base map's
+    `index.css`, vendored and pinned with the rest of it. What this page adds is its own four
+    icons. The art is inline SVG rather than the base's `data:` URI background-image, because
+    `img-src 'self'` governs images loaded from CSS too, so a `data:` URI there is refused —
+    and under this site's header policy it is refused silently. The note in `site.css` has the
+    measurement and the one environment where it is not silent.
 
-<section class="picker">
-  <h2>City Council district</h2>
-  <p class="why">
-    The district's Council Member, the next five Council meetings with addresses,
-    and the written-testimony window. <strong>51 districts.</strong>
-  </p>
-  <form id="district-form" action="/district/" method="get">
-    <label for="district-select">Council district</label>
-    <select id="district-select" name="district">
-      <option value="">Select a council district…</option>
-{% for d in districts %}
-    <option value="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</option>
-{% endfor %}
-    </select>
-    <button type="submit">Go</button>
-  </form>
-</section>
+    The icons are static markup rather than generated, which is the one place this page
+    departs from the base's own desktop: thirty-one numbered days have to be built from a
+    list, four fixed destinations do not, and a desktop written out longhand is a desktop
+    that still works with no JavaScript. The base's needs a script and says so in a
+    `<noscript>`; this one does not need the note.
 
-<section class="picker">
-  <h2>Community board</h2>
-  <p class="why">
-    The most local unit of City government: it reviews zoning, sets local budget
-    priorities, meets on a standing monthly cadence, and
-    <strong>seats members of the public on its committees</strong>.
-    <strong>59 boards.</strong>
-  </p>
-  <form id="board-form" action="/board/" method="get">
-    <label for="board-select">Community board</label>
-    <select id="board-select" name="board">
-      <option value="">Select a community board…</option>
-{% for b in boards %}
-    <option value="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</option>
-{% endfor %}
-    </select>
-    <button type="submit">Go</button>
-  </form>
-  <p class="hint">
-    City lookups:
-    {{ m.link("https://council.nyc.gov/districts/", "Council district lookup") }} ·
-    {{ m.link("https://communityprofiles.planning.nyc.gov/", "Community district profiles") }}.
-  </p>
-</section>
+    An icon opens on a single activation, not a double click, which is the base's decision
+    and the right one: a double-click target is unreachable by keyboard and awkward on
+    touch. Each icon is a link, so Enter and a tap both work.
+-#}
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} — Show Up NYC</title>
+<meta name="description" content="City Council hearings and deadlines, council districts, and community boards.">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="/vendor/xp.css">
+<link rel="stylesheet" href="/vendor/index.css">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body class="desktop">
+<a class="skip" href="#icons">Skip to content</a>
 
-<section class="all-districts">
-  <h2>All 51 council districts</h2>
-  <ul class="district-list">
-{% for d in districts %}
-    <li><a href="/district/{{ d.number }}/">District {{ d.number }}{% if d.hood is not none %} — {{ d.hood }}{% endif %}</a></li>
-{% endfor %}
+{# The desktop has no window and so no title bar to carry the page's one `h1`. #}
+<h1 class="visually-hidden">{{ title }}</h1>
+
+<main id="main">
+  <ul id="icons" class="icon-grid" aria-label="Show Up NYC">
+    <li class="icon">
+      <a class="icon-link" href="/map/">
+        <svg class="icon-glyph" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <!-- A folded street map: three panels, a river and a route. -->
+          <path d="M2 7l9.5-3 9 3 9.5-3v21l-9.5 3-9-3-9.5 3z" fill="#8dc63f" stroke="#536c7d" stroke-width="1.2"/>
+          <path d="M11.5 4v21M20.5 7v21" fill="none" stroke="#536c7d" stroke-width="1.1"/>
+          <path d="M2 17h28" stroke="#2f80c2" stroke-width="2.6" fill="none"/>
+          <path d="M6 25c3-5 6 1 9-4s5 1 8-3" fill="none" stroke="#e02d13" stroke-width="1.8"/>
+        </svg>
+        <span class="icon-label">Map</span>
+      </a>
+    </li>
+    <li class="icon">
+      <a class="icon-link" href="/district/">
+        <svg class="icon-glyph" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <!-- Two numbered parcels either side of a boundary. -->
+          <path d="M4 9l11-5 13 4v16l-12 4-12-5z" fill="#b9d3ee" stroke="#0a246a" stroke-width="1.6"/>
+          <path d="M15 4v24" fill="none" stroke="#0a246a" stroke-width="1.2" stroke-dasharray="2 2"/>
+          <text x="8" y="21" font-family="Tahoma,Verdana,sans-serif" font-size="9" font-weight="bold" fill="#0a246a">3</text>
+          <text x="19" y="23" font-family="Tahoma,Verdana,sans-serif" font-size="9" font-weight="bold" fill="#0a246a">7</text>
+        </svg>
+        <span class="icon-label">Council districts</span>
+      </a>
+    </li>
+    <li class="icon">
+      <a class="icon-link" href="/board/">
+        <svg class="icon-glyph" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <!-- People around a table, which is what a board meeting is. -->
+          <ellipse cx="16" cy="20" rx="12" ry="6" fill="#ece9d8" stroke="#536c7d" stroke-width="1.4"/>
+          <circle cx="16" cy="7" r="3.4" fill="#3a6ea5" stroke="#dfe8f5" stroke-width="1"/>
+          <circle cx="6" cy="13" r="3" fill="#5a9c22" stroke="#dfe8f5" stroke-width="1"/>
+          <circle cx="26" cy="13" r="3" fill="#c87f0a" stroke="#dfe8f5" stroke-width="1"/>
+        </svg>
+        <span class="icon-label">Community boards</span>
+      </a>
+    </li>
+    <li class="icon">
+      <a class="icon-link" href="/references/">
+        <svg class="icon-glyph" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <!-- A stack of paper, the top sheet ruled. -->
+          <path d="M8 5h12l5 5v17H8z" fill="#d8d4c2" stroke="#536c7d" stroke-width="1.2"/>
+          <path d="M5 2h12l5 5v17H5z" fill="#fff" stroke="#536c7d" stroke-width="1.2"/>
+          <path d="M17 2l5 5h-5z" fill="#b9d3ee" stroke="#536c7d" stroke-width="1.2"/>
+          <path d="M8 12h11M8 16h11M8 20h7" stroke="#2f80c2" stroke-width="1.4" fill="none"/>
+        </svg>
+        <span class="icon-label">Sources</span>
+      </a>
+    </li>
   </ul>
-</section>
+</main>
 
-<section class="all-districts">
-  <h2>All 59 community boards</h2>
-  <ul class="district-list">
-{% for b in boards %}
-    <li><a href="/board/{{ b.code }}/">{{ b.label }}{% if b.hood is not none %} — {{ b.hood }}{% endif %}</a></li>
-{% endfor %}
-  </ul>
-</section>
-{% endblock %}
-{% block extra_script %}<script src="/assets/address.js" defer></script>{% endblock %}
+{# XP printed its edition and build number in the desktop's bottom-right corner, which is
+   exactly the right place for this site's provenance: every page says when its data was
+   fetched, and a desktop has no status bar to say it in. `footer.site` is also the hook
+   `site.js` looks for to insert a staleness notice. #}
+<footer class="site watermark">
+  <p class="freshness" data-built-at="{{ built_at.isoformat(timespec="seconds") }}">
+    Show Up NYC<br>
+    Fetched {{ built_at.strftime("%-d %B %Y, %H:%M") }}{% if window_end %}<br>Through {{ window_end.strftime("%-d %B %Y") }}{% endif %}
+  </p>
+</footer>
+
+{{ chrome.taskbar(here="home") }}
+
+<script src="/assets/site.js" defer></script>
+</body>
+</html>

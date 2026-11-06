@@ -22,8 +22,12 @@ TEMPLATES = {
     "board.html",
     "district.html",
     "index.html",
-    "layout.html",
+    "window.html",
+    "chrome.html",
+    "districts.html",
+    "boards.html",
     "macros.html",
+    "map.html",
     "not_found.html",
     "references.html",
 }
@@ -32,7 +36,7 @@ TEMPLATES = {
 class TestTheEnvironment:
     def test_the_templates_ship_inside_the_package(self):
         # A template left out of the wheel would only fail after install.
-        assert templates.environment().get_template("layout.html")
+        assert templates.environment().get_template("window.html")
 
     def test_escaping_is_on_without_asking(self):
         rendered = (

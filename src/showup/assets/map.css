@@ -1,0 +1,104 @@
+/* The map route's window: the canvas, its floating chrome, and the detail panel.
+ *
+ * `xp.css` draws the frame and `site.css` the state colours, the dark pass and the status
+ * bar — all three windows share those. This file is only what the map adds, and it restates
+ * nothing either of them already carries. `document.css` is not loaded here: there is no
+ * prose on this route. */
+
+/* ---------------------------------------------------------------------------
+   The detail panel's foot. `Panel.open` puts both the link onward and the provenance line
+   in `.detail-foot`, which `xp.css` sizes.
+   --------------------------------------------------------------------------- */
+
+/* The one thing the panel exists to offer, so it reads as the action and not as more text.
+   The padding is a target-size requirement, not spacing: `.detail-foot` sets 11px type, which
+   gives a bare block link a 15.9px box — under the 24px SC 2.5.8 floor, and it is a block
+   link alone in its paragraph, so the inline exception does not cover it. */
+.detail-foot .map-selection {
+  display: block;
+  font-weight: 700;
+  padding: .45rem 0;
+  min-height: 24px;
+}
+.detail-foot .detail-asof {
+  margin: .35rem 0 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+   The address box's own layout. Only this page puts the box in a card — the front page
+   gives it a `section.picker` — so this is the map's and not `shared.css`'s.
+   --------------------------------------------------------------------------- */
+
+.card .card-search label { display: block; font-weight: 600; font-size: .9rem; }
+.card .card-search { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
+
+/* The 44px floor these two need is in `site.css`, with the rest of the form controls: it is
+   a target-size requirement rather than this layout's business. */
+.card .card-search input { flex: 1 1 10rem; min-width: 0; font: inherit; }
+.card .card-search button { font: inherit; padding: 0 .9rem; }
+
+/* MapLibre puts `tabindex="0"` on its canvas, so a keyboard user lands on the map and can pan
+   it with the arrow keys. Without this they land on it and see nothing — the accessibility
+   gate's "every focused element shows a focus ring" names the canvas when this is missing.
+   The offset is negative because the ring would otherwise be clipped by the container's own
+   edge. The base map's stylesheet ships the reduced copy of MapLibre's own rules but takes no
+   view on the focus ring, which is the host's to match. */
+.maplibregl-canvas:focus,
+.maplibregl-canvas:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+/* The glyph buttons are optically off-centre otherwise: a text button's line box is taller
+   than the glyph, so centring the box does not centre what is drawn. Grid places the glyph
+   itself. */
+.map-zoom button,
+.detail-close {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+/* The group a reader is shown first needs no top rule: the panel's title bar is already the
+   boundary above it. */
+.detail-body .group:first-child { margin-top: 0; }
+
+/* The phone, where the panel is a bottom sheet rather than a dock.
+
+   The query is `xp.css`'s own, character for character, and `viewPadding` in `map.mjs` takes
+   its negation rather than spelling a `min-width`. A near-miss here — 51.99rem against the
+   base map's 52rem — left exactly 832 px with a full-width sheet, the control cards still on
+   top of it, and the camera padding for a dock. */
+@media (max-width: 52rem) {
+  .overlays { padding: .4rem; gap: .4rem; }
+
+  /* The label is two lines at this width. It stays in the accessibility tree — the input
+     still has a name — and the placeholder carries the hint on screen. */
+  .card .card-search label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* With a sheet up, the controls are in the way of the thing they produced. Compacting them
+     still left only 124 px of map between the two, so they go; the sheet's close button
+     brings them back, and that is one tap. `#map-status` is a sibling of the cards rather
+     than a child for this reason — it is the live region that announces a selection, and it
+     has to survive them. */
+  body.has-selection .card-controls,
+  body.has-selection .card-basemap,
+  body.has-selection .card-citywide { display: none; }
+
+  /* The sheet is full width and reaches the bottom of the client area, so it lands squarely
+     on top of the zoom buttons: both were still in the tab order, with a focus ring drawn
+     underneath an opaque panel. They go with the cards, and the sheet's close button brings
+     all three back in one tap. `display: none` and not `visibility`, so they leave the tab
+     order with the pixels. */
+  body.has-selection .map-zoom { display: none; }
+}

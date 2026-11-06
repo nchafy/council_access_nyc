@@ -1,14 +1,22 @@
-{% extends "layout.html" %}
+{% extends "window.html" %}
 {% import "macros.html" as m %}
 {% macro website(url, label) %}{{ m.link(url, label) }}<br><small>The board's own site publishes its agendas, minutes and meeting location. No City dataset carries a board meeting calendar.</small>{% endmacro %}
-{% macro website_as_text(host) %}<span class="nolink">{{ host }}</span><br><small>Given as text, not a link: this board uses its own domain rather than a City one, unverifiable at build time.</small>{% endmacro %}
-{% macro office(address) %}{{ address }}<br><small>The City's dataset records the board office, not the meeting venue.</small>{% endmacro %}
+{# Linked whatever the domain. Owner's decision, 2026-10-31, reversing the earlier rule
+   that a board's own domain was rendered as text because it could not be verified at
+   build time; the note still says whose domain it is. #}
+{% macro website_as_text(host) %}{{ m.link("https://" ~ host, host) }}<br><small>The board's own domain, as the City's dataset publishes it. Not a City-run site.</small>{% endmacro %}
+{% macro office(address, href) %}{% if href %}{{ m.link(href, address) }}{% else %}{{ address }}{% endif %}<br><small>The City's dataset records the board office, not the meeting venue.</small>{% endmacro %}
+{# One Wikipedia search per neighbourhood. A name we could not build a search for stays as
+   text rather than becoming a dead link. #}
+{% macro covers_list(items) %}{% for item in items %}{% if not loop.first %}, {% endif %}{% if item.href %}{{ m.link(item.href, item.name) }}{% else %}{{ item.name }}{% endif %}{% endfor %}{% endmacro %}
+{% block extra_head %}<link rel="stylesheet" href="/assets/document.css">{% endblock %}
 {% block body %}
 {% set rows = [] %}
-{% if board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
-{% if board.address %}{% do rows.append(("Office", office(board.address))) %}{% endif %}
-{% if board.phone %}{% do rows.append(("Phone", board.phone)) %}{% endif %}
-{% if board.email %}{% do rows.append(("Email", board.email)) %}
+{% if covers %}{% do rows.append(("Covers", covers_list(covers))) %}
+{% elif board.neighborhoods %}{% do rows.append(("Covers", board.neighborhoods)) %}{% endif %}
+{% if board.address %}{% do rows.append(("Office", office(board.address, office_href))) %}{% endif %}
+{% if board.phone %}{% do rows.append(("Phone", m.link(phone_href, board.phone) if phone_href else board.phone)) %}{% endif %}
+{% if board.email %}{% do rows.append(("Email", m.link(email_href, board.email) if email_href else board.email)) %}
 {% elif board.email_suppressed %}{% do rows.append(("Email", m.email_suppressed(board.email_suppressed))) %}{% endif %}
 {% if board.website %}{% do rows.append(("Website", website(board.website, board.website.replace("https://", "").rstrip("/")))) %}
 {% elif board.website_unlinked %}{% do rows.append(("Website", website_as_text(board.website_unlinked))) %}{% endif %}
@@ -16,7 +24,6 @@
 {% if board.board_meeting %}{% do cadence_rows.append(("Full board meets", board.board_meeting)) %}{% endif %}
 {% if board.cabinet_meeting %}{% do cadence_rows.append(("Cabinet meets", board.cabinet_meeting)) %}{% endif %}
 <section class="where">
-  <h1>{{ board.label }}</h1>
   <p class="distinction">
     A <strong>community board</strong> is the most local unit of City government,
     advising on zoning, budget priorities and local services for one community
@@ -24,6 +31,33 @@
   </p>
 {{ m.dl(rows) }}
 </section>
+
+{# The board's own calendar. Called a calendar and not a meeting list on purpose: these
+   feeds carry office closures, film screenings and cancellations alongside meetings, and
+   filtering by keyword would be guessing. The entries are quoted as the board wrote them. #}
+{% if calendar %}
+<section class="meetings">
+  <h2>From the board's calendar</h2>
+  <p class="why">
+    The next {{ calendar|length }} of {{ calendar_total }} entries the board publishes.
+    The City runs no board meeting calendar, so this is the board's own, and it lists
+    whatever the board puts in it.
+  </p>
+{% for entry in calendar %}
+  <article class="meeting">
+    <h3>{% if entry.url %}{{ m.link(entry.url, entry.title) }}{% else %}{{ entry.title }}{% endif %}</h3>
+{{ m.dl([
+  ("When", entry.day ~ (", " ~ entry.start_time if entry.start_time else "")),
+  ("Where", entry.location),
+]) }}
+  </article>
+{% endfor %}
+  <p class="hint">
+    Quoted from the board's calendar. Nothing in it records whether a meeting takes
+    testimony, whether it is remote, or when a comment window closes.
+  </p>
+</section>
+{% endif %}
 
 {% if cadence_rows %}
 <section class="meetings">
@@ -76,15 +110,12 @@
 </section>
 {% endif %}
 
-<section class="committees">
-  <h2>Council districts</h2>
-  <ul class="district-list">
-{% for number, share in districts %}
-    <li><a href="/district/{{ number }}/">Council District {{ number }}</a> <span class="share">{{ share|percent }} of this board</span></li>
+{# Same specs the map panel renders, built once in `render.board_tables`. Full request
+   records stay below; these are the headline. #}
+{% for spec in tables %}
+{{ m.group(spec) }}
 {% endfor %}
-  </ul>
 {{ m.source("Shares are approximate") }}
-</section>
 
 <section class="participate">
   <h2>Attending</h2>
@@ -130,5 +161,8 @@
   </ul>
 </section>
 
-<p class="back"><a href="/">All districts and boards</a></p>
+<p class="back">
+  <a class="cta cta-back" href="/map/">Back to the map</a>
+  <a href="/">All districts and boards</a>
+</p>
 {% endblock %}

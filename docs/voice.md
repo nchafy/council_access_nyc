@@ -42,6 +42,30 @@ narrow exception, and it is not a licence to explain.
 - Refusals stay, as facts about the data rather than instructions: not "check with the board",
   but "no City dataset publishes this".
 
+## 4. Explanation of a control — delete it. The control explains itself.
+
+Owner's rule, 2026-10-22: **the UI shows what can be clicked, and what to type is obvious from
+the box.** A paragraph above a control explaining why the control is there is the same failure
+as direction — it assumes the reader needs talking through an interface they can see.
+
+| Was | Now |
+|---|---|
+| "The district's Council Member, the next five Council meetings with addresses, and the written-testimony window. **51 districts.**" above a district dropdown | *(deleted — the label says "Council district" and the options are the districts)* |
+| "The typed address goes to the City's address lookup only when Find is pressed, with logging switched off, and never enters the page URL." above the address box | *(deleted from the form; the geocoder and what it receives are disclosed on `/references/`)* |
+| "Every district and board is drawn the same. The map shows where the lines fall, not how any of them compares to another." above the map | *(deleted — the map is uniformly filled, which is the claim; the refusal is stated in `product-brief.md` and enforced by a test)* |
+
+**The line this does not cross.** An *explanation* goes; a *disclosure* stays. "Why this box is
+here" is an explanation. "This number came from `uvw5-9znb`, fetched on this date", "the priority
+column repeats within a category", and "no City dataset publishes this, so here is the phone
+number" are disclosures — they are promises the project makes about its own data, and deleting
+one makes the page lie by omission. When in doubt: if removing the sentence would let a reader
+draw a wrong conclusion **about the data**, keep it. If it would only leave them to work out an
+interface, cut it.
+
+A label, a placeholder and a button verb carry what a paragraph was carrying. Spend the words
+there instead: `Address, ZIP, neighbourhood or district number` with
+`350 Jay Street, or 11217, or Fort Greene, or 35` in the box needs no prose above it.
+
 ## The test
 
 Read a sentence and ask: **is this in the data, or is it me?** If it is me, it needs to be

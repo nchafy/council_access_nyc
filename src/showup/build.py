@@ -7,32 +7,67 @@ is left in place.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import date, datetime
 from pathlib import Path
 
-from .crosswalk import CROSSWALK_PATH, CrosswalkError, load_boards_to_districts, load_zips
+from .crosswalk import (
+    CROSSWALK_PATH,
+    CrosswalkError,
+    load_boards_to_districts,
+    load_zip_boards,
+    load_zip_zcta,
+    load_zips,
+)
 from .crosswalk import load as load_crosswalk
 from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
-from .model import BOARD_COUNT, DISTRICT_COUNT, District, DistrictBoard, Manifest, Member
+from .model import (
+    BOARD_COUNT,
+    COUNCIL_KEY,
+    COUNCIL_KEY_WATER,
+    DISTRICT_COUNT,
+    District,
+    DistrictBoard,
+    Manifest,
+    Member,
+)
 from .render import (
+    board_schedule_payload,
+    board_source_health,
+    preview_payload,
     render_board,
+    render_board_index,
     render_district,
+    render_district_index,
     render_index,
+    render_map,
     render_not_found,
     render_references,
 )
-from .sources.boards import load_boards
+from .sources.board_meetings import BoardMeetingsError, load_board_meetings, source_freshness
+from .sources.boards import JOINT_INTEREST_AREAS, load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
 from .sources.calendar import parse_calendar, upcoming
 from .sources.districts import parse_district_page
 from .sources.members import current_by_district, load_members
+from .sources.participatory_budgeting import (
+    ParticipatoryBudgetingError,
+    load_participation,
+)
 
 __all__ = ["SHORTLIST_SIZE", "BuildError", "build_site"]
 
 #: Owner's decision: five. Phase 1 orders the shortlist chronologically, so it ranks nothing.
 SHORTLIST_SIZE = 5
+
+#: The ZIP outline overlay: 178 modified ZCTAs, simplified far more coarsely than the
+#: districts because nothing resolves against it. ~11 m, which is still finer than the
+#: ~110 m lattice the crosswalk itself samples at, so it is not the weak link.
+ZCTA_FLOOR = 170
+ZCTA_TOLERANCE_DEG = 0.0001
+ZCTA_PRECISION = 4
 
 #: Below these the parse is broken rather than thin, and `_check_floor` refuses the build.
 FLOORS = {
@@ -45,6 +80,130 @@ FLOORS = {
 
 class BuildError(RuntimeError):
     """A source failed its floor or invariant. The build must not continue."""
+
+
+#: The vendored browser dependency, served from our own origin. `scripts/fetch_maplibre.py`
+#: puts these in the cache, pinned by checksum; the build only copies them.
+VENDOR_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "maplibre-gl"
+#: `maplibre-gl.css` is fetched and pinned but deliberately not shipped — 7 of its 135
+#: selectors matched anything on `/map/`, and the base map's own `xp.css` carries those seven
+#: at the foot of the file. The licence still travels with the code.
+VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
+
+#: The base map and window chrome, pinned by `scripts/fetch_basemap.py`. The map route
+#: imports these from `/vendor/`; the build only copies them.
+BASEMAP_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "basemap"
+#: `days.mjs` carries no content this site shows; `chrome.mjs` imports it at the top level, so
+#: without it the module graph fails and the map never draws. See `scripts/fetch_basemap.py`.
+BASEMAP_FILES = ("basemap.mjs", "chrome.mjs", "days.mjs", "index.css", "xp.css")
+
+#: Hosts the base map names only in its attribution links, which a reader clicks and the
+#: page never fetches. Everything else it names is a tile, glyph or sprite source and must
+#: appear in `connect-src`, so anything new upstream fails the build until it is classified
+#: here or allowed there.
+BASEMAP_LINK_ONLY_HOSTS = frozenset(
+    {
+        "https://creativecommons.org",
+        "https://openfreemap.org",
+        "https://opentopomap.org",
+        "https://www.esri.com",
+        "https://www.openstreetmap.org",
+    }
+)
+
+
+def _copy_vendor(staging: Path) -> None:
+    """Copy the pinned MapLibre files into `site/vendor/`.
+
+    Fails the build rather than shipping a map route whose library 404s. The licence travels
+    with the code because BSD-3-Clause asks it to.
+    """
+    missing = [name for name in VENDOR_FILES if not (VENDOR_CACHE / name).is_file()]
+    if missing:
+        raise BuildError(
+            f"no vendored MapLibre in {VENDOR_CACHE} (missing {', '.join(missing)}). "
+            "Run `make maplibre-fetch` once; it is pinned by checksum and cached."
+        )
+    absent = [name for name in BASEMAP_FILES if not (BASEMAP_CACHE / name).is_file()]
+    if absent:
+        raise BuildError(
+            f"no vendored base map in {BASEMAP_CACHE} (missing {', '.join(absent)}). "
+            "Run `make basemap-fetch` once; it is pinned by commit and checksum."
+        )
+    vendor = staging / "vendor"
+    vendor.mkdir(parents=True, exist_ok=True)
+    for name in VENDOR_FILES:
+        shutil.copy2(VENDOR_CACHE / name, vendor / name)
+    for name in BASEMAP_FILES:
+        shutil.copy2(BASEMAP_CACHE / name, vendor / name)
+    _assert_policy_covers_basemap()
+
+
+#: A `https://` origin in the base map, with `${...}` left in place so a templated
+#: subdomain is recognised as the pattern it is.
+_ORIGIN = re.compile(r"https://[A-Za-z0-9.$~{}_-]+")
+
+
+#: A templated subdomain, as the base map spells one: `https://${s}.tile.example.org`.
+_TEMPLATED_SUBDOMAIN = re.compile(r"\$\{[A-Za-z0-9_]+\}")
+
+
+def _basemap_fetch_origins() -> set[str]:
+    """Every origin the base map fetches from, templated subdomains left as patterns."""
+    text = (BASEMAP_CACHE / "basemap.mjs").read_text(encoding="utf-8")
+    origins = set()
+    for match in _ORIGIN.finditer(text):
+        parts = match.group().split("/")
+        if len(parts) >= 3:
+            origins.add(f"{parts[0]}//{parts[2]}")
+    return origins - BASEMAP_LINK_ONLY_HOSTS
+
+
+#: Stands in for a templated subdomain while the rest of the origin is escaped. Letters
+#: only, because `re.escape` would otherwise escape the sentinel along with everything else
+#: and the placeholder would never be substituted back.
+_WILDCARD_SENTINEL = "SUBDOMAINWILDCARD"
+
+
+def _origin_allowed(origin: str, hosts: list[str]) -> bool:
+    """Whether one origin, or a templated one's subdomains, is allowed.
+
+    A templated origin is satisfied by any one matching host, because the pattern carries
+    no list of the subdomains it stands for. So a policy naming only `a.tile.example.org`
+    passes while the base map also fetches `b` and `c`, and the missing two would fail in a
+    reader's browser. The check catches an unallowed *host*; it does not prove a templated
+    set is complete.
+    """
+    if "${" not in origin:
+        return origin in hosts
+    masked = _TEMPLATED_SUBDOMAIN.sub(_WILDCARD_SENTINEL, origin)
+    pattern = re.compile("^" + re.escape(masked).replace(_WILDCARD_SENTINEL, "[^.]+") + "$")
+    return any(pattern.match(host) for host in hosts)
+
+
+def _assert_policy_covers_basemap() -> None:
+    """Fail the build when the base map would fetch a host `connect-src` forbids.
+
+    Nothing else compares the policy against what the vendored base map actually requests,
+    so without this a new upstream tile host ships a map that passes every local check and
+    is blocked in production.
+    """
+    policy = (Path(__file__).resolve().parents[2] / "_headers").read_text(encoding="utf-8")
+    # The served header, not the first mention: `connect-src` is discussed in the comments
+    # above it, and matching those collected prose instead of hosts.
+    served = next((line for line in policy.splitlines() if "Content-Security-Policy:" in line), "")
+    allowed = re.search(r"connect-src ([^;]+)", served)
+    hosts = allowed.group(1).split() if allowed else []
+    uncovered = [
+        origin for origin in sorted(_basemap_fetch_origins()) if not _origin_allowed(origin, hosts)
+    ]
+    if uncovered:
+        raise BuildError(
+            f"the vendored base map fetches {', '.join(uncovered)}, which connect-src in "
+            f"`_headers` does not allow. Add them there and to ALLOWED_ORIGINS in "
+            f"tests/unit/test_csp.py, or record them as link-only in "
+            f"BASEMAP_LINK_ONLY_HOSTS."
+        )
 
 
 def _check_floor(name: str, count: int) -> None:
@@ -203,6 +362,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     _check_floor("calendar", len(meetings))
 
     districts, _, boards_by_code = _load_districts(raw, day)
+    repo_root = Path(__file__).resolve().parents[2]
+    boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
 
     budget_requests_file = cache_path(raw, "budget-requests")
     try:
@@ -214,6 +375,22 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         (entry.publication.isoformat() for entry in budget_requests.values()), None
     )
 
+    # Both rosters, or neither. The floors live in the parser, which refuses a short
+    # roster rather than returning one: a half-read roster would render a participating
+    # district as unlisted, which is a wrong answer rather than a missing one.
+    try:
+        participation = load_participation(cache_path(raw, "participatory-budgeting"))
+    except ParticipatoryBudgetingError as error:
+        raise BuildError(str(error)) from error
+    # The boards' own calendars. Fails the build if the whole ingest thins out, but a
+    # single dead board website is absent rather than fatal — these are 23 third-party
+    # sites and several were already dead when the registry was made.
+    try:
+        board_calendars = load_board_meetings(cache_path(raw, "board-meetings"), on_or_after=day)
+        board_freshness = source_freshness(cache_path(raw, "board-meetings"), today=day)
+    except BoardMeetingsError as error:
+        raise BuildError(str(error)) from error
+
     ahead = upcoming(meetings, day, SHORTLIST_SIZE)
     window_end = max((m.date for m in meetings), default=None)
 
@@ -223,12 +400,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     staging.mkdir(parents=True)
 
     (staging / "index.html").write_text(
-        render_index(
-            districts,
-            sorted(boards_by_code.values(), key=lambda b: b.code),
-            built_at=now,
-            window_end=window_end,
-        ),
+        render_index(built_at=now, window_end=window_end),
         encoding="utf-8",
     )
     (staging / "404.html").write_text(
@@ -239,12 +411,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     district_root = staging / "district"
     district_root.mkdir()
     (district_root / "index.html").write_text(
-        render_index(
-            districts,
-            sorted(boards_by_code.values(), key=lambda b: b.code),
-            built_at=now,
-            window_end=window_end,
-        ),
+        render_district_index(districts, built_at=now, window_end=window_end),
         encoding="utf-8",
     )
 
@@ -253,13 +420,17 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         page_dir.mkdir()
         (page_dir / "index.html").write_text(
             render_district(
-                district, ahead, built_at=now, window_end=window_end, today=day, now=now
+                district,
+                ahead,
+                built_at=now,
+                window_end=window_end,
+                today=day,
+                now=now,
+                participation=participation,
             ),
             encoding="utf-8",
         )
 
-    repo_root = Path(__file__).resolve().parents[2]
-    boards_to_districts = load_boards_to_districts(repo_root / CROSSWALK_PATH)
     board_root = staging / "board"
     board_root.mkdir()
     boards_written = 0
@@ -273,6 +444,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
                 built_at=now,
                 window_end=window_end,
                 budget_requests=budget_requests.get(code),
+                calendar=board_calendars.get(code, []),
             ),
             encoding="utf-8",
         )
@@ -280,8 +452,7 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     if boards_written != BOARD_COUNT:
         raise BuildError(f"wrote {boards_written} board pages, expected {BOARD_COUNT}")
     (board_root / "index.html").write_text(
-        render_index(
-            districts,
+        render_board_index(
             sorted(boards_by_code.values(), key=lambda b: b.code),
             built_at=now,
             window_end=window_end,
@@ -293,19 +464,58 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     # does the point-in-polygon against this.
     data_dir = staging / "data"
     data_dir.mkdir()
-    council_polygons = load_features(cache_path(raw, "council-geometry"), "coundist")
+    council_polygons = load_features(cache_path(raw, "council-geometry"), COUNCIL_KEY_WATER)
     if len(council_polygons) != DISTRICT_COUNT:
         raise BuildError(
             f"district geometry has {len(council_polygons)} features, expected {DISTRICT_COUNT}"
         )
     (data_dir / "districts.geo.json").write_text(
-        json.dumps(to_geojson(council_polygons, "coundist"), separators=(",", ":")),
+        json.dumps(to_geojson(council_polygons, COUNCIL_KEY), separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    # The board layer of the map. Joint interest areas — parks, airports, Rikers — are
+    # community districts with no board, so they are excluded here exactly as the crosswalk
+    # excludes them; drawing them would imply there is somebody to call.
+    board_polygons = load_features(
+        cache_path(raw, "community-geometry"), "boro_cd", exclude=set(JOINT_INTEREST_AREAS)
+    )
+    if len(board_polygons) != BOARD_COUNT:
+        raise BuildError(
+            f"board geometry has {len(board_polygons)} features, expected {BOARD_COUNT}"
+        )
+    # The map's detail panel. Summaries of what the two page types say, so selecting a
+    # polygon can answer without a page load; the panel links through for the rest.
+    preview = preview_payload(
+        districts,
+        sorted(boards_by_code.values(), key=lambda b: b.code),
+        ahead,
+        budget_requests,
+        built_at=now,
+        today=day,
+        now=now,
+        participation=participation,
+        boards_to_districts=boards_to_districts,
+    )
+    if len(preview["districts"]) != DISTRICT_COUNT or len(preview["boards"]) != BOARD_COUNT:
+        raise BuildError(
+            f"preview covers {len(preview['districts'])} districts and "
+            f"{len(preview['boards'])} boards, expected {DISTRICT_COUNT} and {BOARD_COUNT}"
+        )
+    (data_dir / "preview.json").write_text(
+        json.dumps(preview, separators=(",", ":")), encoding="utf-8"
+    )
+
+    (data_dir / "boards.geo.json").write_text(
+        json.dumps(to_geojson(board_polygons, "boro_cd"), separators=(",", ":")),
         encoding="utf-8",
     )
 
     # A district number, neighbourhood, board name or ZIP resolves from this, so typing
     # one never reaches the geocoder.
     zips = load_zips(repo_root / CROSSWALK_PATH)
+    zip_boards = load_zip_boards(repo_root / CROSSWALK_PATH)
+    zip_zcta = load_zip_zcta(repo_root / CROSSWALK_PATH)
     lookup = {
         "districts": [{"n": d.number, "hoods": d.neighborhoods or ""} for d in districts],
         "boards": [
@@ -313,13 +523,59 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             for b in sorted(boards_by_code.values(), key=lambda b: b.code)
         ],
         "zips": {code: [n for n, _ in pairs] for code, pairs in sorted(zips.items())},
+        # The same ZIP against the board layer, so a ZIP resolves whichever layer is on.
+        "zip_boards": {code: [c for c, _ in pairs] for code, pairs in sorted(zip_boards.items())},
+        # Which polygon to outline for a typed ZIP: the City publishes *modified* ZCTAs,
+        # so several real ZIPs share one shape.
+        "zip_zcta": dict(sorted(zip_zcta.items())),
     }
     (data_dir / "lookup.json").write_text(
         json.dumps(lookup, separators=(",", ":")), encoding="utf-8"
     )
 
+    # The searched ZIP's own outline, fetched by the browser only when a ZIP is typed.
+    # Coarser than the district geometry on purpose: nothing is hit-tested against it (the
+    # crosswalk already answers which districts a ZIP covers), it is drawn as a dashed hint,
+    # and at the shipped tolerance it is 50 KB gzipped against 125 KB at district precision.
+    zcta_polygons = load_features(cache_path(raw, "zip-geometry"), "modzcta")
+    if len(zcta_polygons) < ZCTA_FLOOR:
+        raise BuildError(f"ZIP geometry has {len(zcta_polygons)} features, floor is {ZCTA_FLOOR}")
+    (data_dir / "zips.geo.json").write_text(
+        json.dumps(
+            to_geojson(
+                zcta_polygons,
+                "modzcta",
+                tolerance=ZCTA_TOLERANCE_DEG,
+                precision=ZCTA_PRECISION,
+            ),
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+
+    # The board schedules as an artifact, so a backend can consume what this build already
+    # reads rather than scraping 29 third-party sites again. All 59 boards are listed.
+    schedule_sources = json.loads(
+        (repo_root / "crosswalks" / "board_schedule_sources.json").read_text(encoding="utf-8")
+    )
+    (data_dir / "board-meetings.json").write_text(
+        json.dumps(
+            board_schedule_payload(
+                board_calendars,
+                schedule_sources,
+                built_at=now,
+                today=day,
+                freshness=board_freshness,
+            ),
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+
     assets_src = Path(__file__).parent / "assets"
     shutil.copytree(assets_src, staging / "assets")
+
+    _copy_vendor(staging)
 
     headers = Path(__file__).resolve().parents[2] / "_headers"
     if headers.exists():
@@ -347,6 +603,12 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "rows": BOARD_COUNT,
         },
     }
+    pb_file = cache_path(raw, "participatory-budgeting")
+    manifest_sources[manifest_key("participatory-budgeting")] = {
+        "fetched_at": _mtime(pb_file),
+        "max_age_hours": 24 * 7,
+        "rows": len(participation.open_cycle),
+    }
     if budget_requests_file.exists():
         manifest_sources[manifest_key("budget-requests")] = {
             "fetched_at": _mtime(budget_requests_file),
@@ -354,11 +616,27 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "rows": budget_request_rows,
         }
 
+    map_root = staging / "map"
+    map_root.mkdir()
+    (map_root / "index.html").write_text(
+        render_map(
+            built_at=now,
+            window_end=window_end,
+            meetings=ahead,
+            today=day,
+            now=now,
+        ),
+        encoding="utf-8",
+    )
+
     references_root = staging / "references"
     references_root.mkdir()
     (references_root / "index.html").write_text(
         render_references(
-            _reference_rows(raw, manifest_sources), built_at=now, window_end=window_end
+            _reference_rows(raw, manifest_sources),
+            built_at=now,
+            window_end=window_end,
+            board_health=board_source_health(schedule_sources, board_freshness),
         ),
         encoding="utf-8",
     )
@@ -388,10 +666,14 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "districts_with_gaps": sum(1 for d in districts if d.missing),
         "boards_linked": sum(len(d.boards) for d in districts),
         "board_pages": len(boards_by_code),
+        "boards_with_a_calendar": len(board_calendars),
+        "board_calendar_entries": sum(len(v) for v in board_calendars.values()),
         "boards_with_budget_requests": len(budget_requests),
         "budget_requests": budget_request_rows,
         "budget_publication": budget_publication,
         "zip_codes": len(zips),
+        "pb_open_cycle": len(participation.open_cycle),
+        "pb_latest_results": (participation.results.cycle if participation.results else None),
         "boards_without_email": sum(1 for d in districts for b in d.boards if b.email is None),
         "vacant_seats": [
             d.number for d in districts if d.member and d.member.seat_status == "vacant"

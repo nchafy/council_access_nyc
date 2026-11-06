@@ -30,7 +30,10 @@ from showup.model import BOARD_COUNT, DISTRICT_COUNT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: WCAG 2.4.7 wants a visible ring; the stylesheet's is 3px, so thinner means a rule broke.
+#: WCAG 2.4.7 wants a visible ring. The thinnest any sheet here draws is the base map's 2px
+#: on the map route (`xp.css`); the document pages draw 3px. The floor sits at the thinner of
+#: the two, which means a 3px ring dropping to 2px on a document page is not caught — a
+#: narrower check would have to know which sheet the page loaded.
 MINIMUM_OUTLINE_PX = 2.0
 
 #: Roles that a person operates, and must therefore be able to identify.
@@ -38,8 +41,26 @@ INTERACTIVE_ROLES = frozenset(
     {"link", "button", "textbox", "combobox", "listbox", "checkbox", "radio", "menuitem"}
 )
 
-#: Landmarks every page owes a screen-reader user; `contentinfo` holds the staleness notice.
+#: Landmarks a page owes a screen-reader user. `main` is the content, and `contentinfo` is
+#: where the fetch date and the staleness notice live, so both are owed by every page.
+#:
+#: `banner` is owed by a window, whose title bar is one. The desktop at `/` is not a window:
+#: it is a wallpaper, an icon grid and the taskbar, with no title bar and no site identity
+#: outside the taskbar — so requiring a `banner` there would only produce an empty one, which
+#: is noise in the accessibility tree rather than orientation. It owes `navigation` instead,
+#: which is the taskbar, and which the windows get for free from the same bar.
 REQUIRED_LANDMARKS = ("banner", "main", "contentinfo")
+
+#: Paths whose shape is not a window, and the landmarks they owe instead.
+LANDMARKS_BY_PATH = {
+    "/": ("main", "contentinfo", "navigation"),
+}
+
+
+def required_landmarks(path: str) -> tuple[str, ...]:
+    """Which landmarks `path` owes. A window owes `REQUIRED_LANDMARKS`."""
+    return LANDMARKS_BY_PATH.get(path, REQUIRED_LANDMARKS)
+
 
 #: Tags each focusable element with its DOM-order index. `summary` is in the selector
 #: because a disclosure is a real tab stop (docs/OBSERVATIONS.md, 2026-10-07).
@@ -144,13 +165,70 @@ def _focus_after_each_tab(page: Session, presses: int) -> list[dict[str, Any]]:
     return focus_states
 
 
+class NotReadyError(Exception):
+    """A page that promised to declare itself ready never did."""
+
+
+def _await_declared_ready(page: Session, attempts: int, pause: float) -> None:
+    """Block until a page that carries `data-ready-when` sets the matching `data-ready`.
+
+    Waiting for the focusable list to stop changing is not enough on its own, because a
+    plateau before the work starts looks exactly like a plateau after it finished. `/map/`
+    imports MapLibre only after the first paint and reveals four controls seconds later, so
+    two early reads agreeing meant the Tab presses then ran against a list of ten while the
+    page had fourteen stops — the last two looked unreachable and the order looked wrong
+    (measured 2026-11-05).
+
+    A page that does not promise readiness is left to the stability rule below.
+    """
+    promised = page.evaluate("document.documentElement.dataset.readyWhen || null")
+    if not promised:
+        return
+    for _ in range(attempts):
+        if page.evaluate("document.documentElement.dataset.ready || null") == promised:
+            return
+        time.sleep(pause)
+    raise NotReadyError(
+        f"the page declares data-ready-when={promised!r} but never set data-ready; "
+        f"waited {attempts * pause:.1f}s"
+    )
+
+
+def _settled_focusables(page: Session, attempts: int = 40, pause: float = 0.25) -> list[Any]:
+    """The focusable list, once the page is ready and two consecutive reads agree.
+
+    A control revealed by script enters the tab order after `load`: the address box does it
+    within milliseconds, the map's zoom buttons only once MapLibre has drawn. Snapshotting
+    once would measure a list that then changes under the Tab presses, and every index after
+    the new element would look unreachable.
+    """
+    _await_declared_ready(page, attempts, pause)
+    previous = page.evaluate(TAG_FOCUSABLE_JS)
+    for _ in range(attempts):
+        time.sleep(pause)
+        current = page.evaluate(TAG_FOCUSABLE_JS)
+        if len(current) == len(previous):
+            return current
+        previous = current
+    return previous
+
+
 def audit_keyboard(page: Session, path: str) -> list[Check]:
     """Drive the keyboard through one already-loaded page."""
     checks: list[Check] = []
-    focusable = page.evaluate(TAG_FOCUSABLE_JS)
 
     def record(name: str, ok: bool, detail: str = "") -> None:
         checks.append(Check(path, name, ok, detail))
+
+    try:
+        focusable = _settled_focusables(page)
+    except NotReadyError as error:
+        # Reported as a failure rather than raised: a page whose readiness never arrived has
+        # not been measured, and a harness that cannot reach what it was pointed at must say
+        # so instead of reporting the checks it managed to run.
+        record("the page became ready", False, str(error))
+        return checks
+    record("the page became ready", True)
 
     record("the page has focusable content", bool(focusable), "nothing to tab to")
     if not focusable:
@@ -255,7 +333,8 @@ def audit_tree(page: Session, path: str) -> list[Check]:
     checks: list[Check] = []
     roles = {role_of(node) for node in exposed_nodes}
 
-    missing_landmarks = [landmark for landmark in REQUIRED_LANDMARKS if landmark not in roles]
+    wanted = required_landmarks(path)
+    missing_landmarks = [landmark for landmark in wanted if landmark not in roles]
     checks.append(
         Check(
             path,
@@ -320,19 +399,31 @@ def audit_tree(page: Session, path: str) -> list[Check]:
 def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
     """R39: all procedural content must work with JavaScript disabled.
 
-    Turned off in the browser rather than inferred from the markup, on the front page,
-    where the link lists are the real no-JavaScript path.
+    Turned off in the browser rather than inferred from the markup. The full lists moved off
+    the landing page on 2026-10-22 — it is a map button and an address box now — so the
+    counts are taken on the two index pages, which is where the no-JavaScript path lives.
+    The landing page is still where the address box must stay hidden without a script.
     """
     page = browser.page()
     page.call("Emulation.setScriptExecutionDisabled", value=True)
     try:
-        page.navigate(base + "/")
+        page.navigate(base + "/district/")
         districts = page.evaluate("document.querySelectorAll('a[href^=\"/district/\"]').length")
+        page.navigate(base + "/board/")
         boards = page.evaluate("document.querySelectorAll('a[href^=\"/board/\"]').length")
+        page.navigate(base + "/")
+        reachable = page.evaluate(
+            'document.querySelectorAll(\'a[href="/district/"], a[href="/board/"]\').length'
+        )
+        # The address box moved off the landing page on 2026-11-06, when it became a desktop
+        # of icons. `/map/` is the one page that offers it, so that is where the promise now
+        # has to hold: a form that cannot work without a script must not be offered.
+        page.navigate(base + "/map/")
         address_hidden = page.evaluate(
             "!!document.getElementById('address-section')"
             " && document.getElementById('address-section').hasAttribute('hidden')"
         )
+        page.navigate(base + "/")
         scripts_off = page.evaluate("typeof window.__ranScript === 'undefined'")
     finally:
         page.call("Emulation.setScriptExecutionDisabled", value=False)
@@ -344,6 +435,12 @@ def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
             f"all {DISTRICT_COUNT} districts are reachable as plain links",
             districts >= DISTRICT_COUNT,
             f"only {districts} district links without JavaScript",
+        ),
+        Check(
+            "/",
+            "both index pages are reachable from the landing page without JavaScript",
+            reachable >= 2,
+            f"only {reachable} of the two index links are on the landing page",
         ),
         Check(
             "/",
@@ -364,9 +461,12 @@ def audit_address_box_by_keyboard(browser: Browser, base: str) -> list[Check]:
     """Reach the address box, type into it and submit, using only the keyboard.
 
     A district number resolves locally, so this stays hermetic.
+
+    On `/map/` since 2026-11-06. The box was on the landing page, which is now a desktop of
+    icons; the map is the one page that offers it, so that is where the promise has to hold.
     """
     page = browser.page()
-    page.navigate(base + "/")
+    page.navigate(base + "/map/")
     # The section ships `hidden`, so its reveal is also the readiness signal.
     _poll(page, "!document.getElementById('address-section').hasAttribute('hidden')")
 
@@ -375,15 +475,15 @@ def audit_address_box_by_keyboard(browser: Browser, base: str) -> list[Check]:
         if page.evaluate("document.activeElement.id") == "address-input":
             break
     else:
-        return [Check("/", "the address box is reachable by Tab", False, "never focused it")]
+        return [Check("/map/", "the address box is reachable by Tab", False, "never focused it")]
 
     page.type_text("35")
     page.press("Enter")
     # Submitting fetches /data/lookup.json first, so the navigation is two async hops away.
-    landed_path = _poll(page, "location.pathname", until=lambda value: value != "/") or "/"
+    landed_path = _poll(page, "location.pathname", until=lambda value: value != "/map/") or "/map/"
     return [
         Check(
-            "/",
+            "/map/",
             "the address box submits from the keyboard alone",
             landed_path == "/district/35/",
             f"Enter in the address box landed on {landed_path!r}, expected '/district/35/'",

@@ -9,13 +9,26 @@ surface, and that is a cost to weigh, not a reason to refuse.
 | Class | Reaches the reader? | Policy |
 |---|---|---|
 | **Build-time** (Jinja, a PDF parser, a geo library) | No | **Allowed.** Meet the checklist below. |
-| **Browser** (a framework, an analytics snippet, a hosted font, a CDN script) | Yes | **Still refused.** |
+| **Browser, served by a third party** (a CDN script, an analytics snippet, a hosted font) | Yes, and they see the request | **Refused.** |
+| **Map tiles from a third party** | Yes — the host sees which area is viewed | **Allowed since 2026-10-22**, for `tiles.openfreemap.org` only, by the owner decision in `product-brief.md` §5. No other third-party fetch is. `esri-light-gray` is wired but not reachable: adding `server.arcgisonline.com` to the CSP is a second, separate decision, and the licensing of Esri's keyless endpoints for this use is unconfirmed. |
+| **Browser, vendored and served from our origin** (MapLibre) | Yes, but nobody else sees it | **Allowed since 2026-10-21.** Checklist below, plus three extra rules. |
 
-Browser dependencies stay out because "zero third parties" is a promise made to readers and
-enforced by the CSP (`default-src 'none'`, `connect-src` limited to the geocoder). It is a
-privacy guarantee, not a dependency preference. A build-time library never touches a reader;
-a browser one puts a third party between us and them. If you want to change that promise,
-change it deliberately in `product-brief.md` — not as a side effect of adding a library.
+The promise to the reader is that **no third party sees their request**, enforced by the CSP
+(`default-src 'none'`, `connect-src` limited to the geocoder). That is a privacy guarantee, not
+a dependency preference. A library we vendor and serve ourselves does not break it; a CDN script
+or a tile host does. The first two rows have never moved. The third was opened deliberately in
+`product-brief.md` §5 for the map — which is still the way to move this line, rather than as a
+side effect of adding a library.
+
+### Three extra rules for a browser dependency
+
+1. **Vendored, never hot-linked.** Bytes are fetched at build time, pinned by checksum, and
+   served from our own origin. No `src` pointing anywhere else, ever.
+2. **It must not need a CSP directive.** A library that only works once the policy is loosened
+   is refused here, because the loosening is the real cost. MapLibre was measured against the
+   unchanged policy before it was accepted.
+3. **It must be load-gated.** R40 caps reader-facing weight. A browser dependency loads on
+   demand, after first paint, only on the route that needs it.
 
 ## Checklist for adding one
 
@@ -44,9 +57,12 @@ change it deliberately in `product-brief.md` — not as a side effect of adding 
 | ruff | >=0.6 | MIT | dev | lint + format |
 | websocket-client | 1.9.2 (`>=1.9.2`, pinned in `uv.lock`) | Apache-2.0 | dev | Replaces the 127-line hand-written RFC 6455 client inside `scripts/cdp.py` — frame headers, client masking, 16- and 64-bit lengths, continuation reassembly, ping/pong; the most error-prone code in the repo and the least specific to this project |
 | axe-core | 4.13.0 | MPL-2.0 | dev, fetched | R39's accessibility gate; not committed, see `vendor` note in `scripts/fetch_axe.py` |
+| pypdf | 6.21.4 (`>=6.21.4`, pinned in `uv.lock`) | BSD-3-Clause | runtime (build-time) | Reads the schedule PDFs that 21 community boards publish instead of a feed or a page. Replaces nothing — without it those boards' meetings are simply absent. One `py3-none-any` wheel and **no required runtime dependency at all** on 3.12; see below for why it is not poppler and not pdfminer.six |
+| maplibre-gl | 6.15.0 | BSD-3-Clause | **browser, vendored** | The M3 district map. Replaces hand-rolling pan, zoom, projection and hit-testing over 51 polygons in WebGL. 449 KB gzipped across three files, so it is loaded on demand and never on first paint. Pinned by tarball sha512 plus a sha256 per extracted file in `scripts/fetch_maplibre.py`; not committed. Published 2026-10-18, so rule 3 is comfortable. npm runs at no point, so the `prepare` script in its `package.json` never executes — rule 5 holds for the same reason it does for axe-core |
 
-No runtime entry reaches a reader: all of them run at build time only, and `site/` is plain
-pre-rendered HTML with no third-party bytes in it.
+One entry reaches a reader — `maplibre-gl`, on the map route only, served from `site/vendor/`.
+Every other entry runs at build time. `site/` still contains **no third-party bytes**: nothing
+in it is fetched from anyone else's host at read time.
 
 ## The HTML parser, and why it is not selectolax or lxml
 
@@ -98,6 +114,106 @@ One behaviour genuinely changed, and it is a fix rather than a wash: `_HREF` mat
 `&amp;amp;GUID=`. Taking the href as a parsed attribute decodes it once, which is what the
 ingest rule always said. 255 links on 51 district pages; both forms were checked live and
 Legistar keys on `ID` alone, so no reader was ever sent somewhere wrong.
+
+## The PDF reader, and why it is not poppler and not pdfminer.six
+
+pypdf landed 2026-10-31 to read the schedule PDFs 15 boards publish, and six more boards
+joined them on 2026-11-02. It is a **runtime** dependency: it runs inside `showup fetch`, on
+documents written by 21 third parties.
+
+The owner asked for "the one that is more mature code and reliable dependency". Those two
+criteria point at different libraries, and the honest answer is that **poppler is the more
+mature codebase and pypdf is the more reliable dependency here**:
+
+- **poppler** (`pdftotext`, descended from Xpdf) is two decades old and packaged by every
+  Linux distribution. It is also a **system binary**, installed out of band. A contributor
+  without Homebrew poppler would get a build that silently produces 21 fewer boards'
+  schedules — fail-open, which is the exact failure the ingest floors in
+  `sources/board_meetings.py` exist to prevent. Rule 5 is about install-time execution, and
+  a system binary does not break it; the reproducibility of the build is the objection.
+- **pdfminer.six** is pure Python and gives the best layout boxes of the three, but requires
+  `charset-normalizer` and **`cryptography`** — a compiled Rust extension, pulled in for a
+  feature (encrypted PDFs) none of these documents use. That is a larger install surface
+  than the thing it buys, and it is the same trade that rejected `websockets` and
+  `selectolax`.
+- **pypdf** publishes one `py3-none-any` wheel, built by flit, with `Root-Is-Purelib: true`,
+  no `.so`/`.pyd`/`.dylib`, no `.data/scripts`, and — on 3.12 — **no required dependency at
+  all** (`typing_extensions` is conditioned on `python_version < '3.11'`). It installs
+  through `uv` like bs4 and jinja2 and needs nothing from the host.
+
+Measured on Bronx CB7's October 2026 grid before choosing, and both candidates have a flaw
+worth knowing:
+
+- pypdf's `extraction_mode="layout"` **silently drops heading and footer text blocks**. On
+  that document it dropped `OCTOBER 2026` — the only place the year appears, and so the most
+  load-bearing token in the file. 4,762 characters of grid survived; 26 words of heading and
+  footer vanished, with no error.
+- `pdftotext -layout` keeps the heading but splits a superscript: `211 East 203rd Street`
+  came out as `211 East 203 Street` with a bare `rd` on the next line. pypdf's layout mode
+  keeps that address intact.
+
+So `board_pdf.py` reads **both** pypdf modes and uses each for what it is good at: layout
+mode for the Sunday-to-Saturday grid, where column position is the only thing that says
+which day an entry belongs to, and plain mode for the month-and-year heading. Neither mode
+alone is sufficient, which is why the extracted envelope carries both and
+`tests/unit/test_board_pdf.py` pins the heading's absence from layout mode — if a future
+pypdf starts including it, that test says so rather than the behaviour changing unobserved.
+
+Extraction happens at **fetch** time, not build time, for one structural reason: the cache
+in `sources/board_meetings.py` stores each board's `body` as a string, and a PDF is bytes.
+Storing the extracted text means no PDF binary ever enters `data/`, the build stays offline,
+and a fixture is a text file a reviewer can read.
+
+## OCR, and why it is the first optional extra
+
+Owner's instruction, 2026-11-02: install OCR. Two boards publish their agendas only as
+scanned images — Bronx CB12 (58 PDFs) and Queens CB10 (65) — and pypdf extracts zero
+characters from every one. Without OCR there is nothing to parse.
+
+**It is an extra, not a runtime dependency.** `pyproject.toml` puts it under
+`[project.optional-dependencies] ocr`, and `showup build` does not require it. That is not
+squeamishness; it is the only honest way to accept it. Every OCR route breaks one of the
+rules above, and this one breaks the install-surface rule hard:
+
+| | beautifulsoup4 | pypdf | the `ocr` extra |
+|---|---|---|---|
+| Wheels | 1, `py3-none-any` | 1, `py3-none-any` | platform wheels for onnxruntime, PDFium and OpenCV |
+| Required deps | 2 | **0** on 3.12 | onnxruntime, numpy, opencv-python |
+| Bytes | ~100 KB | ~400 KB | tens of megabytes, plus ~15 MB of models |
+
+The alternatives were weighed and are worse, not better:
+
+- **`tesseract` / `pytesseract`** — a system binary plus a language model, which is exactly
+  the fail-open problem that ruled out poppler for the text PDFs.
+- **`ocrmypdf`** — tesseract *and* ghostscript.
+- **A cloud OCR API** — a third party and a secret, which breaks rule 6 outright.
+
+So the cost is paid where it falls. `board_kinds.BoardSourceKind.needs` exists for this: a
+kind that cannot meet its capability fails **its own boards and no others**, which is the
+same contract a dead third-party site already has. A contributor who has not installed the
+extra builds 54 boards instead of 56 and every test still passes, because the fixtures hold
+the text OCR returned rather than the images it read.
+
+| Dependency | Version | Licence |
+|---|---|---|
+| pypdfium2 | 5.14.0 | BSD-3-Clause / Apache-2.0 (bundles Google's PDFium) |
+| rapidocr-onnxruntime | 1.4.4 | Apache-2.0 |
+| onnxruntime | 1.31.1 | MIT |
+| numpy, opencv-python | transitive | BSD-3-Clause / Apache-2.0 |
+
+Rasterising is why there are two libraries and not one: OCR reads pixels, and a PDF has to
+be rendered before anything can look at it. pypdf cannot render, so pypdfium2 does it.
+
+Two properties of the arrangement are load-bearing:
+
+- **Only the machine that fetches needs it.** Extraction runs in `showup fetch` and the
+  cache stores text, so a build parses what a fetch produced. This is the same reason the
+  text PDFs are extracted at fetch time, and it is what keeps the extra optional in
+  practice rather than only on paper.
+- **The plausibility window is checked on the parsed date, never on the text.** A misread
+  digit in a scan is silent. Filtering lines by the four-digit numbers in them was tried
+  first and threw away the only line that mattered — Bronx CB12's notice reads "at 7:00
+  P.M. in Town Hall 4101 White Plains Road", and `4101` is a street number.
 
 ## The WebSocket library, and why it is not `websockets`
 

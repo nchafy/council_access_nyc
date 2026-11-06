@@ -1,0 +1,5 @@
+{"in": "almost $25 million across 22 Council Districts", "out": 22, "note": "the FY2027 release's own wording"}
+{"in": "across 24 council districts", "out": 24, "note": "case-insensitive"}
+{"in": "22 Council District", "out": null, "note": "singular is not the checksum sentence"}
+{"in": "no count here at all", "out": null, "note": "absent reads as None, which the parser refuses"}
+{"in": "", "out": null, "note": "empty"}

@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +121,24 @@ def _violates(measurement: dict[str, Any], target: int) -> bool:
     return widened or scrolls
 
 
+def _settled_measurement(page: Any, target: int, attempts: int = 8, pause: float = 0.12):
+    """Measure until two consecutive reads agree on the layout viewport.
+
+    `Page.loadEventFired` is not the end of layout. Under the full browser suite — several
+    Chromes, one of them throttled to a quarter speed — a pending style recalc let the first
+    read catch a viewport 3 px wider than the settled one, and the page it hit changed from
+    run to run. A single read is the wrong instrument for a value that converges.
+    """
+    previous = page.evaluate(_probe_source(target))
+    for _ in range(attempts):
+        time.sleep(pause)
+        current = page.evaluate(_probe_source(target))
+        if current["inner_width"] == previous["inner_width"]:
+            return current
+        previous = current
+    return previous
+
+
 def check(root: Path, paths: list[str], widths: tuple[int, ...] = WIDTHS) -> dict[str, Any]:
     """Measure every path at every width. One browser and one server for all of them."""
     report: dict[str, Any] = {"widths": list(widths), "pages": {}, "violations": 0}
@@ -129,7 +148,7 @@ def check(root: Path, paths: list[str], widths: tuple[int, ...] = WIDTHS) -> dic
             page.emulate_device(width=width, height=HEIGHT)
             for path in paths:
                 page.navigate(base + path)
-                measurement = page.evaluate(_probe_source(width))
+                measurement = _settled_measurement(page, width)
                 # A width the browser never applied would make every page pass.
                 if measurement["inner_width"] < width - TOLERANCE_PX:
                     raise CDPError(

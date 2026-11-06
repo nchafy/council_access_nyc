@@ -144,6 +144,11 @@ def _run_checks(base: str, site: Path) -> None:
     check(status == 200, f"GET / returned {status}")
     print(f"GET /  {status}  {len(index)} bytes")
 
+    # The address box lives on the map since the landing page became a desktop, so its
+    # markup is checked there.
+    map_status, _, map_page = fetch(base + "/map/")
+    check(map_status == 200, f"GET /map/ returned {map_status}")
+
     for name, expected_fragment in REQUIRED_HEADERS.items():
         value = headers.get(name, "")
         check(bool(value), f"header {name} not served")
@@ -245,12 +250,19 @@ def _run_checks(base: str, site: Path) -> None:
     check("not found" in missing.lower(), "404 page has no not-found message")
     print(f"GET /district/99/  {status}  (expected 404)")
 
-    check('id="address-input"' in index, "index has no address box")
+    # The landing page is a desktop of icons as of 2026-11-06: no address box, and no script
+    # of its own. The box's own promises are checked against `/map/`, the page that has it.
+    check('class="desktop"' in index, "index is not the desktop")
+    check('id="icons"' in index, "index has no icon grid")
     check(
-        'id="address-section"' in index and "hidden" in index,
+        'id="address-input"' in map_page,
+        "/map/ has no address box",
+    )
+    check(
+        'id="address-section"' in map_page and "hidden" in map_page,
         "address box is not hidden by default",
     )
-    check('src="/assets/address.js"' in index, "index does not load address.js")
+    check('src="/assets/address.js"' in map_page, "/map/ does not load address.js")
 
     status, _, address_js = fetch(base + "/assets/address.js")
     check(status == 200, f"address.js returned {status}")
@@ -313,6 +325,7 @@ def _run_checks(base: str, site: Path) -> None:
         "uvw5-9znb",
         "ruf7-3wgc",
         "vn4m-mk4t",
+        "mkqi-d8x3",
         "872g-cjhh",
         "5crt-au7u",
         "pri4-ifjk",

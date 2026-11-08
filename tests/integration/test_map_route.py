@@ -46,8 +46,13 @@ class TestTheMapIsItsOwnRoute:
         assert 'id="map"' not in html
         assert "maplibre" not in html.lower()
 
-    def test_the_landing_page_sends_the_reader_to_the_map(self, site):
-        assert 'href="/map/"' in (site / "index.html").read_text(encoding="utf-8")
+    def test_the_landing_page_reaches_the_map_through_its_program(self, site):
+        """The desktop has no links: it is a mount point, and the map is a program the Show Up
+        folder launches. So the reachable thing to assert is that the program exists and names
+        the route it owns."""
+        assert 'id="webxp"' in (site / "index.html").read_text(encoding="utf-8")
+        folder = (site / "apps" / "showup" / "app.mjs").read_text(encoding="utf-8")
+        assert "'showup-map'" in folder
 
     def test_the_map_page_locks_the_viewport(self, site):
         """Nothing on this route scrolls, which is the whole reason it is a separate one: a
@@ -87,9 +92,12 @@ class TestTheMapIsItsOwnRoute:
 
     def test_every_vendored_file_ships(self, site):
         """MapLibre and the base map both, because the map route imports from each."""
+        # `webxp` is a directory rather than a file: the window manager is vendored as a
+        # folder with its own PROVENANCE.md, because it has no remote to fetch and pin.
         assert {path.name for path in (site / "vendor").iterdir()} == {
             *VENDOR_FILES,
             *BASEMAP_FILES,
+            "webxp",
         }
 
     def test_the_licence_ships_beside_the_library(self, site):

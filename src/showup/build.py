@@ -575,6 +575,20 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
     assets_src = Path(__file__).parent / "assets"
     shutil.copytree(assets_src, staging / "assets")
 
+    # The host page's boot module sits beside the assets rather than in them: it is the one
+    # script the document loads, and `assets/` is a directory of things apps and pages ask
+    # for. Copied rather than templated — it has no build-time values in it.
+    shutil.copy2(Path(__file__).parent / "boot.mjs", staging / "assets" / "boot.mjs")
+
+    # The vendored window manager, pinned by commit in its own PROVENANCE.md and checked by
+    # `scripts/check_webxp.py`. Served from our origin, which is what `script-src 'self'`
+    # and `style-src 'self'` require.
+    shutil.copytree(Path(__file__).parent / "vendor" / "webxp", staging / "vendor" / "webxp")
+
+    # Every program is a folder under `apps/`, and the generated manifest is how the desktop
+    # learns which folders exist — a browser cannot list a directory over static HTTP.
+    shutil.copytree(Path(__file__).parent / "apps", staging / "apps")
+
     _copy_vendor(staging)
 
     headers = Path(__file__).resolve().parents[2] / "_headers"

@@ -178,31 +178,30 @@ class TestIndex:
     def _districts(self):
         return [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
 
-    def test_the_landing_page_is_a_desktop_of_icons(self):
-        """Owner's decision 2026-11-06. It carries no content of its own: the address box was
-        already on `/map/` verbatim, and the citywide meeting moved there."""
+    def test_the_landing_page_is_the_webxp_desktop(self):
+        """Owner's decision 2026-11-07: webxp is the front end. The page is a mount point for
+        the window manager and carries no content of its own."""
         html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
-        assert 'class="desktop"' in html
-        assert 'id="icons"' in html
-        assert "<select" not in html
-        assert 'id="address-input"' not in html
+        assert 'id="webxp"' in html
+        assert 'src="/assets/boot.mjs"' in html
+        for sheet in ("theme", "shell", "window"):
+            assert f'href="/vendor/webxp/{sheet}.css"' in html, sheet
 
-    def test_the_desktop_needs_no_script_to_be_usable(self):
-        """The base map's own desktop generates thirty-one icons and is empty without a
-        script. Four fixed destinations are written out, so this one is not."""
+    def test_the_landing_page_says_so_without_a_script(self):
+        """There is no static version of a window manager, so the one thing owed to a reader
+        without a script is that fact and the data, rather than a blank page."""
         html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
-        for href in ("/map/", "/district/", "/board/", "/references/"):
-            assert f'href="{href}"' in html
-        # The icon art is inline SVG, not a `data:` URI background: `img-src 'self'` governs
-        # CSS images too, and a `data:` one draws nothing and logs nothing.
-        assert html.count('class="icon-glyph"') == 4
-        assert "data:image" not in html
+        assert "<noscript>" in html
+        # Only files the build actually writes: a cited path that 404s is worse than none.
+        for href in ("/data/lookup.json", "/data/preview.json", "/manifest.json"):
+            assert f'href="{href}"' in html, href
 
-    def test_the_landing_page_still_reaches_both_lists(self):
-        """R6's location-free path: one icon each, rather than 110 links."""
+    def test_the_landing_page_carries_no_markup_for_the_shell(self):
+        """Windows are created and destroyed at runtime, so a desktop spelled out here would
+        be a picture of one and the two copies would drift."""
         html = render_index(built_at=datetime(2026, 9, 22, 9, 0), window_end=None)
-        assert 'href="/district/"' in html
-        assert 'href="/board/"' in html
+        for absent in ('class="taskbar"', 'class="window-title"', "icon-grid"):
+            assert absent not in html, absent
 
     def _district_index(self):
         return render_district_index(
@@ -694,5 +693,9 @@ class TestReferencesPage:
         build_site(raw_dir, out, today=date(2026, 9, 22))
         for page_file in out.rglob("*.html"):
             if page_file.parent.name == "references":
+                continue
+            # The desktop is a mount point with no chrome to carry a link; the Readme program
+            # is where the sources live for that route, and `showup-readme/app.mjs` links them.
+            if page_file.parent == out:
                 continue
             assert 'href="/references/"' in page_file.read_text(), page_file

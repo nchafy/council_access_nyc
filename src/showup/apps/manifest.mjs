@@ -8,5 +8,6 @@
  */
 export const APPS = [
   'showup',
+  'showup-map',
   'showup-readme',
 ];

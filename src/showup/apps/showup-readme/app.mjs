@@ -120,12 +120,42 @@ export default {
    * In `ready` and not `mount` because it is a fetch: `mount` is what the window waits for
    * before it is shown, and a reader should not wait on the network to see the text.
    */
+  /* The build stamp, and whether any source is past its own max age.
+   *
+   * Read at read time rather than baked in, which is the whole of the promise: a build
+   * cannot know how old it will be when somebody opens it, so an abandoned site has to be
+   * able to say so itself (docs/phase-1-scope.md §2.12).
+   *
+   * It states the stamp and names the source it belongs to, and it passes no verdict — no
+   * "out of date", no "days ago", no instruction. The reader is told the number and left to
+   * draw the conclusion, because which staleness matters depends on what they came for.
+   */
   async ready({ win }) {
     const { freshness } = win.app;
     try {
       const response = await fetch(BUILT_AT_URL, { cache: 'no-store' });
       if (!response.ok) throw new Error(`${BUILT_AT_URL} returned ${response.status}`);
       const manifest = await response.json();
+
+      const stale = [];
+      for (const [name, source] of Object.entries(manifest.sources || {})) {
+        const fetchedAt = Date.parse(source.fetched_at);
+        if (Number.isNaN(fetchedAt) || !source.max_age_hours) continue;
+        if ((Date.now() - fetchedAt) / 3_600_000 > source.max_age_hours) {
+          stale.push({ name, fetchedAt });
+        }
+      }
+
+      if (stale.length) {
+        // The oldest, and named: "something is stale" is not an answer a reader can act on.
+        const oldest = stale.reduce((a, b) => (b.fetchedAt < a.fetchedAt ? b : a));
+        freshness.textContent =
+          `Data fetched ${new Date(oldest.fetchedAt).toLocaleString()}`
+          + ` (${oldest.name.replace(/_/g, ' ')}).`;
+        freshness.classList.add('is-stale');
+        return;
+      }
+
       const built = manifest.built_at ? new Date(manifest.built_at) : null;
       freshness.textContent = built && !Number.isNaN(built.getTime())
         ? `Data fetched ${built.toLocaleString()}.`

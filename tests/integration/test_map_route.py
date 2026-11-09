@@ -1,8 +1,10 @@
-"""The map on the front page, and the rule that it is the only page paying for the map.
+"""The map program, and the rule that it is the only thing paying for the map.
 
 `docs/dependencies.md` allows a vendored browser dependency on condition that it is
-load-gated. That condition is only real if something checks it, so this file is the check:
-one page may name MapLibre, and the map must never be the only way to reach a district.
+load-gated. That condition is only real if something checks it, so this file is the check.
+The gate moved with the front end: `/map/` was the one page allowed to name MapLibre, and
+`apps/showup-map/app.mjs` is now the one module allowed to import it — and it must do so
+with a dynamic `import()`, because the desktop loads every program's module up front.
 """
 
 from __future__ import annotations
@@ -14,7 +16,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from pageset import every_page
 from perf import budget, gzipped_size
 
 from showup import render
@@ -25,6 +26,8 @@ from showup.render import PREVIEW_REQUESTS, preview_payload
 from showup.sources.boards import JOINT_INTEREST_AREAS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+APPS = REPO_ROOT / "src" / "showup" / "apps"
+MAP_APP = APPS / "showup-map" / "app.mjs"
 
 
 @pytest.fixture(scope="module")
@@ -34,14 +37,10 @@ def site(tmp_path_factory, raw_dir_session) -> Path:
     return out
 
 
-class TestTheMapIsItsOwnRoute:
-    def test_the_map_page_is_built(self, site):
-        assert (site / "map" / "index.html").is_file()
-        assert "/map/" in every_page(site)
-
+class TestTheMapIsItsOwnProgram:
     def test_the_landing_page_has_no_map(self, site):
-        """A map inside a scrolling page swallows the wheel: scrolling zooms instead. The
-        landing page is a document, so it carries no canvas."""
+        """The one document the build writes is a mount point: no canvas, and nothing that
+        would make every reader download a map library to see a list of districts."""
         html = (site / "index.html").read_text(encoding="utf-8")
         assert 'id="map"' not in html
         assert "maplibre" not in html.lower()
@@ -53,18 +52,6 @@ class TestTheMapIsItsOwnRoute:
         assert 'id="webxp"' in (site / "index.html").read_text(encoding="utf-8")
         folder = (site / "apps" / "showup" / "app.mjs").read_text(encoding="utf-8")
         assert "'showup-map'" in folder
-
-    def test_the_map_page_locks_the_viewport(self, site):
-        """Nothing on this route scrolls, which is the whole reason it is a separate one: a
-        map inside a scrolling page swallows the wheel.
-
-        The lock is `html, body { height: 100% }` and `body { overflow: hidden }` in the base
-        map's stylesheet, so what this asserts is that the page loads it. That the page then
-        really does not scroll is measured in the browser, by
-        `test_console.py::TestTheWindowFillsTheViewport`."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert '<link rel="stylesheet" href="/vendor/xp.css">' in html
-        assert '<body class="app">' not in html, "the app body class was retired with site.css"
 
     def test_both_layers_ship_their_geometry(self, site):
         assert (site / "data" / "districts.geo.json").is_file()
@@ -78,17 +65,23 @@ class TestTheMapIsItsOwnRoute:
         assert len(codes) == BOARD_COUNT
         assert not codes & set(JOINT_INTEREST_AREAS)
 
-    def test_the_toggle_offers_exactly_the_two_layers(self, site):
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert 'data-layer="council"' in html
-        assert 'data-layer="board"' in html
+    def test_the_toggle_offers_exactly_the_two_layers(self):
+        """The buttons are built from `LAYERS`, so the toggle cannot offer a layer the map
+        does not draw. Read out of the module, which is where the pair is declared."""
+        source = MAP_APP.read_text(encoding="utf-8")
+        declared = re.search(r"const LAYERS = \{(.*?)\n\};", source, re.DOTALL)
+        assert declared, "LAYERS is no longer a module-level object literal"
+        assert re.findall(r"^  (\w+): \{", declared.group(1), re.MULTILINE) == [
+            "council",
+            "board",
+        ]
 
-    def test_the_toggle_ships_hidden_with_council_preselected(self, site):
-        """A toggle that switches nothing is worse than no toggle, and the map may never
-        draw."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert 'id="map-toggle" hidden' in html
-        assert 'data-layer="council" aria-pressed="true"' in html
+    def test_the_toggle_preselects_council_and_the_card_starts_hidden(self):
+        """A toggle that switches nothing is worse than no toggle, and a card covering the
+        map before anything is selected says nothing at all."""
+        source = MAP_APP.read_text(encoding="utf-8")
+        assert "aria-pressed', String(name === 'council')" in source
+        assert "facts.hidden = true;" in source
 
     def test_every_vendored_file_ships(self, site):
         """MapLibre and the base map both, because the map route imports from each."""
@@ -121,29 +114,45 @@ class TestTheBoardGeometryHasAFloor:
 
 
 class TestOnlyTheMapPaysForTheMap:
-    def test_no_other_page_mentions_maplibre(self, site):
-        """The load-gating condition in docs/dependencies.md, enforced."""
-        offenders = [
-            path
-            for path in every_page(site)
-            if path != "/map/"
-            and "maplibre"
-            in (
-                site / path.strip("/") / "index.html"
-                if path.endswith("/")
-                else site / path.strip("/")
-            )
-            .read_text(encoding="utf-8")
-            .lower()
-        ]
-        assert not offenders, f"these pages would download the map library: {offenders}"
+    #: Every module the build ships that is ours rather than vendored. The desktop loads all
+    #: of them to draw the taskbar, so a top-level MapLibre import in any of them would make
+    #: every reader download the map library.
+    OUR_MODULES = (
+        REPO_ROOT / "src" / "showup" / "boot.mjs",
+        *sorted(APPS.rglob("*.mjs")),
+    )
 
-    def test_the_map_page_does_not_block_on_the_library(self, site):
-        """The library is imported from the module, never as a blocking script tag, so the
-        document's own weight stays inside R40's page budget."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert 'src="/vendor/maplibre-gl.mjs"' not in html
-        assert 'src="/assets/map.mjs"' in html
+    def test_only_the_map_program_reaches_for_the_library(self):
+        """The load-gating condition in docs/dependencies.md, enforced at its new address.
+
+        It was "one page may name MapLibre". The desktop has one page, so the thing that can
+        still go wrong is a second program importing the base map — which is what would put
+        the library on the critical path for the readme.
+        """
+        offenders = [
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in self.OUR_MODULES
+            if path != MAP_APP
+            and re.search(r"""import\s*\(?\s*['"][^'"\n]*(maplibre|basemap)""", path.read_text())
+        ]
+        assert not offenders, f"these modules would download the map library: {offenders}"
+
+    def test_the_map_program_imports_it_lazily(self):
+        """A top-level import would run when the desktop loads the program list, which is
+        before anybody has opened the map."""
+        source = MAP_APP.read_text(encoding="utf-8")
+        assert "await import('/vendor/basemap.mjs')" in source
+        assert not re.search(
+            r"""^import[^\n]*['"][^'"\n]*(maplibre|basemap)""", source, re.MULTILINE
+        ), "the base map is imported at the top level, so loading the program loads it"
+
+    def test_no_document_loads_the_library_as_a_script(self, site):
+        """The library is imported from a module, never as a script tag, so the document's
+        own weight stays inside R40's page budget."""
+        for page in site.rglob("*.html"):
+            html = page.read_text(encoding="utf-8")
+            assert "maplibre" not in html.lower(), page
+            assert 'src="/vendor/basemap.mjs"' not in html, page
 
     def test_the_library_is_inside_its_own_budget(self, site):
         """It is excluded from the page and script budgets, so it needs its own number."""
@@ -154,90 +163,35 @@ class TestOnlyTheMapPaysForTheMap:
 
 
 class TestTheMapIsNeverTheOnlyWay:
-    def test_the_map_page_links_the_lists_that_need_no_canvas(self, site):
-        """R6's location-free path. A WebGL canvas is not a navigation route, so the map
-        page names the two index pages, which carry all 110 links between them."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert 'href="/district/"' in html
-        assert 'href="/board/"' in html
+    def test_the_folder_offers_a_route_that_needs_no_canvas(self):
+        """R6's location-free path. A WebGL canvas is not a navigation route, so the folder
+        that opens on the desktop lists two programs that answer without one."""
+        folder = (APPS / "showup" / "app.mjs").read_text(encoding="utf-8")
+        for program in ("showup-councils", "showup-boards"):
+            assert f"id: '{program}'" in folder, program
 
-    def test_the_index_pages_carry_every_district_and_board(self, site):
-        districts = (site / "district" / "index.html").read_text(encoding="utf-8")
-        boards = (site / "board" / "index.html").read_text(encoding="utf-8")
-        for number in range(1, DISTRICT_COUNT + 1):
-            assert f'href="/district/{number}/"' in districts
-        assert boards.count('href="/board/') >= BOARD_COUNT
+    def test_those_programs_can_answer_about_every_district_and_board(self, site):
+        """The two list programs read the shipped lookup through `shared/data.mjs`, so what
+        they can reach is what it carries. 110 entries between them, with no map loaded."""
+        lookup = json.loads((site / "data" / "lookup.json").read_text(encoding="utf-8"))
+        assert len(lookup["districts"]) == DISTRICT_COUNT
+        assert len(lookup["boards"]) == BOARD_COUNT
+        assert "LOOKUP = '/data/lookup.json'" in (APPS / "shared" / "data.mjs").read_text()
+        for program in ("showup-councils", "showup-boards"):
+            source = (APPS / program / "app.mjs").read_text(encoding="utf-8")
+            assert "from '../shared/data.mjs'" in source, program
 
-    def test_the_status_line_says_what_is_needed_before_any_script_runs(self, site):
-        """Rendered into the document, so a reader with no JavaScript still reads it."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert "needs JavaScript and WebGL" in html
+    def test_selecting_fills_a_card_rather_than_navigating(self):
+        """A click that moved the page would make the layer toggle useless for comparing two
+        boundaries, so selection highlights and fills the card instead.
 
-    def test_the_zoom_buttons_ship_hidden(self, site):
-        """They do nothing until the map draws, and a control that lies is worse than none."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        assert '<div class="map-zoom" hidden' in html
-
-    def test_selecting_on_the_map_offers_a_link_rather_than_navigating(self, site):
-        """A click that moved the page would make the toggle useless for comparing two
-        boundaries, so selection highlights and reveals this card instead."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8")
-        # Matched per attribute rather than as one string: they are on the same tag but not
-        # adjacent, and an earlier version of this assertion broke when one was inserted
-        # between them.
-        #
-        # These are the base map's `Panel` contract, which is why they are ids and classes
-        # rather than this page's own names: `mountChrome` finds `#detail`, and the panel
-        # finds its own heading, body, foot and close button inside it. The link onward is
-        # built into `.detail-foot` by `panelFoot` in map.mjs, so the markup carries the
-        # container and not the link.
-        # The `hidden` attribute is asserted on the panel itself, not anywhere in the
-        # document: a bare `"hidden" in html` passed with it removed, because three
-        # `aria-hidden`s and four other hidden elements also match. Without it `xp.css` stops
-        # applying `display: none`, the panel sits off-screen at `translateX(100%)`, and its
-        # close button and foot link are in the tab order on load.
-        assert '<aside class="detail" id="detail" aria-labelledby="detail-title" hidden>' in html
-        assert 'class="detail-body"' in html
-        assert 'class="detail-foot"' in html
-        assert 'class="detail-close title-box close"' in html
-
-
-class TestSelectingCentresOnWhatCanBeSeen:
-    """Three ways the selection pan has been got wrong, each pinned here.
-
-    All three looked correct to every browser gate — the district rendered, the map
-    loaded, nothing was logged — and all three put the district off to the left. The
-    measurements are in docs/OBSERVATIONS.md, 2026-10-30; these assertions stop the
-    specific mistakes coming back.
-    """
-
-    def _pan(self) -> str:
-        source = (REPO_ROOT / "src" / "showup" / "assets" / "map.mjs").read_text(encoding="utf-8")
-        start = source.index("function panIntoView(")
-        return source[start : source.index("\n}\n", start)]
-
-    def test_it_does_not_ask_camera_for_bounds_where_to_go(self):
-        """`cameraForBounds(box, {padding}).center` encodes the padding as a geographic
-        shift sized for the zoom it chose, so reusing it at another zoom mis-places the
-        district by the ratio between the two."""
-        assert "cameraForBounds" not in self._pan()
-
-    def test_it_zeroes_the_cameras_padding_for_the_move(self):
-        """MapLibre's `padding` is persistent camera state and `refit` sets it through
-        `fitBounds`. Doing the arithmetic in pixels *and* leaving the padding in place
-        applied it twice."""
-        pan = self._pan()
-        assert "padding: { top: 0, right: 0, bottom: 0, left: 0 }" in pan, pan
-
-    def test_selecting_centres_on_a_centroid_not_a_bounding_box(self):
-        """District 35 runs north-west to south-east, so the middle of its bounding box
-        is mostly other districts. The area-weighted centroid of the largest ring is the
-        point a reader would call its centre."""
-        source = (REPO_ROOT / "src" / "showup" / "assets" / "map.mjs").read_text(encoding="utf-8")
-        start = source.index("  fillCard(id) {")
-        body = source[start : source.index("\n  }\n", start)]
-        assert "panIntoView(this.map, featureCentres" in body, body[-400:]
-        assert "panIntoView(this.map, featureBounds" not in body
+        It was a sliding `<aside class="detail">` on `/map/`; the window is that panel now,
+        and the card is built in `build()`.
+        """
+        source = MAP_APP.read_text(encoding="utf-8")
+        assert "el('div', 'card facts-card')" in source
+        assert "location.assign" not in source
+        assert "location.href =" not in source
 
 
 class TestParticipatoryBudgetingIsOptional:
@@ -356,21 +310,29 @@ class TestThePreviewArtifact:
 
 
 class TestTheMapRefusesToRank:
-    def test_nothing_on_the_map_page_claims_a_ranking(self, site):
+    def test_nothing_the_map_program_says_claims_a_ranking(self):
         """product-brief.md §5 forbids ranking districts against each other. The copy that
         said so was cut under voice.md class 4 — the uniform fill *is* the claim — so what
-        is asserted here is the absence of ranking language. The fill itself is checked by
-        `test_the_fill_does_not_vary_by_any_datum` below."""
-        html = (site / "map" / "index.html").read_text(encoding="utf-8").lower()
+        is asserted here is the absence of ranking language. The fill itself is checked
+        below.
+
+        Over the program's quoted strings rather than the whole file: the page this replaced
+        carried only rendered text, and a comment explaining a CSS specificity fight is not
+        something a reader sees.
+        """
+        quoted = re.findall(r"'([^'\n]*)'|`([^`\n]*)`", MAP_APP.read_text(encoding="utf-8"))
+        copy = " ".join(single or backtick for single, backtick in quoted).lower()
+        # Harness honesty: a regex that stopped matching would report clean over nothing.
+        assert "council districts" in copy, "the string scan found no rendered copy"
         for word in ("rank", "score", "worst", "best"):
-            assert word not in html, f"the map page uses ranking language: {word!r}"
+            assert word not in copy, f"the map program says {word!r} to a reader"
 
     #: The district layers' own paint block is the only place the choropleth ban applies.
     #: Scoped deliberately: this guard used to grep the whole module, and fired on an
     #: `interpolate` added to the *basemap's* woodland opacity, which shades nothing of ours.
 
     def _district_paint(self) -> str:
-        source = (REPO_ROOT / "src" / "showup" / "assets" / "map.mjs").read_text(encoding="utf-8")
+        source = MAP_APP.read_text(encoding="utf-8")
         start = source.index("id: `${layer.source}-fill`")
         end = source.index("id: `${layer.source}-line`")
         return source[start:end]

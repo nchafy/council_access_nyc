@@ -14,18 +14,11 @@ from markupsafe import escape
 
 from .text import esc
 
-__all__ = ["environment", "fragment", "render"]
-
-_MACROS = "macros.html"
+__all__ = ["environment", "render"]
 
 #: MarkupSafe and `text.esc` disagree on the two quotes. Both spellings are inert; keeping
 #: `esc`'s is what makes the site byte-identical. Derived so the two cannot drift.
 _ENTITIES = tuple((str(escape(quote)), esc(quote)) for quote in "'\"")
-
-
-def _percent(share: float) -> str:
-    """A share of an area as a whole-number percentage, rounded once, in Python."""
-    return f"{round(share * 100)}%"
 
 
 def _respell(html: str) -> str:
@@ -38,24 +31,16 @@ def _respell(html: str) -> str:
 @lru_cache(maxsize=1)
 def environment() -> Environment:
     """The project's only Jinja environment. Escaping on, missing names fatal."""
-    env = Environment(
+    return Environment(
         loader=PackageLoader("showup", "templates"),
         autoescape=True,
         undefined=StrictUndefined,
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,
-        extensions=["jinja2.ext.do"],
     )
-    env.filters["percent"] = _percent
-    return env
 
 
 def render(name: str, **context: object) -> str:
     """Render a whole page template."""
     return _respell(environment().get_template(name).render(**context))
-
-
-def fragment(macro: str, *args: object) -> str:
-    """Render one shared macro on its own, for callers that want a piece of a page."""
-    return _respell(str(getattr(environment().get_template(_MACROS).module, macro)(*args)))

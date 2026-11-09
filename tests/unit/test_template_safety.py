@@ -70,15 +70,49 @@ class TestEscapingIsOnByDefault:
         )
 
 
+def _authored_scripts() -> list[Path]:
+    """Every script this project ships and wrote, as the files a reader actually runs.
+
+    `vendor/` is excluded because it is third-party and pinned: what it does is a reason to
+    audit the pin, not something this grep can fix. Everything else is in, and `.mjs` is in
+    by name — a glob of `assets/*.js` matched one unreachable file once the front end became
+    a window manager, and the five programs that render scraped board text went unchecked.
+    """
+    return [
+        path
+        for pattern in ("*.js", "*.mjs")
+        for path in PACKAGE.rglob(pattern)
+        if "vendor" not in path.relative_to(PACKAGE).parts
+    ]
+
+
+def _without_js_comments(source: str) -> str:
+    source = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    return "\n".join(re.sub(r"(^|\s)//.*$", "", line) for line in source.splitlines())
+
+
 class TestFrontendMarkupSinksStayBanned:
     """Duplicates the `browser`-marked grep so it also runs in the default suite."""
 
     @pytest.mark.parametrize("sink", BROWSER_MARKUP_SINKS)
     def test_the_sink_is_absent_from_every_shipped_script(self, sink):
-        offenders = []
-        for script in (PACKAGE / "assets").glob("*.js"):
-            source = re.sub(r"/\*.*?\*/", "", script.read_text(encoding="utf-8"), flags=re.DOTALL)
-            source = "\n".join(re.sub(r"(^|\s)//.*$", "", line) for line in source.splitlines())
-            if sink in source:
-                offenders.append(script.name)
+        offenders = [
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in _authored_scripts()
+            if sink in _without_js_comments(path.read_text(encoding="utf-8"))
+        ]
         assert not offenders, f"{sink} in {offenders}"
+
+    def test_it_is_looking_at_the_programs_and_not_just_the_assets(self):
+        """Harness honesty: this grep reported clean over one file for a day. The programs
+        are where scraped text meets the DOM, so they are what it has to be reading."""
+        swept = {path.name for path in _authored_scripts()}
+        assert "boot.mjs" in swept, swept
+        apps = {path.parent.name for path in _authored_scripts() if path.name == "app.mjs"}
+        assert apps == {
+            "showup",
+            "showup-boards",
+            "showup-councils",
+            "showup-map",
+            "showup-readme",
+        }, apps

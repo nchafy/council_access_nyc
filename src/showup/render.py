@@ -1,145 +1,40 @@
-"""HTML generation: the only place text becomes markup (docs/phase-1-scope.md §4.1).
+"""The build's output shapes: the one page it writes, and the payloads the programs read.
 
-Escaping is the environment's job, not a thing to remember — `templates.py` sets
-`autoescape=True` and `tests/unit/test_template_safety.py` fails the build on every way
-of opting out. A link is emitted only for a URL that survived `urls.safe_url`.
+`index.html` is a mount point, so almost nothing here becomes markup. What does is still the
+environment's job rather than a thing to remember — `templates.py` sets `autoescape=True` and
+`tests/unit/test_template_safety.py` fails the build on every way of opting out. Upstream
+text reaches the payloads below with its tags already stripped at ingest, which is what
+docs/phase-1-scope.md §4.1 rests on now that no page renders a scraped string.
 """
 
 from __future__ import annotations
 
-import re
 from datetime import date, datetime
-from urllib.parse import urlencode
 
 from . import templates
 from .deadlines import accommodation_state, written_state
-from .model import BoardBudgetRequests, BudgetRequest, District, DistrictBoard, Meeting
+from .model import BoardBudgetRequests, District, DistrictBoard, Meeting
 from .sources.participatory_budgeting import PB_PROGRAMME_URL, Participation
-from .urls import safe_url
 
 __all__ = [
+    "board_schedule_payload",
     "preview_payload",
-    "render_board_index",
-    "render_district",
-    "render_district_index",
     "render_index",
-    "render_map",
-    "render_not_found",
-    "render_references",
 ]
 
 
-#: A phone number as the City publishes it: "(718) 467-5574", sometimes with an extension.
-_PHONE_DIGITS = re.compile(r"\d")
-_PHONE_SHAPE = re.compile(r"^[\d\s()+.\-]+$")
+def render_index() -> str:
+    """The landing page: the mount point the window manager builds the desktop into.
 
-#: Deliberately strict. This is a constructed `mailto:`, so anything odd is dropped rather
-#: than escaped and hoped for.
-_EMAIL_SHAPE = re.compile(r"^[^\s<>@]+@[^\s<>@.]+(\.[^\s<>@.]+)+$")
+    It has no content of its own. The template spells out no desktop on purpose — windows are
+    created, moved and destroyed at runtime, so markup for one would be a picture of it and
+    the two copies would drift.
 
-
-def _tel_href(phone: str | None) -> str | None:
-    """`tel:` for a published number, or None.
-
-    Not routed through `safe_url`: that function's contract is https-and-allowlisted-host,
-    which is the XSS boundary for *upstream* URLs, and widening it to cover schemes with no
-    host would weaken it for every caller. This builds its own and validates the shape.
+    It takes no data at all, not even the build stamp: staleness is computed in the browser
+    from `manifest.json` against the current time, which is what keeps an abandoned site
+    honest, so nothing about this build may be baked into the page.
     """
-    if not phone or not _PHONE_SHAPE.match(phone.strip()):
-        return None
-    digits = "".join(_PHONE_DIGITS.findall(phone))
-    # Ten digits is a US number; eleven starting with 1 is the same number written long.
-    if len(digits) == 11 and digits.startswith("1"):
-        digits = digits[1:]
-    if len(digits) != 10:
-        return None
-    return f"tel:+1{digits}"
-
-
-def _mailto_href(email: str | None) -> str | None:
-    """`mailto:` for a published address, or None."""
-    if not email:
-        return None
-    candidate = email.strip()
-    return f"mailto:{candidate}" if _EMAIL_SHAPE.match(candidate) else None
-
-
-def _maps_href(address: str | None) -> str | None:
-    """A Google Maps *search* for an address. Owner's decision, 2026-10-31.
-
-    A search query, not a place id: we do not know the board office's place id and would
-    be guessing one. The query is what we hold, so the query is what is sent.
-    """
-    if not address or not address.strip():
-        return None
-    query = urlencode({"api": "1", "query": address.strip()})
-    return safe_url(f"https://www.google.com/maps/search/?{query}")
-
-
-def _wikipedia_href(name: str, borough: str | None) -> str | None:
-    """Wikipedia's search-and-jump URL for a neighbourhood. Owner's decision, 2026-10-31.
-
-    **Not** `/wiki/<name>`. These names are free text from a City dataset, so a constructed
-    article path is a guess: it 404s for anything Wikipedia titles differently and, worse,
-    silently lands on the wrong article for a name that is ambiguous between boroughs.
-    `index.php?search=` jumps straight to the article when the title matches exactly and
-    shows results when it does not, so it is never wrong — only sometimes a search page.
-    The borough is appended because that is how Wikipedia disambiguates these.
-    """
-    label = name.strip()
-    if not label:
-        return None
-    query = f"{label}, {borough}" if borough else label
-    return safe_url(f"https://en.wikipedia.org/w/index.php?{urlencode({'search': query})}")
-
-
-#: The City writes these as "A, B, and C" and occasionally "A and B".
-_NEIGHBOURHOOD_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+")
-
-
-def neighbourhood_links(text: str | None, borough: str | None) -> list[dict]:
-    """One entry per neighbourhood, each with the Wikipedia search that finds it."""
-    if not text:
-        return []
-    names = [part.strip(" .") for part in _NEIGHBOURHOOD_SPLIT.split(text)]
-    return [{"name": name, "href": _wikipedia_href(name, borough)} for name in names if name]
-
-
-def _link(url: str | None, label: str, *, extra: str = "") -> str:
-    """An anchor for a checked URL, or inert text when there is none."""
-    return templates.fragment("link", url, label, extra)
-
-
-def _dl(rows: list[tuple[str, str]]) -> str:
-    """A definition list, or nothing at all when there is no row to carry."""
-    return templates.fragment("dl", rows)
-
-
-def _short(value: str | None, limit: int = 58) -> str:
-    if not value:
-        return ""
-    text = value.strip()
-    return text if len(text) <= limit else text[: limit - 1].rstrip(" ,;") + "…"
-
-
-def render_index(*, built_at: datetime, window_end: date | None) -> str:
-    """The landing page: a Windows XP desktop, and an icon per destination.
-
-    It has no content of its own as of 2026-11-06. It had a map button, an address box and
-    the next citywide meeting; a desktop has nowhere to put any of them, and the first two
-    were already on `/map/` verbatim. The citywide meeting went to `/map/` as a card of its
-    own — see `render_map`.
-
-    So this takes no data but the build stamp: the four icons are written out in the template
-    rather than generated, which is what lets the desktop work with no JavaScript.
-    """
-    return templates.render(
-        "index.html",
-        title="Council districts and community boards",
-        here="home",
-        built_at=built_at,
-        window_end=window_end,
-    )
+    return templates.render("index.html", title="Council districts and community boards")
 
 
 _MODE_LABEL = {
@@ -199,72 +94,6 @@ def _meeting_card(meeting: Meeting, *, today: date, now: datetime) -> dict:
             if url
         ],
     }
-
-
-def _board_card(board: DistrictBoard) -> str:
-    """One community board as it appears on a council district's page."""
-    return templates.fragment("board_card", board)
-
-
-def _district_rows(districts: list[District]) -> list[dict[str, object]]:
-    return [
-        {"number": d.number, "hood": _short(d.neighborhoods) if d.neighborhoods else None}
-        for d in districts
-    ]
-
-
-def _board_rows(boards: list[DistrictBoard]) -> list[dict[str, object]]:
-    return [
-        {
-            "code": b.code,
-            "label": b.label,
-            "hood": _short(b.neighborhoods, 44) if b.neighborhoods else None,
-        }
-        for b in boards
-    ]
-
-
-def render_district_index(
-    districts: list[District],
-    *,
-    built_at: datetime,
-    window_end: date | None,
-) -> str:
-    """`/district/`: all 51 in full, and the dropdown.
-
-    Its own page since 2026-11-06. `/district/` and `/board/` were one template listing both,
-    so the two taskbar buttons opened the same window — a council district and a community
-    board are different things, and each index now answers about one of them.
-
-    Separate from the landing page since 2026-10-22: that is a map button and an address box,
-    and this is where the no-JavaScript path actually lives.
-    """
-    return templates.render(
-        "districts.html",
-        title=f"All {len(districts)} council districts",
-        here="districts",
-        districts=_district_rows(districts),
-        built_at=built_at,
-        window_end=window_end,
-    )
-
-
-def render_board_index(
-    boards: list[DistrictBoard],
-    *,
-    built_at: datetime,
-    window_end: date | None,
-) -> str:
-    """`/board/`: all 59 in full, and the dropdown. The counterpart to
-    `render_district_index`."""
-    return templates.render(
-        "boards.html",
-        title=f"All {len(boards)} community boards",
-        here="boards",
-        boards=_board_rows(boards),
-        built_at=built_at,
-        window_end=window_end,
-    )
 
 
 #: How many filed requests the panel lists before sending the reader to the page.
@@ -511,111 +340,6 @@ def _pb_meta(participation: Participation | None) -> dict | None:
     }
 
 
-def render_map(
-    *,
-    built_at: datetime,
-    window_end: date | None,
-    meetings: list[Meeting] | None = None,
-    today: date | None = None,
-    now: datetime | None = None,
-) -> str:
-    """The full-screen map. Its own route because a map inside a scrolling page steals the
-    wheel: the reader scrolls and the map zooms instead. Here nothing scrolls.
-
-    It carries the next citywide meeting as of 2026-11-06, when the landing page became a
-    desktop of icons and had nowhere to put it. The card is citywide and sits over the canvas,
-    not in a district's panel — which is the distinction the 2026-10-27 decision was about:
-    Council and committee meetings belong to no district, so attaching one to a district was
-    wrong. Attaching it to the city is not.
-    """
-    return templates.render(
-        "map.html",
-        title="Map of council districts and community boards",
-        here="map",
-        next_meeting=(
-            _meeting_card(meetings[0], today=today or date.today(), now=now or datetime.now())
-            if meetings
-            else None
-        ),
-        built_at=built_at,
-        window_end=window_end,
-    )
-
-
-def render_district(
-    district: District,
-    meetings: list[Meeting],
-    *,
-    built_at: datetime,
-    window_end: date | None,
-    today: date | None = None,
-    now: datetime | None = None,
-    participation: Participation | None = None,
-) -> str:
-    day = today or date.today()
-    moment = now or datetime.now()
-    return templates.render(
-        "district.html",
-        # The title bar carries the page's one `h1`, so this is the district's name and
-        # not a shortened form of it.
-        title=f"Council District {district.number}",
-        here="districts",
-        open_window=f"District {district.number}",
-        district=district,
-        tables=district_tables(district, participation),
-        cards=[_meeting_card(meeting, today=day, now=moment) for meeting in meetings],
-        built_at=built_at,
-        window_end=window_end,
-    )
-
-
-#: Roots only: the Bronx deep link nyc.gov publishes is a 404, and three of these hosts
-#: return 403 to a non-browser client, so a deep path cannot be verified.
-BP_SITES = {
-    "Bronx": "https://bronxboropres.nyc.gov/",
-    "Brooklyn": "https://www.brooklynbp.nyc.gov/community-boards/",
-    "Manhattan": "https://www.manhattanbp.nyc.gov/",
-    "Queens": "https://www.queensbp.nyc.gov/",
-    "Staten Island": "https://www.statenislandusa.com/",
-}
-
-BUDGET_REGISTER_URL = "https://data.cityofnewyork.us/d/vn4m-mk4t"
-
-#: How many calendar entries a board page lists before it stops. The feeds carry up to
-#: 340; a page is not a calendar application.
-CALENDAR_SHOWN = 6
-
-#: Five, matching the meeting shortlist. One board filed 134, and the register is linked.
-REQUESTS_SHOWN = 5
-_EXPLANATION_CHARS = 260
-_RESPONSE_CHARS = 260
-
-
-def _budget_request(request: BudgetRequest) -> dict:
-    """One filed request, quoted and cut short — never bucketed into yes and no."""
-    return {
-        "title": request.request or "The register does not describe this request",
-        "priority": request.priority
-        + (f" — {request.category.lower()}" if request.category else ""),
-        "agency": request.agency,
-        "explanation": _short(request.explanation, _EXPLANATION_CHARS),
-        "response": _short(request.response, _RESPONSE_CHARS),
-        "tracking_code": request.tracking_code,
-    }
-
-
-def _budget(asked: BoardBudgetRequests | None) -> dict | None:
-    """One edition of the register for one board, or None when we hold none."""
-    if asked is None or not asked.requests:
-        return None
-    return {
-        "fiscal_year": asked.fiscal_year,
-        "published": asked.publication.strftime("%-d %B %Y"),
-        "total": len(asked.requests),
-        "requests": [_budget_request(request) for request in asked.requests[:REQUESTS_SHOWN]],
-    }
-
-
 def board_schedule_payload(
     calendars: dict,
     sources: dict,
@@ -691,10 +415,12 @@ def board_schedule_payload(
             # A source can be readable and months behind. Counting that is the difference
             # between "we cover 58 boards" and "58 boards are telling us something."
             "sources_current": sum(1 for b in boards.values() if b["source_stale_days"] == 0),
-            "sources_behind_90_days": sum(
+            # The key spells the number out because it is a published name a consumer reads;
+            # the threshold itself is `SOURCE_BEHIND_DAYS` so the two cannot disagree.
+            f"sources_behind_{SOURCE_BEHIND_DAYS}_days": sum(
                 1
                 for b in boards.values()
-                if (behind := b["source_stale_days"]) is not None and behind > 90
+                if (behind := b["source_stale_days"]) is not None and behind > SOURCE_BEHIND_DAYS
             ),
             "sources_asserting_no_date": sum(
                 1 for b in boards.values() if b["source_url"] and b["source_latest_entry"] is None
@@ -704,132 +430,7 @@ def board_schedule_payload(
     }
 
 
-def render_board(
-    board: DistrictBoard,
-    districts: list[tuple[int, float]],
-    *,
-    built_at: datetime,
-    window_end: date | None,
-    budget_requests: BoardBudgetRequests | None = None,
-    calendar: list | None = None,
-) -> str:
-    """The community board view. No dataset publishes board agendas or a venue, so the
-    page states that rather than implying a calendar."""
-    return templates.render(
-        "board.html",
-        title=board.label,
-        here="boards",
-        open_window=board.label,
-        board=board,
-        districts=districts,
-        # Every contact field as something to act on: the neighbourhoods as Wikipedia
-        # searches, the office on a map, the phone dialable, the address mailable. Owner's
-        # decision, 2026-10-31.
-        covers=neighbourhood_links(board.neighborhoods, board.borough_name),
-        office_href=_maps_href(board.address),
-        phone_href=_tel_href(board.phone),
-        email_href=_mailto_href(board.email),
-        tables=board_tables(districts, budget_requests),
-        calendar=[
-            {
-                "day": entry.day.strftime("%a %-d %B %Y"),
-                "start_time": entry.start_time,
-                "title": entry.title,
-                "location": entry.location,
-                "url": safe_url(entry.url) if entry.url else None,
-            }
-            for entry in (calendar or [])[:CALENDAR_SHOWN]
-        ],
-        calendar_total=len(calendar or []),
-        budget=_budget(budget_requests),
-        register_url=BUDGET_REGISTER_URL,
-        bp_url=BP_SITES.get(board.borough_name),
-        built_at=built_at,
-        window_end=window_end,
-    )
-
-
-def render_not_found(*, built_at: datetime, window_end: date | None) -> str:
-    return templates.render(
-        "not_found.html", title="Page not found", built_at=built_at, window_end=window_end
-    )
-
-
-#: Cited for its denominator, never fetched: a few dozen land-use notices a year is not
-#: a board calendar.
-CITY_RECORD_URL = "https://data.cityofnewyork.us/d/dg92-zbpx"
-
-
-def _window(hours: float) -> str:
-    """A max_age as an exact unit: hours below two days, days above. Never rounded."""
-    return f"{hours:g} hours" if hours < 48 else f"{hours / 24:g} days"
-
-
 #: Beyond this, a board's source is reported as behind rather than merely quiet. Three
 #: months: long enough that a board publishing one month at a time, or taking the summer
 #: recess, is not accused of neglect, and short enough that a site abandoned mid-2025 is.
 SOURCE_BEHIND_DAYS = 90
-
-
-def board_source_health(sources: dict, freshness: dict) -> dict | None:
-    """The boards whose source needs looking at, as a table spec.
-
-    Aggregate plus exceptions, not all fifty-nine rows: a page listing every board as
-    "fine" buries the four that are not, and this page has a weight budget. The counts go
-    in the prose above the table; the table is only what a maintainer would act on.
-
-    Uses the same spec shape as the map panel's tables, so there is one notion of a table
-    in this project rather than a second one grown here.
-    """
-    rows = []
-    for code, entry in sorted((sources.get("boards") or {}).items()):
-        found = freshness.get(code)
-        behind = getattr(found, "stale_days", None)
-        latest = getattr(found, "latest_entry", None)
-        if not entry.get("fetched"):
-            said, note = "Not readable", entry.get("status") or "unreadable"
-        elif found is None:
-            # Declared readable but absent from the cache: newly wired, and not fetched
-            # since. Saying "states no date" here would blame the board for our gap.
-            said, note = "Not yet fetched", "wired since the last fetch"
-        elif not found.loaded:
-            said, note = "Could not be read", "last load failed"
-        elif latest is None:
-            said, note = "Nothing dated", "answers, but states no date"
-        elif behind is not None and behind > SOURCE_BEHIND_DAYS:
-            said, note = latest.strftime("%-d %B %Y"), f"{behind} days behind"
-        else:
-            continue
-        rows.append([f"{entry.get('label', code)}", entry.get("kind") or "—", said, note])
-
-    return _table(
-        "Board sources needing attention",
-        ["Board", "How it is read", "Source last said", "Status"],
-        rows,
-        caption=(
-            "A source can answer and still be months behind. These are the boards where "
-            "the most recent date the board itself states is more than "
-            f"{SOURCE_BEHIND_DAYS} days old, or where it states none at all."
-        ),
-    )
-
-
-def render_references(
-    sources: list[dict],
-    *,
-    built_at: datetime,
-    window_end: date | None,
-    board_health: dict | None = None,
-) -> str:
-    """The one page carrying every identifier, fetch date, window and caveat."""
-    return templates.render(
-        "references.html",
-        title="Sources",
-        here="sources",
-        sources=[{**source, "window": _window(source["max_age_hours"])} for source in sources],
-        city_record_url=CITY_RECORD_URL,
-        register_url=BUDGET_REGISTER_URL,
-        built_at=built_at,
-        window_end=window_end,
-        board_health=board_health,
-    )

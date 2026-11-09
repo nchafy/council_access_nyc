@@ -51,12 +51,12 @@
 .app-showup-councils .pick:hover,
 .app-showup-councils .pick:focus-visible { background: var(--title-a); color: #fff; }
 .app-showup-councils .pick:hover .pick-hoods,
-.app-showup-councils .pick:focus-visible .pick-hoods { color: #dfe8f5; }
+.app-showup-councils .pick:focus-visible .pick-hoods { color: var(--on-title-dim); }
 
 /* The current row keeps the selected blue after focus moves to the facts beside it, so the
    list still says which one is showing. */
 .app-showup-councils .pick[aria-current="true"] { background: var(--title-b); color: #fff; }
-.app-showup-councils .pick[aria-current="true"] .pick-hoods { color: #dfe8f5; }
+.app-showup-councils .pick[aria-current="true"] .pick-hoods { color: var(--on-title-dim); }
 
 .app-showup-councils .pick-name { font-weight: 700; }
 .app-showup-councils .pick-hoods {

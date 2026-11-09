@@ -50,6 +50,37 @@ The files here **MUST NOT be edited**. A change belongs upstream, after which th
 is re-copied and the commit above updated. A local edit makes the commit a lie, and the commit
 is the only provenance this code has.
 
+## Defects found here, corrected in the host
+
+Three accessibility defects of the shell, measured on 2026-11-09 by `make a11y` and
+`make axe` against the desktop this site builds. All three are properties of any webxp host,
+not of this site, so all three belong upstream. They are corrected in `src/showup/boot.mjs`
+instead, and the correction is marked there with the number below.
+
+The pin was **not** moved to carry a fix. `~/claude/webxp` is clean but its `HEAD` is
+`33ce2d5` on `map-challenge-folder`, 22 commits past this pin, and that branch is another
+session's work. Re-pinning to fix these would have pulled all 22 in with them, unreviewed.
+Two of those commits — `92bc9fe` "stop opening the read-me on every load" and `fd5408c`
+"let Clippy offer the read-me instead of taking the desktop" — read as though they are in
+defect 3's territory already, so whoever next moves this pin should check 3 against the new
+commit before porting the host-side correction forward.
+
+1. **The desktop surface has no role.** It holds the page's content — the icon grid, and
+   every window — so with no `main` landmark a screen-reader user has nothing to skip to, and
+   axe reports the whole page as outside any landmark (its `region` rule, advisory).
+2. **The shell writes no level-1 heading.** Its only heading is a window title at level 2, so
+   a host document has no `h1` and its outline starts at the second level.
+3. **`launch` ends in `win.takeFocus()` unconditionally**, so `autostart()` moves the caret
+   into a window the reader never opened. Measured: focus landed on the folder's "City
+   councils" row, and `Tab` then resumed from there rather than from the top of the document.
+   The right shape is for `takeFocus` to be the caller's choice — `focus(win, {moveFocus})`
+   already works that way — with autostart declining it.
+
+   Note for whoever fixes this upstream: `blur()` is not the correction. It clears the ring,
+   and `document.activeElement` reads `body` afterwards, but the browser keeps a sequential
+   focus navigation starting point where the blurred element was, so the next `Tab` resumes
+   mid-document. Measured: index 6 of 11 with focus apparently on `body`.
+
 ## What came across
 
 `src/` only — nine files. The upstream `apps/`, `demo/`, `docs/` and `scripts/` are that

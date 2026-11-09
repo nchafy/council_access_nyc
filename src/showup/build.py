@@ -21,7 +21,7 @@ from .crosswalk import (
     load_zips,
 )
 from .crosswalk import load as load_crosswalk
-from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
+from .fetch import MEMBER_ROW_FLOOR, cache_path, manifest_key
 from .geo import load_features, to_geojson
 from .model import (
     BOARD_COUNT,
@@ -35,16 +35,8 @@ from .model import (
 )
 from .render import (
     board_schedule_payload,
-    board_source_health,
     preview_payload,
-    render_board,
-    render_board_index,
-    render_district,
-    render_district_index,
     render_index,
-    render_map,
-    render_not_found,
-    render_references,
 )
 from .sources.board_meetings import BoardMeetingsError, load_board_meetings, source_freshness
 from .sources.boards import JOINT_INTEREST_AREAS, load_boards
@@ -326,28 +318,6 @@ def _load_districts(
     return districts, current, boards_by_code
 
 
-def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
-    """Every fetched source as `/references/` shows it: the `fetch.py` registry joined to
-    the manifest's fetch dates and row counts. Nothing here is typed into a template."""
-    rows: list[dict] = []
-    for source in SOURCES:
-        recorded = manifest_sources.get(manifest_key(source.name), {})
-        cached = raw / source.filename
-        fetched_at = recorded.get("fetched_at") or (_mtime(cached) if cached.exists() else None)
-        rows.append(
-            {
-                "label": source.label,
-                "dataset": source.dataset,
-                "url": source.url,
-                "why": source.why,
-                "fetched_at": datetime.fromisoformat(str(fetched_at)) if fetched_at else None,
-                "max_age_hours": recorded.get("max_age_hours", source.max_age_hours),
-                "rows": recorded.get("rows"),
-            }
-        )
-    return rows
-
-
 def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> dict:
     """Build into a temporary directory, then swap it in, so a half-rendered site is
     never visible."""
@@ -399,66 +369,12 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
 
-    (staging / "index.html").write_text(
-        render_index(built_at=now, window_end=window_end),
-        encoding="utf-8",
-    )
-    (staging / "404.html").write_text(
-        render_not_found(built_at=now, window_end=window_end), encoding="utf-8"
-    )
+    (staging / "index.html").write_text(render_index(), encoding="utf-8")
 
-    # /district/ is where a no-JavaScript form submit lands, instead of a 404.
-    district_root = staging / "district"
-    district_root.mkdir()
-    (district_root / "index.html").write_text(
-        render_district_index(districts, built_at=now, window_end=window_end),
-        encoding="utf-8",
-    )
-
-    for district in districts:
-        page_dir = district_root / str(district.number)
-        page_dir.mkdir()
-        (page_dir / "index.html").write_text(
-            render_district(
-                district,
-                ahead,
-                built_at=now,
-                window_end=window_end,
-                today=day,
-                now=now,
-                participation=participation,
-            ),
-            encoding="utf-8",
-        )
-
-    board_root = staging / "board"
-    board_root.mkdir()
-    boards_written = 0
-    for code, board in sorted(boards_by_code.items()):
-        page_dir = board_root / code
-        page_dir.mkdir()
-        (page_dir / "index.html").write_text(
-            render_board(
-                board,
-                boards_to_districts.get(code, []),
-                built_at=now,
-                window_end=window_end,
-                budget_requests=budget_requests.get(code),
-                calendar=board_calendars.get(code, []),
-            ),
-            encoding="utf-8",
-        )
-        boards_written += 1
-    if boards_written != BOARD_COUNT:
-        raise BuildError(f"wrote {boards_written} board pages, expected {BOARD_COUNT}")
-    (board_root / "index.html").write_text(
-        render_board_index(
-            sorted(boards_by_code.values(), key=lambda b: b.code),
-            built_at=now,
-            window_end=window_end,
-        ),
-        encoding="utf-8",
-    )
+    # The 51 districts and the 59 boards were a page each and are programs now. The
+    # 59-boards-or-none floor moved to `preview_payload`'s output below, which is what the
+    # programs read: a build that silently covered 58 boards is the failure that floor exists
+    # to catch, and it is still caught where the data is written.
 
     # The city geocoder returns a coordinate but no council district, so the browser
     # does the point-in-polygon against this.
@@ -630,31 +546,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "rows": budget_request_rows,
         }
 
-    map_root = staging / "map"
-    map_root.mkdir()
-    (map_root / "index.html").write_text(
-        render_map(
-            built_at=now,
-            window_end=window_end,
-            meetings=ahead,
-            today=day,
-            now=now,
-        ),
-        encoding="utf-8",
-    )
-
-    references_root = staging / "references"
-    references_root.mkdir()
-    (references_root / "index.html").write_text(
-        render_references(
-            _reference_rows(raw, manifest_sources),
-            built_at=now,
-            window_end=window_end,
-            board_health=board_source_health(schedule_sources, board_freshness),
-        ),
-        encoding="utf-8",
-    )
-
     manifest = Manifest(sources=manifest_sources, built_at=now, calendar_window_end=window_end)
     (staging / "manifest.json").write_text(
         json.dumps(
@@ -679,6 +570,8 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         "window_end": window_end.isoformat() if window_end else None,
         "districts_with_gaps": sum(1 for d in districts if d.missing),
         "boards_linked": sum(len(d.boards) for d in districts),
+        # Named for what it counts now: the boards the programs can answer about. It
+        # was the number of board pages written, and no board page is written.
         "board_pages": len(boards_by_code),
         "boards_with_a_calendar": len(board_calendars),
         "board_calendar_entries": sum(len(v) for v in board_calendars.values()),

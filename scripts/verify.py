@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """End-to-end self-check against a running local server, with the real headers applied.
 
-Asserts what breaks silently and is expensive to find later: that the security headers
-are served rather than merely written, that no inline script or style attribute survives,
-that pages carry their facts, that every internal link resolves, that no href names a host
-outside the allowlist, and that a missing district 404s. Non-zero exit on the first
-failure, so `make verify` gates a commit.
+Asserts what breaks silently and is expensive to find later: that the security headers are
+served rather than merely written, that no inline script or style attribute survives, that
+every internal link resolves, that no href names a host outside the allowlist, that every
+file the desktop needs at runtime is actually there, that the payloads carry what they
+promise, and that a missing path 404s.
+
+Everything here is a *response*, which is the whole point of this file and the one thing the
+pytest suite cannot do: the CSP is a header, and a policy that is written and not served is
+a deploy-time surprise. It deliberately asserts nothing about what the window manager draws
+— that is a browser's job and `tests/browser/test_webxp.py` does it.
+
+Non-zero exit on the first failure, so `make verify` gates a commit.
 
     python3 scripts/verify.py [--port 8099]
 """
@@ -97,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             "--port",
             str(args.port),
             "--root",
-            args.root,
+            str(site),
             "--quiet",
         ],
         stdout=subprocess.DEVNULL,
@@ -144,11 +151,6 @@ def _run_checks(base: str, site: Path) -> None:
     check(status == 200, f"GET / returned {status}")
     print(f"GET /  {status}  {len(index)} bytes")
 
-    # The address box lives on the map since the landing page became a desktop, so its
-    # markup is checked there.
-    map_status, _, map_page = fetch(base + "/map/")
-    check(map_status == 200, f"GET /map/ returned {map_status}")
-
     for name, expected_fragment in REQUIRED_HEADERS.items():
         value = headers.get(name, "")
         check(bool(value), f"header {name} not served")
@@ -160,118 +162,51 @@ def _run_checks(base: str, site: Path) -> None:
     check("unsafe-inline" not in csp, "CSP contains unsafe-inline")
     check("unsafe-eval" not in csp, "CSP contains unsafe-eval")
 
-    check("<h1>Districts and boards</h1>" in index, "index missing its heading")
+    # The desktop is a mount point: `webxp` builds the shell, the taskbar and every window at
+    # runtime. So the page is checked for the hooks the shell needs and nothing more.
+    check('id="webxp"' in index, "index carries no #webxp mount point")
+    check('src="/assets/boot.mjs"' in index, "index does not load the boot module")
+    check("<noscript>" in index, "index offers a reader without a script nothing at all")
+    _check_markup_safety(base + "/", index)
+    _check_links(base + "/", index, site)
+
+    # Each one 404s the whole desktop rather than degrading it, and the document references
+    # none of them by name, so a missing file is invisible until the screen stays blank.
+    for path in (
+        "/assets/boot.mjs",
+        "/apps/manifest.mjs",
+        "/vendor/webxp/webxp.mjs",
+        "/vendor/webxp/apps.mjs",
+        "/vendor/webxp/desktop.mjs",
+    ):
+        status, module_headers, _ = fetch(base + path)
+        check(status == 200, f"{path} returned {status}")
+        check("Content-Security-Policy" in module_headers, f"{path} served without CSP")
+    print("GET the shell's modules  5 of 5")
+
+    # Every program the manifest names, and the two files the loader asks each one for. The
+    # manifest is generated, so a folder renamed without regenerating it fails here.
+    status, _, manifest_module = fetch(base + "/apps/manifest.mjs")
+    # Parsed out of the `APPS` array rather than off the whole module: a bare quoted-word
+    # regex also matches the prose in the header comment, which had this fetching
+    # `/apps/the/app.mjs` and calling it a program.
+    body = re.search(r"export const APPS = \[(.*?)\]", manifest_module, re.S)
+    programs = re.findall(r"['\"]([a-z][a-z0-9-]*)['\"]", body.group(1) if body else "")
     check(
-        index.count('href="/district/') >= DISTRICT_COUNT,
-        f"index does not link all {DISTRICT_COUNT} districts",
-    )
-    check("<select" in index, "index has no dropdown")
-
-    sampled = [1, 3, 25, 35, 51]
-    for number in sampled:
-        url = f"{base}/district/{number}/"
-        status, page_headers, page = fetch(url)
-        check(status == 200, f"{url} returned {status}")
-        check(f"Council District {number}" in page, f"{url} missing its heading")
-        check("Testimony and attendance" in page, f"{url} missing the participation block")
-        check(
-            "IN-PERSON" in page.upper() or "In person: no pre-registration" in page,
-            f"{url} does not state the no-pre-registration fact",
-        )
-        check("hearings@council.nyc.gov" in page, f"{url} missing the hearings contact")
-        check("Community Board" in page, f"{url} missing the community board block")
-        check('href="/references/"' in page, f"{url} does not link its sources")
-        check(
-            "community board" in page.lower() and "council district" in page.lower(),
-            f"{url} does not distinguish council district from community board",
-        )
-        check(
-            "Only Council Members can introduce legislation" in page,
-            f"{url} does not lead with the no-petition truth",
-        )
-        check(
-            "Content-Security-Policy" in page_headers,
-            f"{url} served without CSP",
-        )
-        _check_markup_safety(url, page)
-        _check_links(url, page, site)
-        print(f"GET /district/{number}/  {status}  {len(page)} bytes")
-
-    for code in ("101", "302", "503"):
-        url = f"{base}/board/{code}/"
-        status, board_headers, page = fetch(url)
-        flat = " ".join(page.split())
-        check(status == 200, f"{url} returned {status}")
-        check("Community Board" in page, f"{url} missing its heading")
-        check("Content-Security-Policy" in board_headers, f"{url} served without CSP")
-        check("non-Board (public) members" in flat, f"{url} missing the public-member route")
-        check("up to 50 unsalaried members" in flat, f"{url} missing the appointment facts")
-        check(
-            "The City's dataset records the board office, not the meeting venue" in flat,
-            f"{url} presents the board office as the meeting venue",
-        )
-        check('href="/references/"' in page, f"{url} does not link its sources")
-        check(
-            'href="/district/' in page,
-            f"{url} does not link the council districts covering it",
-        )
-        check("of this board" in flat, f"{url} share is not labelled as of-the-board")
-        check("Fiscal Year Requests" in flat, f"{url} missing the budget requests")
-        check(
-            page.count("<details>") == page.count("<summary>") == 5,
-            f"{url} does not carry five collapsible request cards",
-        )
-        for field in ("Requestee", "Request", "Response"):
-            check(f"<dt>{field}</dt>" in page, f"{url} request cards have no {field} field")
-        check("/d/vn4m-mk4t" in page, f"{url} does not link the register it quotes")
-        check(
-            "top priority" not in flat.lower(),
-            f"{url} presents one request as the board's top priority",
-        )
-        _check_markup_safety(url, page)
-        _check_links(url, page, site)
-        print(f"GET /board/{code}/  {status}  {len(page)} bytes")
-
-    board_dirs = [p for p in (site / "board").iterdir() if p.is_dir()]
-    check(
-        len(board_dirs) == BOARD_COUNT,
-        f"expected {BOARD_COUNT} board pages, found {len(board_dirs)}",
-    )
-
-    check('id="district-select"' in index, "index has no council district picker")
-    check('id="board-select"' in index, "index has no community board picker")
-    check(
-        index.count('href="/board/') >= BOARD_COUNT,
-        f"index does not link all {BOARD_COUNT} boards",
-    )
-
-    status, _, missing = fetch(base + "/district/99/")
-    check(status == 404, f"/district/99/ returned {status}, expected 404")
-    check("not found" in missing.lower(), "404 page has no not-found message")
-    print(f"GET /district/99/  {status}  (expected 404)")
-
-    # The landing page is a desktop of icons as of 2026-11-06: no address box, and no script
-    # of its own. The box's own promises are checked against `/map/`, the page that has it.
-    check('class="desktop"' in index, "index is not the desktop")
-    check('id="icons"' in index, "index has no icon grid")
-    check(
-        'id="address-input"' in map_page,
-        "/map/ has no address box",
+        programs == sorted(programs) and len(programs) == len(set(programs)),
+        f"the app manifest is not a sorted unique list: {programs}",
     )
     check(
-        'id="address-section"' in map_page and "hidden" in map_page,
-        "address box is not hidden by default",
+        2 <= len(programs) <= 20,
+        f"the app manifest parsed {len(programs)} programs, which is not a plausible "
+        f"count — the parse is picking up something that is not a program: {programs[:8]}",
     )
-    check('src="/assets/address.js"' in map_page, "/map/ does not load address.js")
-
-    status, _, address_js = fetch(base + "/assets/address.js")
-    check(status == 200, f"address.js returned {status}")
-    address_code = _strip_comments(address_js)
-    # R33: the geocoder must be asked not to log the query.
-    check("private=true" in address_code, "address.js omits private=true")
-    for banned in ("localStorage", "sessionStorage", "pushState", "document.cookie"):
-        check(banned not in address_code, f"address.js touches {banned}")
-    check("innerHTML" not in address_code, "address.js uses innerHTML")
+    for program in programs:
+        for name in ("app.mjs", "app.css"):
+            path = f"/apps/{program}/{name}"
+            status, _, _ = fetch(base + path)
+            check(status == 200, f"{path} returned {status}")
+    print(f"GET every program's module and stylesheet  {len(programs)} programs")
 
     status, _, geo = fetch(base + "/data/districts.geo.json")
     check(status == 200, f"districts.geo.json returned {status}")
@@ -286,6 +221,13 @@ def _run_checks(base: str, site: Path) -> None:
     check(gz < 300 * 1024, f"district geometry is {gz // 1024} KB gzipped, budget is 300 KB")
     print(f"GET /data/districts.geo.json  {status}  {gz // 1024} KB gzipped (budget 300)")
 
+    status, _, boards_geo = fetch(base + "/data/boards.geo.json")
+    check(status == 200, f"boards.geo.json returned {status}")
+    check(
+        len(json.loads(boards_geo).get("features", [])) == BOARD_COUNT,
+        f"board geometry does not carry all {BOARD_COUNT} boards",
+    )
+
     status, _, lookup = fetch(base + "/data/lookup.json")
     check(status == 200, f"lookup.json returned {status}")
     lookup_json = json.loads(lookup)
@@ -295,6 +237,32 @@ def _run_checks(base: str, site: Path) -> None:
     print(
         f"GET /data/lookup.json  {status}  "
         f"{len(lookup_json['zips'])} ZIPs resolvable without the network"
+    )
+
+    # The one artifact every program reads. Each program renders the table specs it finds
+    # here, so a missing district is a pane that silently says nothing.
+    status, _, preview = fetch(base + "/data/preview.json")
+    check(status == 200, f"preview.json returned {status}")
+    preview_json = json.loads(preview)
+    check(
+        len(preview_json.get("districts", {})) == DISTRICT_COUNT,
+        f"preview covers {len(preview_json.get('districts', {}))} districts, "
+        f"expected {DISTRICT_COUNT}",
+    )
+    check(
+        len(preview_json.get("boards", {})) == BOARD_COUNT,
+        f"preview covers {len(preview_json.get('boards', {}))} boards, expected {BOARD_COUNT}",
+    )
+    check(bool(preview_json.get("as_of")), "preview carries no as_of, so no pane can be dated")
+    print(f"GET /data/preview.json  {status}  {len(preview) // 1024} KB")
+
+    status, _, schedules = fetch(base + "/data/board-meetings.json")
+    check(status == 200, f"board-meetings.json returned {status}")
+    schedule_json = json.loads(schedules)
+    check(
+        len(schedule_json.get("boards", {})) == BOARD_COUNT,
+        "the board schedule artifact does not list all 59 boards, so a consumer cannot "
+        "tell 'no meetings scheduled' from 'this board cannot be read'",
     )
 
     status, _, manifest = fetch(base + "/manifest.json")
@@ -307,48 +275,38 @@ def _run_checks(base: str, site: Path) -> None:
     )
     print(f"GET /manifest.json  {status}")
 
-    # Provenance may be relocated and must never be lost, so every identifier and caveat
-    # moved off a page is asserted to have landed here.
-    url = base + "/references/"
-    status, reference_headers, references = fetch(url)
-    flat = " ".join(references.split())
-    check(status == 200, f"{url} returned {status}")
-    check("Content-Security-Policy" in reference_headers, f"{url} served without CSP")
-    check("<h1>Sources</h1>" in references, f"{url} missing its heading")
-    for clause, why in (
-        ("ranks within a budget category", "why priority numbers repeat"),
-        ("not a commitment and not a funded outcome", "that a request is not an outcome"),
-    ):
-        check(clause in flat, f"{url} no longer states {why}")
-    for dataset in (
-        "Calendar.aspx",
-        "uvw5-9znb",
-        "ruf7-3wgc",
-        "vn4m-mk4t",
-        "mkqi-d8x3",
-        "872g-cjhh",
-        "5crt-au7u",
-        "pri4-ifjk",
-        "dg92-zbpx",
-    ):
-        check(dataset in flat, f"{url} does not name the source {dataset}")
-    for relocated in (
-        "a few dozen land-use hearing notices a year across all 59 community boards",
-        "no City dataset publishes a dated board calendar",
-        "disagree with what boards publish on their own sites",
-        "records the board office address, not the meeting venue",
-        "rounded to a whole number and approximate",
-        "nominate half of the board's members",
-    ):
-        check(relocated in flat, f"{url} lost the relocated provenance {relocated!r}")
-    check(flat.count("<dt>Fetched</dt>") >= 6, f"{url} does not date every fetched source")
-    check(
-        flat.count("<dt>Freshness window</dt>") >= 8,
-        f"{url} does not state a freshness window per source",
-    )
-    _check_markup_safety(url, references)
-    _check_links(url, references, site)
-    print(f"GET /references/  {status}  {len(references)} bytes")
+    # A route this site once had. The deployed host has no rewrite rule, so anything other
+    # than 404 would mean a stale page is still being served.
+    status, _, _ = fetch(base + "/district/99/")
+    check(status == 404, f"/district/99/ returned {status}, expected 404")
+    print(f"GET /district/99/  {status}  (expected 404)")
+
+    # `address.js` ships and no page loads it: the feature is unported, deliberately kept.
+    # Its privacy promises are asserted anyway, because the file is reachable and R33 is
+    # about what the code does with a typed address, not about which page hosts it.
+    status, _, address_js = fetch(base + "/assets/address.js")
+    check(status == 200, f"address.js returned {status}")
+    address_code = _strip_comments(address_js)
+    # R33: the geocoder must be asked not to log the query.
+    check("private=true" in address_code, "address.js omits private=true")
+    for banned in ("localStorage", "sessionStorage", "pushState", "document.cookie"):
+        check(banned not in address_code, f"address.js touches {banned}")
+    check("innerHTML" not in address_code, "address.js uses innerHTML")
+
+    # Every module a reader runs, checked for the one sink that turns scraped text into
+    # markup. The pytest suite greps `assets/*.js`; these are the files that replaced it.
+    module_paths = ["/assets/boot.mjs", "/apps/shared/data.mjs"] + [
+        f"/apps/{program}/app.mjs" for program in programs
+    ]
+    for path in module_paths:
+        _, _, module_source = fetch(base + path)
+        for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+            check(
+                sink not in _strip_comments(module_source),
+                f"{path} uses {sink}, which puts scraped upstream text into the page "
+                f"as markup (docs/phase-1-scope.md §4.1)",
+            )
+    print(f"markup sinks: {len(module_paths)} shipped modules checked")
 
     # The committed fixture, not the gitignored cache, so this runs on a fresh clone.
     boards = json.loads((REPO_ROOT / "tests" / "fixtures" / "community_boards.json").read_text())
@@ -358,37 +316,44 @@ def _run_checks(base: str, site: Path) -> None:
         for field in ("cb_chair", "cb_district_manager")
         if len((row.get(field) or "").strip()) > 4
     }
-    # Scoped to the boards section: Frank Morano is the Council Member for District 51
-    # and chair of Staten Island CB 3, so an unscoped check calls his name a leak.
-    boards_section = re.compile(
-        r'<section class="boards">(.*?)</section>', re.IGNORECASE | re.DOTALL
-    )
-    leaked = []
-    checked_pages = 0
-    for page in (site / "district").rglob("index.html"):
-        match = boards_section.search(page.read_text())
-        if not match:
-            continue
-        checked_pages += 1
-        leaked += [
-            f"{name} in district/{page.parent.name}" for name in names if name in match.group(1)
-        ]
-    check(
-        checked_pages >= DISTRICT_COUNT,
-        f"only {checked_pages} district pages had a boards section",
-    )
+    check(bool(names), "the fixture carries no officer names, so nothing was checked")
 
-    # Board pages are entirely about one board, so the whole page is in scope.
-    board_pages = 0
-    for page in (site / "board").rglob("index.html"):
-        board_pages += 1
-        html = page.read_text()
-        leaked += [f"{name} in board/{page.parent.name}" for name in names if name in html]
-    check(board_pages >= BOARD_COUNT, f"only {board_pages} board pages checked")
+    # Structural first, and this is the assertion that carries the promise: the build must not
+    # emit a chair or district-manager field at all. A string sweep can be argued with; a
+    # missing field cannot.
+    _, _, preview_body = fetch(base + "/data/preview.json")
+    preview_doc = json.loads(preview_body)
+    emitted_fields = {key for record in preview_doc.get("boards", {}).values() for key in record}
+    forbidden = emitted_fields & {"cb_chair", "cb_district_manager", "chair", "district_manager"}
+    check(not forbidden, f"the board payload emits officer fields: {sorted(forbidden)}")
+
+    # Then the string sweep, over the text this project authors. Two exclusions, both
+    # measured rather than assumed:
+    #
+    # * A Council Member's name is rendered on purpose — they are an elected official and
+    #   naming them is the point of the site. The two sets genuinely overlap: Frank Morano is
+    #   the Member for District 51 *and* a `cb_chair` in the City's board dataset, so a bare
+    #   string sweep flags the site's own intended output.
+    # * `board-meetings.json` carries each board's own calendar titles verbatim, and a board
+    #   that publishes "OUTDOOR DINING WORKING GROUP - Valerie De La Rosa, Chair" has named
+    #   its own officer in its own publication. Rewriting that would mangle the board's words
+    #   to enforce a rule about the City's dataset. The promise is that *we* do not republish
+    #   those fields, not that the name can never reach a reader from anywhere.
+    members = {
+        (record.get("member") or {}).get("name", "").strip()
+        for record in preview_doc.get("districts", {}).values()
+    }
+    ours = names - {name for name in members if name}
+    leaked = []
+    checked = 0
+    for served in ("/index.html", "/data/preview.json", "/data/lookup.json"):
+        _, _, body = fetch(base + served)
+        checked += 1
+        leaked += [f"{name} in {served}" for name in ours if name in body]
     check(not leaked, f"board chair/district-manager names leaked: {leaked[:3]}")
     print(
-        f"privacy: {len(names)} board officer names checked against the boards "
-        f"section of {checked_pages} pages"
+        f"privacy: no officer fields emitted; {len(ours)} of {len(names)} names swept over "
+        f"{checked} artifacts ({len(names) - len(ours)} also hold an elected seat)"
     )
 
 

@@ -35,9 +35,11 @@ def _build(args: argparse.Namespace) -> int:
         print(f"build refused: {error}", file=sys.stderr)
         return 1
 
+    # Not "pages": there is one page. The counts are what the programs can answer about, so
+    # they are the covered districts and boards rather than files written.
     print(
-        f"built {report['districts']} district pages and "
-        f"{report['board_pages']} board pages -> {report['out']}"
+        f"built the desktop, covering {report['districts']} districts and "
+        f"{report['board_pages']} community boards -> {report['out']}"
     )
     print(f"  meetings parsed : {report['meetings_parsed']}")
     print(f"  shortlist shown : {report['shortlist']}")
@@ -61,7 +63,7 @@ def _build(args: argparse.Namespace) -> int:
 def _fetch(args: argparse.Namespace) -> int:
     raw = (REPO_ROOT / args.raw).resolve()
     if args.only is None and not args.force:
-        print("refreshing the cache (district pages take ~8.5 min at the rate")
+        print("refreshing the cache (the district fetch takes ~8.5 min at the rate")
         print("council.nyc.gov's robots.txt asks for; skipped if already fresh)")
 
     try:

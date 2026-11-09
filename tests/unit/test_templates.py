@@ -17,26 +17,16 @@ from showup import templates
 
 TEMPLATE_DIR = Path(templates.__file__).parent / "templates"
 
-#: Every template that ships, pinned so a new one cannot quietly skip the voice guard.
-TEMPLATES = {
-    "board.html",
-    "district.html",
-    "index.html",
-    "window.html",
-    "chrome.html",
-    "districts.html",
-    "boards.html",
-    "macros.html",
-    "map.html",
-    "not_found.html",
-    "references.html",
-}
+#: Every template that ships, pinned so a new one cannot quietly skip the voice guard. One,
+#: since the front end became a window manager: `index.html` is the desktop's mount point and
+#: every other surface is built in JavaScript.
+TEMPLATES = {"index.html"}
 
 
 class TestTheEnvironment:
     def test_the_templates_ship_inside_the_package(self):
         # A template left out of the wheel would only fail after install.
-        assert templates.environment().get_template("window.html")
+        assert templates.environment().get_template("index.html")
 
     def test_escaping_is_on_without_asking(self):
         rendered = (
@@ -54,15 +44,15 @@ class TestTheEnvironment:
 class TestQuoteEntities:
     def test_quotes_are_spelled_the_way_html_escape_spelled_them(self):
         """MarkupSafe writes `&#39;` and `&#34;`; both spellings are inert, and keeping
-        `html.escape`'s is what makes the migration provably byte-identical."""
-        assert templates.fragment("em", 'Hell\'s "Kitchen"') == (
-            "<em>Hell&#x27;s &quot;Kitchen&quot;</em>"
-        )
+        `html.escape`'s is what makes the migration provably byte-identical.
 
-
-class TestPercentFilter:
-    def test_a_share_becomes_a_whole_number_percentage(self):
-        assert templates.environment().filters["percent"](0.444) == "44%"
+        Asserted through `render`, which is the only path a page takes, rather than through
+        the macro renderer it used to use — macros went with the static templates.
+        """
+        page = templates.render("index.html", title='Hell\'s "Kitchen"')
+        assert "Hell&#x27;s &quot;Kitchen&quot;" in page
+        assert "&#39;" not in page
+        assert "&#34;" not in page
 
 
 class TestVoice:
@@ -110,4 +100,3 @@ class TestVoice:
     def test_the_templates_checked_are_the_ones_that_ship(self):
         """A guard that stops running when a template is added is not a guard."""
         assert {path.name for path in TEMPLATE_DIR.glob("*.html")} == TEMPLATES
-        assert "references.html" in TEMPLATES

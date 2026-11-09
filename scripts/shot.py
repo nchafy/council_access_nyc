@@ -28,14 +28,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: docs/accessibility-pass.md.
 VIEWPORTS = {"narrow": (500, 1400), "desktop": (1280, 1600)}
 
-PAGES = {
-    "index": "/",
-    "district-35": "/district/35/",
-    # The deliberate degraded-state page (CLAUDE.md).
-    "district-3": "/district/3/",
-    "board-302": "/board/302/",
-    "references": "/references/",
-}
+#: One entry, because the build writes one document. The district, board and references
+#: shots went with those routes; what a program looks like inside its window is not a page
+#: this script can navigate to, so `tests/browser/test_webxp.py` is where those are driven.
+PAGES = {"index": "/"}
 
 
 def main(argv: list[str] | None = None) -> int:

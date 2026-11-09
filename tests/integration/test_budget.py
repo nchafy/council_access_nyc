@@ -45,11 +45,23 @@ class TestPageWeight:
             f"left. Parts: {heaviest.parts}"
         )
 
-    def test_all_the_javascript_together_stays_small(self, site):
-        """A second, tighter ceiling: a framework would hide inside the 60 KB page budget."""
+    def test_the_document_blocks_on_exactly_one_script(self, site):
+        """The 12 KB script ceiling counted the JavaScript a page blocks on, and `.js` is no
+        longer how this site spells a script: the desktop's one tag is `/assets/boot.mjs`, so
+        a filter spelling only `.js` asserted 0 bytes against 12288 and could not fail.
+
+        What that ceiling was for — "a framework would hide inside the 60 KB page budget" —
+        is no longer measurable from the HTML: `boot.mjs` imports the window manager, which
+        imports every program, and the reader downloads ~40 KB gzipped of modules after first
+        paint. `scripts/perf.py` reports that total; budgeting it is an owner decision, so
+        this asserts only the part the document itself blocks on.
+        """
         limit = budget()["script_gzip_bytes"]
         weight = page_weight(site, "/")
-        scripts = {name: size for name, size in weight.parts.items() if name.endswith(".js")}
+        scripts = {
+            name: size for name, size in weight.parts.items() if name.endswith((".js", ".mjs"))
+        }
+        assert list(scripts) == ["/assets/boot.mjs"], scripts
         assert sum(scripts.values()) <= limit, (
             f"script totals {sum(scripts.values())} bytes gzipped, over the {limit} "
             f"ceiling: {scripts}"

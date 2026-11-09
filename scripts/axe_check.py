@@ -22,7 +22,8 @@ from typing import Any
 
 from cdp import Browser, CDPError, find_chrome
 from fetch_axe import AXE_SOURCE, AxeFetchError, ensure_axe
-from pageset import REPRESENTATIVE, document_file, every_page
+from pageset import PROGRAM_SURFACES, REPRESENTATIVE, Surface, document_file, every_page
+from ready import await_declared_ready
 from serve import background_server
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,14 +35,31 @@ GATING_TAGS = ("wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"
 ADVISORY_TAGS = ("best-practice",)
 
 #: Rules that must actually have run, or "0 violations" is not a result. Measured: the 404
-#: exercises 11, a district page 14.
+#: exercises 11, a district page 14, and the desktop 23.
 MINIMUM_RULES_EXERCISED = 8
 
+#: The same floor for a window, which is a scoped fragment rather than a document and so has
+#: no `html-has-lang`, `document-title`, `landmark-*` or `page-has-heading-one` to run.
+#: Measured over the seven surfaces: the Readme is the thinnest at 6, then the folder and the
+#: district list at 12, the board list 13, the map 15, and a populated board 16.
+MINIMUM_WINDOW_RULES = 5
 
-def _run_axe(page: Any, tags: tuple[str, ...]) -> dict[str, Any]:
-    """Evaluate axe in the page and return its raw result for the given tags."""
+#: Elements a window must contain before a clean result from it means anything. A window that
+#: mounted nothing still answers its selector, and axe over an empty div reports no
+#: violations. Measured over the five programs: the map is the thinnest at 29 — a canvas and
+#: its controls — then the folder 36, the Readme 58, and the two lists 208 and 243.
+MINIMUM_WINDOW_ELEMENTS = 10
+
+
+def _run_axe(page: Any, tags: tuple[str, ...], context: str = "document") -> dict[str, Any]:
+    """Evaluate axe in the page and return its raw result for the given tags.
+
+    `context` is the JavaScript expression axe is scoped to. It is `document` for a route and
+    a window's own selector for a program, so a finding is reported against the surface that
+    owns it rather than against every window the desktop happens to have open.
+    """
     options = json.dumps({"runOnly": {"type": "tag", "values": list(tags)}})
-    return page.evaluate(f"axe.run(document, {options})", await_promise=True)
+    return page.evaluate(f"axe.run({context}, {options})", await_promise=True)
 
 
 def _summarise(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -73,8 +91,94 @@ def axe_source_text() -> str:
     return AXE_SOURCE.read_text(encoding="utf-8")
 
 
-def check(root: Path, paths: list[str]) -> dict[str, Any]:
-    """Run axe over each path. One browser, one server, one page target for all of them."""
+def _record(
+    report: dict[str, Any],
+    page: Any,
+    name: str,
+    context: str,
+    started: float,
+    floor: int = MINIMUM_RULES_EXERCISED,
+) -> None:
+    """Run both passes over one surface and fold the result into `report`."""
+    conformance = _run_axe(page, GATING_TAGS, context)
+    gating = _summarise(conformance)
+    advisory = _summarise(_run_axe(page, ADVISORY_TAGS, context))
+    # Reported, not failed: "incomplete" is axe declining to decide.
+    incomplete = [item["id"] for item in (conformance.get("incomplete") or [])]
+    # Exercised, not passed: a rule that failed was still run.
+    exercised = len(conformance.get("passes") or []) + len(gating) + len(incomplete)
+    if exercised < floor:
+        raise CDPError(
+            f"{name}: axe exercised only {exercised} rules, expected at least {floor}. "
+            "The surface probably did not load, or axe did not inject — a clean result "
+            "here would be meaningless."
+        )
+    report["pages"][name] = {
+        "violations": gating,
+        "advisory": advisory,
+        "incomplete": incomplete,
+        "exercised": exercised,
+        "seconds": round(time.monotonic() - started, 2),
+    }
+    report["violations"] += len(gating)
+    report["advisory"] += len(advisory)
+    report["incomplete"] += len(incomplete)
+
+
+def _open(page: Any, surface: Surface) -> str:
+    """Launch `surface`'s program, press its click if it has one, and return its selector.
+
+    `launch` resolves after the program's own `ready` hook, so awaiting it is the readiness
+    signal for a window and no settling time is guessed. It answers null for a program that
+    is not registered, which is a stale `apps/manifest.mjs` and must fail here.
+    """
+    scope = f".app-{surface.program}"
+    opened = page.evaluate(
+        f"window.webxp.launch({surface.program!r}).then((win) => Boolean(win))",
+        await_promise=True,
+    )
+    if not opened:
+        raise CDPError(
+            f"{surface.name}: the desktop has no program {surface.program!r}, so nothing was "
+            "checked. `apps/manifest.mjs` is probably stale — run `make apps`."
+        )
+    # A window that mounted nothing answers its own selector, and axe over an empty div
+    # reports no violations. Asserted directly rather than inferred from the rule count,
+    # which a thin window can legitimately hold down.
+    held = page.evaluate(
+        f"(() => {{ const el = document.querySelector({scope!r});"
+        " return el ? el.querySelectorAll('*').length : -1; })()"
+    )
+    if held < MINIMUM_WINDOW_ELEMENTS:
+        raise CDPError(
+            f"{surface.name}: {scope} holds {held} elements, expected at least "
+            f"{MINIMUM_WINDOW_ELEMENTS}. The window is empty or absent, so a clean result "
+            "from it would be meaningless."
+        )
+    if surface.click:
+        # Loud rather than skipped: a selector that matches nothing would otherwise leave this
+        # surface checked in its empty state under the name of its populated one.
+        hit = page.evaluate(
+            f"(() => {{ const el = document.querySelector({scope + ' ' + surface.click!r});"
+            " if (!el) return false; el.click(); return true; })()"
+        )
+        if not hit:
+            raise CDPError(
+                f"{surface.name}: nothing matched {surface.click!r} inside {scope}, so the "
+                "surface was never put into the state it is named for."
+            )
+    return scope
+
+
+def check(
+    root: Path, paths: list[str], surfaces: tuple[Surface, ...] = PROGRAM_SURFACES
+) -> dict[str, Any]:
+    """Run axe over each path, then over each program's window. One browser, one server.
+
+    Routes and surfaces are both checked because the desktop is one document and seven
+    programs: a sweep of routes alone reaches the wallpaper, the taskbar and the folder that
+    autostarts, and none of the windows a reader actually reads.
+    """
     axe_source = axe_source_text()
     report: dict[str, Any] = {"pages": {}, "violations": 0, "advisory": 0, "incomplete": 0}
 
@@ -83,31 +187,30 @@ def check(root: Path, paths: list[str]) -> dict[str, Any]:
         for path in paths:
             started = time.monotonic()
             page.navigate(base + path)
+            # Before axe, not after: a desktop measured mid-build reports whatever its
+            # half-built state happened to be. Measured — a sweep with no wait here found a
+            # contrast failure on a loading placeholder that is removed on mount, and three
+            # title boxes under the 24px floor that measure exactly 24px at rest.
+            await_declared_ready(page)
             # Re-injected per navigation: a page load discards the previous world.
             page.evaluate(axe_source)
-            conformance = _run_axe(page, GATING_TAGS)
-            gating = _summarise(conformance)
-            advisory = _summarise(_run_axe(page, ADVISORY_TAGS))
-            # Reported, not failed: "incomplete" is axe declining to decide.
-            incomplete = [item["id"] for item in (conformance.get("incomplete") or [])]
-            # Exercised, not passed: a rule that failed was still run.
-            exercised = len(conformance.get("passes") or []) + len(gating) + len(incomplete)
-            if exercised < MINIMUM_RULES_EXERCISED:
-                raise CDPError(
-                    f"{path}: axe exercised only {exercised} rules, expected at least "
-                    f"{MINIMUM_RULES_EXERCISED}. The page probably did not load, or "
-                    "axe did not inject — a clean result here would be meaningless."
+            _record(report, page, path, "document", started)
+
+        if surfaces:
+            page.navigate(base + "/")
+            await_declared_ready(page)
+            page.evaluate(axe_source)
+            for surface in surfaces:
+                started = time.monotonic()
+                scope = _open(page, surface)
+                _record(
+                    report,
+                    page,
+                    surface.name,
+                    f"document.querySelector({scope!r})",
+                    started,
+                    MINIMUM_WINDOW_RULES,
                 )
-            report["pages"][path] = {
-                "violations": gating,
-                "advisory": advisory,
-                "incomplete": incomplete,
-                "exercised": exercised,
-                "seconds": round(time.monotonic() - started, 2),
-            }
-            report["violations"] += len(gating)
-            report["advisory"] += len(advisory)
-            report["incomplete"] += len(incomplete)
     return report
 
 
@@ -130,7 +233,7 @@ def format_report(report: dict[str, Any], *, verbose: bool = False) -> str:
                 lines.append(f"review {path}  {rule} — axe could not decide; check by hand")
     pages = len(report["pages"])
     lines.append(
-        f"{pages} pages checked: {report['violations']} WCAG 2.2 AA violations, "
+        f"{pages} surfaces checked: {report['violations']} WCAG 2.2 AA violations, "
         f"{report['advisory']} advisory, {report['incomplete']} needing human review"
     )
     return "\n".join(lines)

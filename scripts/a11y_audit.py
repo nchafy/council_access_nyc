@@ -7,6 +7,10 @@ keyboard audit presses real `Tab` keys; the tree audit reads Chrome's own access
 tree, which cannot judge whether a name is useful but can prove names, landmarks and
 unskipped heading levels exist.
 
+The no-JavaScript audit and the address-box audit were deleted on 2026-11-08. The owner
+dropped the no-JavaScript promise when the front end became a window manager — there is no
+static version of one to fall back to — and the address box has no page to be reached on.
+
     python3 scripts/a11y_audit.py              # every page type
     python3 scripts/a11y_audit.py -v           # list every check, not just failures
 """
@@ -16,7 +20,6 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -24,16 +27,13 @@ from typing import Any
 
 from cdp import Browser, CDPError, Session, find_chrome
 from pageset import REPRESENTATIVE, document_file
+from ready import NotReadyError, await_declared_ready
 from serve import background_server
-
-from showup.model import BOARD_COUNT, DISTRICT_COUNT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: WCAG 2.4.7 wants a visible ring. The thinnest any sheet here draws is the base map's 2px
-#: on the map route (`xp.css`); the document pages draw 3px. The floor sits at the thinner of
-#: the two, which means a 3px ring dropping to 2px on a document page is not caught — a
-#: narrower check would have to know which sheet the page loaded.
+#: WCAG 2.4.7 wants a visible ring. webxp draws 2px, which is the thinnest ring on the
+#: desktop and so the floor: there is one document now, and it loads one set of sheets.
 MINIMUM_OUTLINE_PX = 2.0
 
 #: Roles that a person operates, and must therefore be able to identify.
@@ -52,8 +52,14 @@ INTERACTIVE_ROLES = frozenset(
 REQUIRED_LANDMARKS = ("banner", "main", "contentinfo")
 
 #: Paths whose shape is not a window, and the landmarks they owe instead.
+#:
+#: The desktop owes no `contentinfo`, for the same reason it owes no `banner`: it has no
+#: footer. The fetch date and the staleness notice moved into the Readme program when the
+#: pages they sat on were deleted, and requiring the landmark here would only produce an
+#: empty one. The promise itself is still checked, in the window that now carries it —
+#: `tests/browser/test_console.py::TestTheStalenessNoticeReallyRenders`.
 LANDMARKS_BY_PATH = {
-    "/": ("main", "contentinfo", "navigation"),
+    "/": ("main", "navigation"),
 }
 
 
@@ -88,6 +94,10 @@ TAG_FOCUSABLE_JS = """
       .trim()
       .slice(0, 40),
     positiveTabindex: Number(element.getAttribute('tabindex') || 0) > 0,
+    // An in-page anchor as the first stop is the skip-link shape. Read here because the
+    // bypass check below has two shapes and has to know which one it is looking at.
+    skipLink:
+      element.tagName === 'A' && (element.getAttribute('href') || '').startsWith('#'),
   }));
 })()
 """
@@ -108,7 +118,10 @@ FOCUS_STATE_JS = """
       : null,
     tag: focused.tagName.toLowerCase(),
     text: (focused.textContent || focused.value || '').trim().slice(0, 40),
-    inMain: !!focused.closest('main'),
+    // Both spellings of the landmark. A `main` element and a `role="main"` are one thing
+    // to a screen reader, and the desktop surface is the second: it is built by the
+    // vendored shell as a div, so a tag-name test could never be satisfied there.
+    inMain: !!focused.closest('main, [role="main"]'),
     outlineWidth: parseFloat(style.outlineWidth) || 0,
     outlineStyle: style.outlineStyle,
     // A ring drawn in the same colour as what is behind it is not a ring.
@@ -118,28 +131,6 @@ FOCUS_STATE_JS = """
   };
 })()
 """
-
-
-def _poll(
-    page: Session,
-    expression: str,
-    *,
-    until: Callable[[Any], bool] = bool,
-    timeout: float = 15.0,
-) -> Any:
-    """Evaluate until the value satisfies `until`, then return it.
-
-    A timeout returns the last value rather than raising, so the caller reports a named
-    failing check instead of a crashed audit.
-    """
-    deadline = time.monotonic() + timeout
-    value = None
-    while time.monotonic() < deadline:
-        value = page.evaluate(expression)
-        if until(value):
-            return value
-        time.sleep(0.1)
-    return value
 
 
 @dataclass(frozen=True)
@@ -165,35 +156,6 @@ def _focus_after_each_tab(page: Session, presses: int) -> list[dict[str, Any]]:
     return focus_states
 
 
-class NotReadyError(Exception):
-    """A page that promised to declare itself ready never did."""
-
-
-def _await_declared_ready(page: Session, attempts: int, pause: float) -> None:
-    """Block until a page that carries `data-ready-when` sets the matching `data-ready`.
-
-    Waiting for the focusable list to stop changing is not enough on its own, because a
-    plateau before the work starts looks exactly like a plateau after it finished. `/map/`
-    imports MapLibre only after the first paint and reveals four controls seconds later, so
-    two early reads agreeing meant the Tab presses then ran against a list of ten while the
-    page had fourteen stops — the last two looked unreachable and the order looked wrong
-    (measured 2026-11-05).
-
-    A page that does not promise readiness is left to the stability rule below.
-    """
-    promised = page.evaluate("document.documentElement.dataset.readyWhen || null")
-    if not promised:
-        return
-    for _ in range(attempts):
-        if page.evaluate("document.documentElement.dataset.ready || null") == promised:
-            return
-        time.sleep(pause)
-    raise NotReadyError(
-        f"the page declares data-ready-when={promised!r} but never set data-ready; "
-        f"waited {attempts * pause:.1f}s"
-    )
-
-
 def _settled_focusables(page: Session, attempts: int = 40, pause: float = 0.25) -> list[Any]:
     """The focusable list, once the page is ready and two consecutive reads agree.
 
@@ -202,7 +164,7 @@ def _settled_focusables(page: Session, attempts: int = 40, pause: float = 0.25) 
     once would measure a list that then changes under the Tab presses, and every index after
     the new element would look unreachable.
     """
-    _await_declared_ready(page, attempts, pause)
+    await_declared_ready(page, attempts, pause)
     previous = page.evaluate(TAG_FOCUSABLE_JS)
     for _ in range(attempts):
         time.sleep(pause)
@@ -246,19 +208,27 @@ def audit_keyboard(page: Session, path: str) -> list[Check]:
     landed_states = [state for state in focus_states if not state["outside"]]
 
     first_focus = focus_states[0]
-    record(
-        "the first Tab lands on the skip link",
-        not first_focus["outside"] and first_focus["index"] == 0 and first_focus["tag"] == "a",
-        f"first Tab went to {first_focus.get('tag')} {first_focus.get('text')!r}",
-    )
-    # The skip link is parked at left:-9999px and only pulled back on :focus.
-    record(
-        "the skip link is visible once focused",
-        not first_focus["outside"]
-        and first_focus["rect"]["left"] >= 0
-        and first_focus["rect"]["top"] >= 0,
-        f"focused skip link sits at {first_focus.get('rect')}, off-screen",
-    )
+    if focusable[0]["skipLink"]:
+        record(
+            "the first Tab lands on the skip link",
+            not first_focus["outside"] and first_focus["index"] == 0 and first_focus["tag"] == "a",
+            f"first Tab went to {first_focus.get('tag')} {first_focus.get('text')!r}",
+        )
+        # The skip link is parked at left:-9999px and only pulled back on :focus.
+        record(
+            "the skip link is visible once focused",
+            not first_focus["outside"]
+            and first_focus["rect"]["left"] >= 0
+            and first_focus["rect"]["top"] >= 0,
+            f"focused skip link sits at {first_focus.get('rect')}, off-screen",
+        )
+    else:
+        record(
+            "the first Tab lands on content, not on chrome",
+            not first_focus["outside"] and first_focus["inMain"],
+            f"first Tab went to {first_focus.get('tag')} {first_focus.get('text')!r}, "
+            "which is outside <main>",
+        )
 
     visited_indexes = [state["index"] for state in landed_states if state["index"] is not None]
     expected_indexes = list(range(len(focusable)))
@@ -302,19 +272,51 @@ def audit_keyboard(page: Session, path: str) -> list[Check]:
     return checks
 
 
-def audit_skip_link(page: Session, path: str) -> list[Check]:
-    """Press the skip link and check it moves focus, not merely the scroll position."""
-    page.press("Tab")
-    page.press("Enter")
+def audit_bypass(page: Session, path: str) -> list[Check]:
+    """SC 2.4.1: a keyboard user reaches the content without walking through the chrome.
+
+    Two shapes, because the mechanism is not the requirement. A document page puts a skip
+    link first and this presses it, checking that focus moves and not merely the scroll
+    position. The desktop has no skip link and needs none — its content is the first thing
+    in the tab order, so there is no block to bypass — and what is checked there is that
+    this stays true. A page that grew chrome in front of its content would fail.
+    """
+    # Before reading the tab order, as in `audit_keyboard`: this ran on a freshly navigated
+    # page with no wait and measured a desktop that was still only a taskbar, so the first
+    # stop looked like the Start button and the page looked like chrome before content.
+    try:
+        await_declared_ready(page)
+    except NotReadyError as error:
+        return [Check(path, "the page became ready", False, str(error))]
+
+    focusable = page.evaluate(TAG_FOCUSABLE_JS)
+    if not focusable:
+        return [Check(path, "there is something to reach", False, "nothing to tab to")]
+
+    if focusable[0]["skipLink"]:
+        page.press("Tab")
+        page.press("Enter")
+        page.press("Tab")
+        state = page.evaluate(FOCUS_STATE_JS)
+        return [
+            Check(
+                path,
+                "the skip link moves focus into main",
+                not state["outside"] and state["inMain"],
+                f"after using the skip link, Tab went to {state.get('tag')} "
+                f"{state.get('text')!r}, which is not inside <main>",
+            )
+        ]
+
     page.press("Tab")
     state = page.evaluate(FOCUS_STATE_JS)
     return [
         Check(
             path,
-            "the skip link moves focus into main",
+            "the content comes before the chrome, so there is nothing to bypass",
             not state["outside"] and state["inMain"],
-            f"after using the skip link, Tab went to {state.get('tag')} "
-            f"{state.get('text')!r}, which is not inside <main>",
+            f"the first stop is {state.get('tag')} {state.get('text')!r}, outside <main>; "
+            "a page whose chrome comes first owes a skip link",
         )
     ]
 
@@ -396,101 +398,6 @@ def audit_tree(page: Session, path: str) -> list[Check]:
     return checks
 
 
-def audit_without_javascript(browser: Browser, base: str) -> list[Check]:
-    """R39: all procedural content must work with JavaScript disabled.
-
-    Turned off in the browser rather than inferred from the markup. The full lists moved off
-    the landing page on 2026-10-22 — it is a map button and an address box now — so the
-    counts are taken on the two index pages, which is where the no-JavaScript path lives.
-    The landing page is still where the address box must stay hidden without a script.
-    """
-    page = browser.page()
-    page.call("Emulation.setScriptExecutionDisabled", value=True)
-    try:
-        page.navigate(base + "/district/")
-        districts = page.evaluate("document.querySelectorAll('a[href^=\"/district/\"]').length")
-        page.navigate(base + "/board/")
-        boards = page.evaluate("document.querySelectorAll('a[href^=\"/board/\"]').length")
-        page.navigate(base + "/")
-        reachable = page.evaluate(
-            'document.querySelectorAll(\'a[href="/district/"], a[href="/board/"]\').length'
-        )
-        # The address box moved off the landing page on 2026-11-06, when it became a desktop
-        # of icons. `/map/` is the one page that offers it, so that is where the promise now
-        # has to hold: a form that cannot work without a script must not be offered.
-        page.navigate(base + "/map/")
-        address_hidden = page.evaluate(
-            "!!document.getElementById('address-section')"
-            " && document.getElementById('address-section').hasAttribute('hidden')"
-        )
-        page.navigate(base + "/")
-        scripts_off = page.evaluate("typeof window.__ranScript === 'undefined'")
-    finally:
-        page.call("Emulation.setScriptExecutionDisabled", value=False)
-
-    return [
-        Check("/", "script really was disabled", bool(scripts_off), "scripts still ran"),
-        Check(
-            "/",
-            f"all {DISTRICT_COUNT} districts are reachable as plain links",
-            districts >= DISTRICT_COUNT,
-            f"only {districts} district links without JavaScript",
-        ),
-        Check(
-            "/",
-            "both index pages are reachable from the landing page without JavaScript",
-            reachable >= 2,
-            f"only {reachable} of the two index links are on the landing page",
-        ),
-        Check(
-            "/",
-            f"all {BOARD_COUNT} boards are reachable as plain links",
-            boards >= BOARD_COUNT,
-            f"only {boards} board links without JavaScript",
-        ),
-        Check(
-            "/",
-            "the address box stays hidden without JavaScript",
-            bool(address_hidden),
-            "the address form is offered but cannot work — it needs script to submit",
-        ),
-    ]
-
-
-def audit_address_box_by_keyboard(browser: Browser, base: str) -> list[Check]:
-    """Reach the address box, type into it and submit, using only the keyboard.
-
-    A district number resolves locally, so this stays hermetic.
-
-    On `/map/` since 2026-11-06. The box was on the landing page, which is now a desktop of
-    icons; the map is the one page that offers it, so that is where the promise has to hold.
-    """
-    page = browser.page()
-    page.navigate(base + "/map/")
-    # The section ships `hidden`, so its reveal is also the readiness signal.
-    _poll(page, "!document.getElementById('address-section').hasAttribute('hidden')")
-
-    for _ in range(40):
-        page.press("Tab")
-        if page.evaluate("document.activeElement.id") == "address-input":
-            break
-    else:
-        return [Check("/map/", "the address box is reachable by Tab", False, "never focused it")]
-
-    page.type_text("35")
-    page.press("Enter")
-    # Submitting fetches /data/lookup.json first, so the navigation is two async hops away.
-    landed_path = _poll(page, "location.pathname", until=lambda value: value != "/map/") or "/map/"
-    return [
-        Check(
-            "/map/",
-            "the address box submits from the keyboard alone",
-            landed_path == "/district/35/",
-            f"Enter in the address box landed on {landed_path!r}, expected '/district/35/'",
-        )
-    ]
-
-
 def audit(root: Path, paths: list[str]) -> list[Check]:
     checks: list[Check] = []
     with background_server(root) as base, Browser() as browser:
@@ -500,9 +407,7 @@ def audit(root: Path, paths: list[str]) -> list[Check]:
             checks += audit_keyboard(page, path)
             checks += audit_tree(page, path)
             page.navigate(base + path)  # a fresh load, so focus starts at the top
-            checks += audit_skip_link(page, path)
-        checks += audit_without_javascript(browser, base)
-        checks += audit_address_box_by_keyboard(browser, base)
+            checks += audit_bypass(page, path)
     return checks
 
 

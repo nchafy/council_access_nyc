@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """WCAG contrast ratios for a stylesheet's custom properties.
 
-The dark steps on `/map/` are asserted rather than judged: `tests/unit/test_contrast.py`
-reads the values out of `assets/map.css` itself and fails if a colour is edited without the
+The site's dark steps are asserted rather than judged: `tests/unit/test_contrast.py` reads
+the values out of `assets/showup.css` itself and fails if a colour is edited without the
 ratio still clearing its threshold. Run this file directly to see the table.
 
     python3 scripts/contrast.py
@@ -71,7 +71,7 @@ def tokens(css: str, *, dark: bool) -> dict[str, str]:
 
 
 #: Foreground, background, threshold, and what the pair is. Read against the dark block of
-#: `site.css`, which is the one set of steps this project chose rather than inherited.
+#: `showup.css`, which is the one set of steps this project chose rather than inherited.
 DARK_PAIRS: tuple[tuple[str, str, float, str], ...] = (
     ("--ink", "--face", TEXT_MINIMUM, "body text on a control or panel face"),
     ("--ink", "--bg", TEXT_MINIMUM, "text in an input"),
@@ -92,15 +92,15 @@ DARK_PAIRS: tuple[tuple[str, str, float, str], ...] = (
 def report() -> int:
     """Print the table and return a process exit status.
 
-    Only `map.css` is read. The Luna title bars live in the base map's `xp.css`, which is
-    fetched rather than committed, so measuring them here would make this tool depend on a
-    build having run; white on `--title-a` is 14.25:1 and is that stylesheet's own to keep.
+    Only `showup.css` is read. The Luna title bars live in the vendored `webxp/theme.css`,
+    which is pinned upstream rather than ours to re-step; white on `--title-a` is 14.25:1 and
+    is that stylesheet's own to keep.
     """
-    css = (ASSETS / "site.css").read_text(encoding="utf-8")
+    css = (ASSETS / "showup.css").read_text(encoding="utf-8")
     dark, light = tokens(css, dark=True), tokens(css, dark=False)
 
     failures = 0
-    print("dark steps, from src/showup/assets/site.css")
+    print("dark steps, from src/showup/assets/showup.css")
     for foreground, background, need, why in DARK_PAIRS:
         measured = ratio(dark[foreground], dark[background])
         ok = measured >= need

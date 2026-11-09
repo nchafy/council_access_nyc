@@ -8,7 +8,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open \
-	axe axe-fetch a11y console perf reflow gates maplibre-fetch
+	axe axe-fetch a11y console perf reflow gates maplibre-fetch webxp-check
 
 PORT ?= 8000
 ROOT ?= site
@@ -63,8 +63,15 @@ browser: build axe-fetch ## every browser gate in one pytest run (~110 s)
 	# not every parser. `make test` is where the floor means something.
 	uv run pytest -m browser -v --no-cov
 
-check: ## the fast gate: lint + test
+# Exits 0 and says so when `~/claude/webxp` is not reachable: that repository has no remote,
+# so a fresh clone of this one cannot verify the copy, and a check that failed on absence
+# would make the gate unrunnable rather than making the copy verified.
+webxp-check: ## compare vendor/webxp against the commit PROVENANCE.md pins
+	uv run python scripts/check_webxp.py
+
+check: ## the fast gate: lint + test + the vendored copy
 	@$(MAKE) --no-print-directory lint
+	@$(MAKE) --no-print-directory webxp-check
 	@$(MAKE) --no-print-directory test
 
 verify: build ## the real gate: build, lint, test, then assert against a live server

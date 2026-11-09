@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ready-when="desktop">
 {#- The desktop. webxp builds the shell, the taskbar and every window at runtime, so this
     page is the mount point and nothing more.
 
@@ -26,6 +26,9 @@
 <link rel="stylesheet" href="/vendor/webxp/theme.css">
 <link rel="stylesheet" href="/vendor/webxp/shell.css">
 <link rel="stylesheet" href="/vendor/webxp/window.css">
+{# What this site adds to webxp's theme: the state colours it has no opinion about, and the
+   dark pass it ships none of. #}
+<link rel="stylesheet" href="/assets/showup.css">
 </head>
 <body>
 

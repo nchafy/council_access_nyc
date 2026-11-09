@@ -180,7 +180,10 @@ class TestSourceInvariants:
             )
 
     def test_no_innerhtml_anywhere_in_the_frontend(self):
-        for name in ("address.js", "site.js"):
+        # `site.js` was the second half of this sweep until 2026-11-08. It is deleted: every
+        # surface it drew is a webxp program now, and the programs' own modules are swept by
+        # `tests/integration/test_apps.py`.
+        for name in ("address.js",):
             source = _strip_js_comments(
                 (REPO_ROOT / "src" / "showup" / "assets" / name).read_text()
             )

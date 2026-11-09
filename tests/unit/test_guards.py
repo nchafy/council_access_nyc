@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 import pytest
 
-from showup import render
 from showup.build import BuildError, build_site
 from showup.crosswalk import (
     CrosswalkError,
@@ -25,8 +24,6 @@ from showup.crosswalk import (
 )
 from showup.crosswalk import load as load_crosswalk
 from showup.geo import Polygon, load_features, overlap_shares, simplify_rings, to_geojson
-from showup.model import District, DistrictBoard, Member, Office
-from showup.render import render_board, render_district
 from showup.sources.districts import _parse_committees
 from showup.urls import safe_url
 
@@ -253,114 +250,6 @@ class TestBuildGuards:
         assert (out / "index.html").exists()
 
 
-class TestRenderFallbacks:
-    def _member(self, **kwargs):
-        defaults = {
-            "name": "Jane Doe",
-            "seat_status": "filled",
-            "email": None,
-            "page_url": None,
-            "offices": (Office("District office", None, None),),
-            "committees": (),
-        }
-        defaults.update(kwargs)
-        return Member(**defaults)
-
-    def test_an_unlinkable_url_renders_as_inert_text(self):
-        district = District(number=9, neighborhoods=None, member=self._member())
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        # page_url is None, so the official-page row must not appear as a dead link.
-        assert 'href="None"' not in html
-
-    def test_an_empty_definition_list_renders_nothing(self):
-        district = District(
-            number=9,
-            neighborhoods=None,
-            member=self._member(offices=(), email=None, page_url=None),
-        )
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        assert "<h2>Council Member</h2>" in html
-
-    def test_a_window_end_of_none_says_so_rather_than_implying_completeness(self):
-        district = District(number=9, neighborhoods=None, member=None)
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        assert "No forward window" in html
-
-    def _board(self, **kwargs):
-        defaults = {
-            "code": "302",
-            "label": "Brooklyn Community Board 2",
-            "borough_name": "Brooklyn",
-            "share": 0.44,
-            "neighborhoods": None,
-            "address": None,
-            "phone": None,
-            "email": None,
-            "email_suppressed": None,
-            "website": None,
-            "board_meeting": None,
-            "cabinet_meeting": None,
-        }
-        defaults.update(kwargs)
-        return DistrictBoard(**defaults)
-
-    def test_a_board_with_a_website_links_it(self):
-        html = render_board(
-            self._board(website="https://brooklyncb6.org/"),
-            [(35, 0.44)],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
-        assert "brooklyncb6.org" in html
-
-    def test_a_board_with_no_cadence_says_so(self):
-        html = render_board(
-            self._board(),
-            [(35, 0.44)],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
-        assert "does not publish a meeting cadence" in html
-
-    def test_a_board_in_an_unknown_borough_still_renders(self):
-        html = render_board(
-            self._board(borough_name="Atlantis"),
-            [(35, 0.44)],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
-        assert "nyc.gov/communityboards" in html
-
-    def test_a_district_with_no_boards_routes_elsewhere(self):
-        district = District(number=9, neighborhoods=None, member=None, boards=())
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        assert "could not match a community board" in html
-
-
 class TestDistrictPageGuards:
     def test_a_standalone_role_line_attaches_to_the_committee_above(self):
         """Both role layouts occur in the real pages."""
@@ -392,61 +281,6 @@ class TestDistrictPageGuards:
 class TestUrlControlCharacters:
     def test_a_value_that_is_entirely_unprintable_after_a_base_is_rejected(self):
         assert safe_url("\x00\x01", base="https://nyc.legistar.com/") is None
-
-
-class TestRenderHelpers:
-    """Three helpers whose fallback branches the page-level tests do not reach."""
-
-    def test_link_with_no_url_renders_inert_text(self):
-        from showup.render import _link
-
-        assert _link(None, "Agenda") == '<span class="nolink">Agenda</span>'
-        assert "href" not in _link(None, "Agenda")
-
-    def test_link_escapes_both_url_and_label(self):
-        from showup.render import _link
-
-        out = _link("https://council.nyc.gov/?a=1&b=2", '<script>"')
-        assert "&amp;b=2" in out
-        assert "<script>" not in out
-
-    def test_an_internal_link_gets_no_noopener(self):
-        from showup.render import _link
-
-        assert "noopener" not in _link("/district/35/", "District 35")
-
-    def test_an_empty_definition_list_is_omitted_entirely(self):
-        from showup.render import _dl
-
-        assert _dl([]) == ""
-
-    def test_a_definition_list_drops_rows_with_no_value(self):
-        from showup.render import _dl
-
-        out = _dl([("Phone", "212-555-0000"), ("Fax", "")])
-        assert "Phone" in out
-        assert "Fax" not in out
-
-    def test_a_board_card_on_a_district_page_links_its_website(self):
-        from showup.render import _board_card
-
-        board = DistrictBoard(
-            code="302",
-            label="Brooklyn Community Board 2",
-            borough_name="Brooklyn",
-            share=0.44,
-            neighborhoods=None,
-            address=None,
-            phone=None,
-            email=None,
-            email_suppressed=None,
-            website="https://brooklyncb6.org/",
-            board_meeting=None,
-            cabinet_meeting=None,
-        )
-        out = _board_card(board)
-        assert "brooklyncb6.org" in out
-        assert 'href="/board/302/"' in out
 
 
 class TestFetchInvariantMessages:
@@ -523,23 +357,25 @@ class TestBuildBoardPageFloor:
     def test_a_crosswalk_with_too_few_distinct_boards_is_refused(
         self, raw_dir, tmp_path, monkeypatch
     ):
-        """59 board pages or none.
+        """59 boards or none.
 
         `load_crosswalk` checks every district has a board, not that all 59 boards are
-        reachable, so 58 referenced codes would quietly publish 58 pages.
+        reachable, so 58 referenced codes would quietly leave the programs unable to answer
+        about the other one. The floor moved from the board pages to `preview.json`, which is
+        the file those programs read.
         """
         # Real codes, because the build checks every crosswalk code against the dataset.
         from showup.sources.boards import load_boards
 
         codes = sorted(load_boards(FIXTURES / "community_boards.json"))
         assert len(codes) == 59
-        # Only the first 40 codes, so 19 boards would have no page.
+        # Only the first 40 codes, so 19 boards would be missing from the preview.
         districts = {str(n): [[codes[n % 40], 1.0]] for n in range(1, 52)}
         boards = {code: [[1, 1.0]] for code in codes}
         path = tmp_path / "c.json"
         path.write_text(json.dumps({"districts": districts, "boards": boards, "zips": {}}))
         monkeypatch.setattr("showup.build.CROSSWALK_PATH", path)
-        with pytest.raises(BuildError, match="board pages, expected 59"):
+        with pytest.raises(BuildError, match="40 boards, expected 51 and 59"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
 
 
@@ -555,26 +391,6 @@ class TestOverlapSharesEmptyTally:
         result = overlap_shares([big, missed], [big], spacing=1.0, min_share=0.01)
         assert result["missed"] == []
         assert result["big"], "the large polygon should still be sampled"
-
-
-class TestShortHelper:
-    def test_short_returns_empty_for_no_value(self):
-        from showup.render import _short
-
-        assert _short(None) == ""
-        assert _short("") == ""
-
-    def test_short_truncates_on_a_word_boundary_with_an_ellipsis(self):
-        from showup.render import _short
-
-        out = _short("A" * 80)
-        assert out.endswith("…")
-        assert len(out) <= 58
-
-    def test_short_leaves_a_fitting_value_alone(self):
-        from showup.render import _short
-
-        assert _short("Fort Greene, Clinton Hill") == "Fort Greene, Clinton Hill"
 
 
 class TestZipCrosswalkSkips:
@@ -599,11 +415,15 @@ class TestZipCrosswalkSkips:
 
 class TestTheAddressHarnessMatchesTheRealMarkup:
     """`address.js` returns early if any element it needs is missing, so a harness fixture
-    that drifts from the templates does not fail loudly — it silently stops testing.
+    that drifts from the script does not fail loudly — it silently stops testing.
 
     That happened on 2026-10-29: adding `#address-suggest` to both templates left the
     harness without it, `address.js` bailed, and four checks failed at once including
     "section revealed", which has nothing to do with suggestions.
+
+    The harness is the only surface left to check. No page hosts the box since the front end
+    became a window manager; `address.js` is kept unported, so `tests/browser/test_address_box.py`
+    against this fixture is the only thing exercising it.
     """
 
     #: Exactly the elements `address.js` refuses to start without.
@@ -626,105 +446,23 @@ class TestTheAddressHarnessMatchesTheRealMarkup:
         named = set(re.findall(r"!(\w+)", guard))
         assert named == {"form", "input", "status", "results", "section", "listbox"}, named
 
-    @pytest.mark.parametrize(
-        "path",
-        [
-            "tests/browser/harness.html",
-            # `index.html` is a desktop of icons as of 2026-11-06 and hosts no address box.
-            # `/map/` is the one page that does, and the harness mirrors it.
-            "src/showup/templates/map.html",
-        ],
-    )
+    @pytest.mark.parametrize("path", ["tests/browser/harness.html"])
     def test_every_required_element_is_present(self, path: str):
         markup = (REPO_ROOT / path).read_text(encoding="utf-8")
         missing = sorted(name for name in self.REQUIRED if f'id="{name}"' not in markup)
         assert not missing, f"{path} is missing {missing}; address.js will return early"
 
 
-class TestTheContactLinkBuilders:
-    """Constructed URLs, so each one is validated rather than trusted.
-
-    `safe_url` is deliberately not widened to cover `tel:` and `mailto:`: its contract is
-    https-and-allowlisted-host and it is the XSS boundary for upstream URLs, so these build
-    their own and check the shape.
-    """
-
-    @pytest.mark.parametrize(
-        ("published", "expected"),
-        [
-            ("(718) 467-5574", "tel:+17184675574"),
-            ("718-467-5574", "tel:+17184675574"),
-            ("1 (718) 467-5574", "tel:+17184675574"),
-            ("+1 718.467.5574", "tel:+17184675574"),
-            ("(718) 467-5574 ext. 12", None),
-            ("718-467-557", None),
-            ("call the office", None),
-            ("", None),
-            (None, None),
-        ],
-    )
-    def test_a_phone_becomes_a_dialable_link_or_nothing(self, published, expected):
-        assert render._tel_href(published) == expected
-
-    @pytest.mark.parametrize(
-        ("published", "expected"),
-        [
-            ("brooklyncb8@gmail.com", "mailto:brooklyncb8@gmail.com"),
-            ("  cb8@example.gov  ", "mailto:cb8@example.gov"),
-            ("not an address", None),
-            ("two@@at.example", None),
-            ("spaces in@example.com", None),
-            ("nodot@example", None),
-            ("", None),
-            (None, None),
-        ],
-    )
-    def test_an_email_becomes_a_mailto_or_nothing(self, published, expected):
-        assert render._mailto_href(published) == expected
-
-    def test_an_office_address_becomes_a_maps_search(self):
-        href = render._maps_href("1291 St. Marks Avenue, Brooklyn, NY 11213")
-        assert href is not None
-        assert href.startswith("https://www.google.com/maps/search/?api=1&query=")
-        assert "1291+St.+Marks+Avenue" in href
-
-    @pytest.mark.parametrize("blank", ["", "   ", None])
-    def test_a_blank_address_gets_no_map(self, blank):
-        assert render._maps_href(blank) is None
-
-    def test_a_neighbourhood_is_linked_by_search_never_by_a_guessed_path(self):
-        """A constructed `/wiki/<name>` would 404 on anything Wikipedia titles
-        differently and, worse, land on the wrong article for an ambiguous name."""
-        href = render._wikipedia_href("Crown Heights", "Brooklyn")
-        assert href is not None
-        assert "/w/index.php?search=" in href
-        assert "/wiki/" not in href
-        assert "Crown+Heights%2C+Brooklyn" in href
-
-    @pytest.mark.parametrize("blank", ["", "   "])
-    def test_a_blank_neighbourhood_gets_no_link(self, blank):
-        assert render._wikipedia_href(blank, "Brooklyn") is None
-
-    def test_a_neighbourhood_without_a_borough_still_resolves(self):
-        href = render._wikipedia_href("Weeksville", None)
-        assert href is not None
-        assert "search=Weeksville" in href
-
-    @pytest.mark.parametrize(
-        ("published", "names"),
-        [
-            (
-                "Crown Heights, Prospect Heights, and Weeksville",
-                ["Crown Heights", "Prospect Heights", "Weeksville"],
-            ),
-            ("Fort Greene and Clinton Hill", ["Fort Greene", "Clinton Hill"]),
-            ("Astoria", ["Astoria"]),
-            ("", []),
-            (None, []),
-        ],
-    )
-    def test_the_covers_line_splits_the_way_the_city_writes_it(self, published, names):
-        assert [item["name"] for item in render.neighbourhood_links(published, "Brooklyn")] == names
+#: Every stylesheet this project authors: what the desktop adds to the vendored theme, and
+#: one per program. Globbed rather than listed so a new program cannot skip the brace count.
+#: `vendor/webxp/*.css` is excluded on purpose — it is pinned upstream, not ours to edit.
+OUR_STYLESHEETS = sorted(
+    path.relative_to(REPO_ROOT).as_posix()
+    for path in [
+        REPO_ROOT / "src" / "showup" / "assets" / "showup.css",
+        *(REPO_ROOT / "src" / "showup" / "apps").glob("*/app.css"),
+    ]
+)
 
 
 class TestTheStylesheetParses:
@@ -737,9 +475,15 @@ class TestTheStylesheetParses:
     symptom was that the site looked wrong. Counting braces is cheaper than any of that.
     """
 
-    @pytest.mark.parametrize("name", ["site.css", "document.css", "map.css"])
+    def test_the_sheets_checked_are_the_ones_we_author(self):
+        """A guard that stops running when a program is added is not a guard."""
+        assert len(OUR_STYLESHEETS) == 1 + len(
+            list((REPO_ROOT / "src" / "showup" / "apps").glob("*/app.mjs"))
+        ), OUR_STYLESHEETS
+
+    @pytest.mark.parametrize("name", OUR_STYLESHEETS)
     def test_braces_balance(self, name: str):
-        text = (REPO_ROOT / "src" / "showup" / "assets" / name).read_text(encoding="utf-8")
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
         assert text.count("{") == text.count("}"), (
             f"{name} has {text.count('{')} opening and {text.count('}')} closing braces; "
             "an unbalanced sheet drops every rule after the stray one"

@@ -37,7 +37,9 @@ BUDGET_FILE = REPO_ROOT / "perf-budget.json"
 THROTTLED_SOCKET_S = 180.0
 
 #: One page of each type; siblings differ only in data, and throttled loads are the runtime.
-TIMED_PAGES = ("/", "/district/35/", "/board/302/")
+#: One, since the build writes one document: the district and board pages it used to time are
+#: programs inside this one now, so their load is this page's load.
+TIMED_PAGES = ("/",)
 
 #: No @import or preload following — neither is used, and `test_no_new_subresource_kinds` guards.
 STYLESHEET_RE = re.compile(r"""<link[^>]+rel=["']?stylesheet["']?[^>]*>""", re.IGNORECASE)
@@ -183,20 +185,37 @@ def main(argv: list[str] | None = None) -> int:
     print(format_weights(weights, limit))
     failed = any(weight.total > limit for weight in weights)
 
+    # `.mjs` as well as `.js`: the desktop's one script tag is `/assets/boot.mjs`, and a
+    # filter spelling only `.js` reported 0.0 KB against the ceiling — a pass that measured
+    # nothing.
     scripts = {
         name: size
         for weight in weights
         for name, size in weight.parts.items()
-        if name.endswith(".js")
+        if name.endswith((".js", ".mjs"))
     }
     script_limit = settings["script_gzip_bytes"]
     script_total = sum(scripts.values())
     failed = failed or script_total > script_limit
     print(
-        f"{'ok  ' if script_total <= script_limit else 'FAIL'} all JavaScript "
+        f"{'ok  ' if script_total <= script_limit else 'FAIL'} blocking JavaScript "
         f"{script_total / 1024:.1f} KB of the {script_limit / 1024:.0f} KB ceiling "
         f"({', '.join(f'{name} {size / 1024:.1f}' for name, size in sorted(scripts.items()))})"
     )
+
+    # What that ceiling no longer covers. `boot.mjs` imports the window manager, which imports
+    # every program, so the reader downloads the whole graph after first paint and no gate that
+    # reads the HTML can see it. Reported rather than gated: this needs a budget of its own, the
+    # way the map library has one, and that number is an owner decision.
+    module_files = sorted((root / "vendor" / "webxp").glob("*.mjs")) + sorted(
+        (root / "apps").rglob("*.mjs")
+    )
+    if module_files:
+        print(
+            f"     module graph (after first paint, no budget yet) "
+            f"{sum(gzipped_size(path.read_bytes()) for path in module_files) / 1024:.1f} KB "
+            f"across {len(module_files)} modules"
+        )
 
     # Both layers: the council geometry the address box needs, and the board geometry the
     # map's second layer draws. The front page fetches both.

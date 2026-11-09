@@ -29,7 +29,9 @@ ALLOWED_HOSTS = frozenset(
         "geosearch.planninglabs.nyc",
         "cb.nyc.gov",
         # Borough-president hosts, as nyc.gov itself lists them. Staten Island's is
-        # statenislandusa.com, which is not a .gov; see BP_SITES in render.py.
+        # statenislandusa.com, which is not a .gov. Nothing emits a link to one since the
+        # board pages went; they stay allowed because a board's own `website` field is
+        # scraped and could name one.
         "bronxboropres.nyc.gov",
         "www.brooklynbp.nyc.gov",
         "brooklynbp.nyc.gov",

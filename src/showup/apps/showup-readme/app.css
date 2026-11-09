@@ -11,3 +11,11 @@
 .app-showup-readme .readme-line { margin: 0 0 .7rem; max-width: 42rem; }
 
 .app-showup-readme .readme-freshness { font-weight: 700; }
+
+/* A source past its own max age. The fill is the warning pair from `showup.css`; the words
+   beside it carry the meaning, so the colour is never the only signal. */
+.app-showup-readme .readme-freshness.is-stale {
+  background: var(--urgent-bg);
+  color: var(--urgent-ink);
+  padding: .1rem .3rem;
+}

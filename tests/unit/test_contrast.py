@@ -1,8 +1,9 @@
 """The site's dark steps and state fills, asserted rather than judged.
 
-`xp.css` has no dark mode, so the site's is this project's own. The values are read out of
-`assets/site.css` itself, which is what makes this a check and not a record: edit a colour
-there without re-measuring and the pair that no longer clears its threshold fails here.
+The vendored `webxp` stylesheets ship no dark mode, so the site's is this project's own. The
+values are read out of `assets/showup.css` itself, which is what makes this a check and not
+a record: edit a colour there without re-measuring and the pair that no longer clears its
+threshold fails here.
 """
 
 from __future__ import annotations
@@ -24,8 +25,8 @@ ASSETS = Path(__file__).resolve().parents[2] / "src" / "showup" / "assets"
 
 
 @pytest.fixture(scope="module")
-def site_css() -> str:
-    return (ASSETS / "site.css").read_text(encoding="utf-8")
+def showup_css() -> str:
+    return (ASSETS / "showup.css").read_text(encoding="utf-8")
 
 
 class TestTheFormula:
@@ -51,8 +52,8 @@ class TestTheFormula:
 class TestTheStylesheetIsWhatIsRead:
     """Harness honesty: the parser must fail loudly rather than measure the wrong block."""
 
-    def test_the_dark_block_differs_from_the_light_one(self, site_css):
-        assert tokens(site_css, dark=True) != tokens(site_css, dark=False)
+    def test_the_dark_block_differs_from_the_light_one(self, showup_css):
+        assert tokens(showup_css, dark=True) != tokens(showup_css, dark=False)
 
     def test_asking_for_dark_steps_of_a_sheet_that_has_none_is_an_error(self):
         with pytest.raises(ValueError, match="no dark :root block"):
@@ -66,12 +67,12 @@ class TestTheStylesheetIsWhatIsRead:
         with pytest.raises(ValueError, match="no hex colours"):
             tokens(":root { --taskbar-h: 30px; }", dark=False)
 
-    def test_every_pair_names_a_token_the_dark_block_declares(self, site_css):
-        dark = tokens(site_css, dark=True)
+    def test_every_pair_names_a_token_the_dark_block_declares(self, showup_css):
+        dark = tokens(showup_css, dark=True)
         missing = sorted(
             {name for pair in DARK_PAIRS for name in pair[:2]} - set(dark),
         )
-        assert not missing, f"site.css's dark block no longer declares {missing}"
+        assert not missing, f"showup.css's dark block no longer declares {missing}"
 
 
 class TestTheDarkStepsClearTheirThresholds:
@@ -80,8 +81,8 @@ class TestTheDarkStepsClearTheirThresholds:
         DARK_PAIRS,
         ids=[f"{pair[0]}-on-{pair[1]}" for pair in DARK_PAIRS],
     )
-    def test_the_pair_passes(self, site_css, foreground, background, need, why):
-        dark = tokens(site_css, dark=True)
+    def test_the_pair_passes(self, showup_css, foreground, background, need, why):
+        dark = tokens(showup_css, dark=True)
         measured = ratio(dark[foreground], dark[background])
         assert measured >= need, (
             f"{foreground} on {background} is {measured:.2f}:1, under the {need}:1 "
@@ -90,11 +91,11 @@ class TestTheDarkStepsClearTheirThresholds:
 
     @pytest.mark.parametrize("state", ["warn", "urgent", "ok"])
     @pytest.mark.parametrize("dark", [False, True], ids=["light", "dark"])
-    def test_a_state_fill_carries_its_own_text(self, site_css, dark, state):
+    def test_a_state_fill_carries_its_own_text(self, showup_css, dark, state):
         """`xp.css` has no state colours — a warning, a deadline — so every step of these is
         ours, in both schemes. A deadline that cannot be read is the one thing on the page a
         reader came for."""
-        values = tokens(site_css, dark=dark)
+        values = tokens(showup_css, dark=dark)
         measured = ratio(values[f"--{state}-ink"], values[f"--{state}-bg"])
         assert measured >= TEXT_MINIMUM, (
             f"--{state}-ink on --{state}-bg is {measured:.2f}:1 in "

@@ -9,7 +9,7 @@ copied verbatim.
 | Commit | `27e60429db6335b4400bf86b13508cb86a5ca560` |
 | Subject | `locate the street pipeline's leftover speed in its short traversals` |
 | Refs | `main` pointed at it |
-| Source | `~/claude/webxp` — **local only, no remote** |
+| Source | `~/claude/webxp` → `git@github.com:nchafy/webxp.git` (private) |
 | Copied | 2026-11-09 |
 
 The commit is what identifies this copy, not a branch, and the files are read with
@@ -17,6 +17,18 @@ The commit is what identifies this copy, not a branch, and the files are read wi
 checkout is shared — it had 42 modified files when this copy was taken, including seven of
 these nine — and reading the working tree would have vendored another session's unfinished
 work under a commit that does not contain it.
+
+### It has a remote now
+
+Created on 2026-11-09 and `main` pushed to it, which is what makes the pin above durable.
+Until then the repository had only a placeholder `origin` (`git@github.com:User/UserRepo.git`)
+and no second copy of its history anywhere — see the section below for what that cost.
+
+This also means the bargain in "Why this is copied and not fetched" no longer holds: there
+is now a URL to fetch and an immutable object to pin, so this directory could be fetched and
+sha256-verified like `basemap.mjs` and `maplibre-gl.mjs` instead of committed here. Left as a
+copy for now because the owner's plan is for webxp to become the site rather than the
+dependency, which would retire this directory altogether.
 
 ### The previous pin is gone
 
@@ -27,9 +39,9 @@ This directory was pinned to `b8825ff7241a0452aa43341bb16b85835259e7b7` from 202
 repository recreated.
 
 `make webxp-check` reported `UNVERIFIABLE` rather than a match, which is the outcome it was
-built for. A repository with no remote has no second copy of its history, so a pin here is
-only as durable as one machine's `.git` — recorded so the next reader knows this can happen
-again rather than treating it as a one-off.
+built for. A repository with no remote has no second copy of its history, so a pin was only
+as durable as one machine's `.git`. That is the actual cause, and it is fixed: the commit
+above is an ancestor of `origin/main`, so losing the local checkout no longer loses the pin.
 
 ## Licence
 

@@ -109,10 +109,25 @@ export default {
       if (entry.hoods) lines.push(['Covers', entry.hoods]);
       if (facts.address) lines.push(['Office', facts.address]);
       if (facts.phone) lines.push(['Phone', facts.phone]);
+      if (facts.email) {
+        lines.push(['Email', { text: facts.email, href: `mailto:${facts.email}` }]);
+      } else if (facts.email_suppressed) {
+        // The reason, not a blank. The City withholds some addresses, and saying so is an
+        // answer where an empty cell reads as a board nobody can write to.
+        lines.push(['Email', facts.email_suppressed]);
+      }
       // The board's own words. Not expanded into dates: "Fourth Tuesday" is not a date until
       // somebody publishes one, and inventing twelve would read as a schedule.
       if (facts.cadence) lines.push(['Meets', facts.cadence]);
-      if (calendar && calendar.site) lines.push(['Website', { text: calendar.site, href: calendar.site }]);
+      if (facts.website) {
+        lines.push(['Website', { text: facts.website, href: facts.website }]);
+      } else if (facts.website_host) {
+        // A bare host the build would not vouch for as a URL. Carried as text for that
+        // reason, so this must not make it a link.
+        lines.push(['Website', `${facts.website_host} (the board's own domain, unverified)`]);
+      } else if (calendar && calendar.site) {
+        lines.push(['Website', { text: calendar.site, href: calendar.site }]);
+      }
 
       nodes.push(
         lines.length

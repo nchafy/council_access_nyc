@@ -322,6 +322,18 @@ def preview_payload(
                 "cadence": b.board_meeting,
                 "phone": b.phone,
                 "address": b.address,
+                # Added 2026-11-08, when the board pages became a webxp program: a reader who
+                # wants to write to a board rather than ring it had no address in this file,
+                # and the program is the only place that answer lives now.
+                "email": b.email,
+                # The City suppresses some addresses; the reason travels instead of the
+                # address, so the program can say why there is none rather than show a blank.
+                "email_suppressed": b.email_suppressed,
+                # The board's own site. `website_unlinked` is a bare host the build would not
+                # vouch for as a URL, so it is carried as text and the program must not make
+                # it a link.
+                "website": b.website,
+                "website_host": b.website_unlinked,
                 "tables": board_tables(
                     boards_to_districts.get(b.code, []), budget_requests.get(b.code)
                 ),

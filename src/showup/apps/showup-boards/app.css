@@ -1,0 +1,94 @@
+/* Community boards. Scoped under `.app-showup-boards`, which webxp puts on this window's body.
+ *
+ * Two panes: the 51 in a column that scrolls, and the facts beside them. The panes stack when
+ * the window is narrow, which is a window query and not a media query — a 400px window on a
+ * 1600px desktop has a phone's problem and `@media` cannot see it.
+ */
+
+.app-showup-boards .boards-panes {
+  display: grid;
+  grid-template-columns: 15rem 1fr;
+  gap: .6rem;
+  height: 100%;
+  min-height: 0;
+}
+
+/* `min-height: 0` so a grid child may be shorter than its content and scroll, instead of
+   pushing the window's own body past its frame. */
+.app-showup-boards .pick-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.app-showup-boards .detail-pane { overflow-y: auto; min-height: 0; padding-right: .2rem; }
+.app-showup-boards .detail-empty { margin: 0; color: var(--muted); }
+.app-showup-boards .pick-error { padding: .5rem; color: var(--urgent-ink); background: var(--urgent-bg); }
+
+/* The row is the target: two lines of text, comfortably past the 24px SC 2.5.8 floor, and a
+   reader aiming at the name cannot miss by hitting the gap beside it. */
+.app-showup-boards .pick {
+  display: flex;
+  flex-direction: column;
+  gap: .05rem;
+  width: 100%;
+  padding: .35rem .5rem;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.app-showup-boards .pick:hover,
+.app-showup-boards .pick:focus-visible { background: var(--title-a); color: #fff; }
+.app-showup-boards .pick:hover .pick-hoods,
+.app-showup-boards .pick:focus-visible .pick-hoods { color: #dfe8f5; }
+
+/* The current row keeps the selected blue after focus moves to the facts beside it, so the
+   list still says which one is showing. */
+.app-showup-boards .pick[aria-current="true"] { background: var(--title-b); color: #fff; }
+.app-showup-boards .pick[aria-current="true"] .pick-hoods { color: #dfe8f5; }
+
+.app-showup-boards .pick-name { font-weight: 700; }
+.app-showup-boards .pick-hoods {
+  font-size: 11px;
+  color: var(--muted);
+  /* Two lines at most: a district's neighbourhood list runs to 200 characters and would
+     otherwise make one row taller than the pane. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+@container window (max-width: 34rem) {
+  .app-showup-boards .boards-panes { grid-template-columns: 1fr; grid-template-rows: 12rem 1fr; }
+}
+
+/* The distinction sits above the panes, so the grid is the second row of the window rather
+   than the whole of it. */
+.app-showup-boards .boards-root {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  height: 100%;
+  min-height: 0;
+}
+.app-showup-boards .boards-note {
+  margin: 0;
+  padding: .45rem .6rem;
+  background: var(--face);
+  border: 1px solid var(--rule);
+  font-size: 11px;
+}
+.app-showup-boards .boards-panes { flex: 1 1 auto; min-height: 0; }

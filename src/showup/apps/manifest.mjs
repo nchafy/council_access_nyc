@@ -8,6 +8,8 @@
  */
 export const APPS = [
   'showup',
+  'showup-boards',
+  'showup-councils',
   'showup-map',
   'showup-readme',
 ];

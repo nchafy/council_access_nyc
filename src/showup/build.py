@@ -86,9 +86,10 @@ VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
 #: The base map and window chrome, pinned by `scripts/fetch_basemap.py`. The map route
 #: imports these from `/vendor/`; the build only copies them.
 BASEMAP_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "basemap"
-#: `days.mjs` carries no content this site shows; `chrome.mjs` imports it at the top level, so
-#: without it the module graph fails and the map never draws. See `scripts/fetch_basemap.py`.
-BASEMAP_FILES = ("basemap.mjs", "chrome.mjs", "days.mjs", "index.css", "xp.css")
+#: The base map, fetched from the 30 Day Map Challenge and sha256-pinned by
+#: `scripts/fetch_basemap.py`. One file: that project's taskbar, themes and stylesheets went
+#: with `/map/` when webxp's shell took over the desktop.
+BASEMAP_FILES = ("basemap.mjs",)
 
 #: Hosts the base map names only in its attribution links, which a reader clicks and the
 #: page never fetches. Everything else it names is a tile, glyph or sprite source and must

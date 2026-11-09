@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Compare the vendored webxp against the commit `PROVENANCE.md` pins it to.
 
+The copy is `src/` plus the licence from the repository root — see `ROOT_FILES`.
+
 Every other vendored dependency here is verified against a sha256 at fetch time. webxp cannot
 be: its repository has no remote, so there is nothing to fetch and no immutable object to pin.
 The files are committed instead, and this is what keeps the commit in `PROVENANCE.md` honest.
@@ -42,6 +44,11 @@ SOURCE_SUBDIR = "src"
 #: Not part of the copy: this file is ours, and the pin cannot describe itself.
 OURS = {"PROVENANCE.md"}
 
+#: Files taken from the source repository's root rather than from `src/`. The licence has to
+#: travel with the code it covers, and it is verified from the pin like everything else —
+#: a licence nobody checks is a licence that can be swapped for a different one.
+ROOT_FILES = ("LICENSE",)
+
 
 class DriftError(RuntimeError):
     """The vendored copy does not match the commit it claims to be."""
@@ -71,7 +78,7 @@ def source_files(commit: str) -> dict[str, bytes] | None:
         return None
 
     out: dict[str, bytes] = {}
-    for name in names:
+    for name in [*names, *ROOT_FILES]:
         blob = _git("show", f"{commit}:{name}")
         if blob.returncode != 0:
             return None

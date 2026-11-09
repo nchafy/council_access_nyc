@@ -6,23 +6,40 @@ copied verbatim.
 
 | | |
 | --- | --- |
-| Commit | `b8825ff7241a0452aa43341bb16b85835259e7b7` |
-| Subject | `port the base map in as the first real app` |
-| Refs | `main` and `map-challenge-folder` both point at it |
+| Commit | `27e60429db6335b4400bf86b13508cb86a5ca560` |
+| Subject | `locate the street pipeline's leftover speed in its short traversals` |
+| Refs | `main` pointed at it |
 | Source | `~/claude/webxp` — **local only, no remote** |
-| Copied | 2026-11-07 |
+| Copied | 2026-11-09 |
 
-The commit is what identifies this copy, not a branch. That checkout is shared and was on
-`map-challenge-folder` with a third party's uncommitted refactor in it when these files were
-taken, so `make webxp-check` was run immediately: nine files, byte-identical to the commit
-above. The working tree is not the pin, and that is the whole reason the check exists.
+The commit is what identifies this copy, not a branch, and the files are read with
+`git show <commit>:src/<name>` rather than off the disk. That matters here twice over. The
+checkout is shared — it had 42 modified files when this copy was taken, including seven of
+these nine — and reading the working tree would have vendored another session's unfinished
+work under a commit that does not contain it.
+
+### The previous pin is gone
+
+This directory was pinned to `b8825ff7241a0452aa43341bb16b85835259e7b7` from 2026-11-07. On
+2026-11-09 that commit no longer existed in the source repository: neither it nor
+`33ce2d5`, read from the same checkout hours earlier, resolves, and the branch
+`map-challenge-folder` that carried both is gone. The history was rewritten or the
+repository recreated.
+
+`make webxp-check` reported `UNVERIFIABLE` rather than a match, which is the outcome it was
+built for. A repository with no remote has no second copy of its history, so a pin here is
+only as durable as one machine's `.git` — recorded so the next reader knows this can happen
+again rather than treating it as a one-off.
 
 ## Licence
 
-**There is no licence file in that repository, and none is assumed here.** It is first-party:
-the same author as this site, and itself extracted from the 30 Day Map Challenge base map
-this project already vendors. So there is no third-party grant to confirm — but the absence
-is recorded rather than read as permission, because an unstated licence is not an open one.
+**MIT**, `Copyright (c) 2026 Nick Chafy`. The text is beside the code as `LICENSE`, taken
+from the pinned commit's repository root, and `scripts/check_webxp.py` verifies it from the
+pin like every other file: a licence nobody checks is one that can quietly become a
+different licence.
+
+This is an improvement on what was here before. The earlier pin carried no licence file at
+all, and this document recorded the absence rather than reading it as permission.
 
 ## Why this is copied and not fetched
 
@@ -76,6 +93,11 @@ commit before porting the host-side correction forward.
    The right shape is for `takeFocus` to be the caller's choice — `focus(win, {moveFocus})`
    already works that way — with autostart declining it.
 
+   All three were re-checked against this pin on 2026-11-09, when it moved from
+   `b8825ff` to `27e6042`, and all three are unchanged: the surface still carries no role,
+   the shell still writes no `h1`, and `launch` still ends in an unconditional
+   `win.takeFocus()`. The corrections in `boot.mjs` are therefore still load-bearing.
+
    Note for whoever fixes this upstream: `blur()` is not the correction. It clears the ring,
    and `document.activeElement` reads `body` afterwards, but the browser keeps a sequential
    focus navigation starting point where the blurred element was, so the next `Tab` resumes
@@ -83,9 +105,13 @@ commit before porting the host-side correction forward.
 
 ## What came across
 
-`src/` only — nine files. The upstream `apps/`, `demo/`, `docs/` and `scripts/` are that
-project's own programs, harness and examples; this site has its own under
-`src/showup/apps/`.
+`src/` only — nine files — plus `LICENSE` from the repository root. The upstream `apps/`,
+`demo/`, `docs/` and `scripts/` are that project's own programs, harness and examples; this
+site has its own under `src/showup/apps/`.
+
+Upstream now carries thirty-odd programs of its own on that desktop — the 30 Day Map
+Challenge days, a base map, a notepad, a terminal. None of them are this site's, and this
+site's five are not there: the dependency runs one way.
 
 Three stylesheets because they have three subjects: `theme.css` is the Luna palette and the
 controls, `shell.css` is the desktop and the taskbar, `window.css` is the frame. Upstream's

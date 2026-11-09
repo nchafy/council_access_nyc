@@ -49,19 +49,14 @@ FILE_COMMITS = {
 #: sha256 per file. Taken at the pin above on 2026-11-04 and verified on every run, so a
 #: silently rewritten upstream file fails the fetch instead of reaching a reader.
 #:
-#: `days.mjs` is the map challenge's thirty themes, which this site has no use for. It is here
-#: because `chrome.mjs` imports it at the top level, for one function — `renderDayList`,
-#: reachable only from a Start menu, which `/map/` deliberately does not have. A missing file
-#: there is not a degraded Start menu: the import fails, the module graph fails with it, and
-#: `map.mjs` never runs at all (measured 2026-11-05 — a 404 on `/vendor/days.mjs` left the
-#: page with no map and no controls). Vendoring what we import is the honest fix until
-#: `mountChrome` upstream takes its menu as data.
+#: One file, since 2026-11-09. `chrome.mjs`, `days.mjs`, `index.css` and `xp.css` were the
+#: map challenge's own taskbar, its thirty themes and two stylesheets, all of which this site
+#: needed while `/map/` was a page of its own. webxp's shell draws the desktop now, so the
+#: four were 43 KB of pinned code that no page loaded. What is left is the base map itself —
+#: the MapLibre style, the three basemap types, the tile hosts and the camera — which is the
+#: only part of that project this one ever wanted.
 BASEMAP_SHA256 = {
     "basemap.mjs": "9114df4beff968a87ec51c6986af6b28c28c90065996c1b29a309b739fcd5720",
-    "chrome.mjs": "d4b680d644829b81c171f49f9cb29ac01c6274fe9db88c0f7216359485c54cda",
-    "days.mjs": "bcb2b21a95192664f0bea349e75996ae3b2e1bb6d7117cf3dcfa1e5adb55ce18",
-    "index.css": "3fd440bc38078a9015e5b4c61b27ac66a890586481e9d90c1b0d98283bba921f",
-    "xp.css": "825c1fdf3355710b60b02d439df56790d486ef32ba8f6e8f89c2bf5af8bbb75b",
 }
 
 BASEMAP_SOURCE = "https://raw.githubusercontent.com/nchafy/30daymapchallenge"

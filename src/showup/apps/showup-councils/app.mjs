@@ -49,7 +49,7 @@ export default {
   styles: ['app.css'],
 
   mount({ win }) {
-    const root = el('div', 'councils-root');
+    const root = el('div', 'list-detail');
     const list = el('ul', 'pick-list');
     list.setAttribute('aria-label', 'Council districts');
     const detail = el('div', 'detail-pane');

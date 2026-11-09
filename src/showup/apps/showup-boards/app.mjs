@@ -66,7 +66,7 @@ export default {
         + 'zoning, budget priorities and local services for one community district.'),
     );
 
-    const panes = el('div', 'boards-panes');
+    const panes = el('div', 'boards-panes list-detail');
     const list = el('ul', 'pick-list');
     list.setAttribute('aria-label', 'Community boards');
     const detail = el('div', 'detail-pane');

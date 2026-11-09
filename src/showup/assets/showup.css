@@ -98,3 +98,95 @@
   button:active,
   .btn:active { background: linear-gradient(to bottom, #23262a 0%, #2d3135 100%); }
 }
+
+/* ---------------------------------------------------------------------------
+   List and detail.
+
+   Two programs draw this shape — the 51 council districts and the 59 community boards —
+   and both drew it from their own copy of the same seventy lines, differing only in the
+   `.app-<id>` prefix and the name of the grid element. The copies were hand-synced, which
+   is how a contrast fix had to be made twice.
+
+   So it lives here, once, keyed on a marker class a program opts into. That is a deliberate
+   departure from webxp's rule that a program scopes its own styles under `.app-<id>`
+   (`docs/apps.md`): scoping exists to stop one program's styles reaching another's window,
+   and this is two programs asking for the same shape on purpose. A program that does not
+   add `list-detail` is unaffected.
+
+   `min-height: 0` throughout, so a grid or flex child may be shorter than its content and
+   scroll, rather than pushing the window's body past its own frame.
+   --------------------------------------------------------------------------- */
+
+.list-detail {
+  display: grid;
+  grid-template-columns: 15rem 1fr;
+  gap: .6rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.list-detail .pick-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.list-detail .detail-pane { overflow-y: auto; min-height: 0; padding-right: .2rem; }
+.list-detail .detail-empty { margin: 0; color: var(--muted); }
+.list-detail .pick-error {
+  padding: .5rem;
+  color: var(--urgent-ink);
+  background: var(--urgent-bg);
+}
+
+/* The row is the target: two lines of text, comfortably past the 24px SC 2.5.8 floor, and a
+   reader aiming at the name cannot miss by hitting the gap beside it. */
+.list-detail .pick {
+  display: flex;
+  flex-direction: column;
+  gap: .05rem;
+  width: 100%;
+  padding: .35rem .5rem;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.list-detail .pick:hover,
+.list-detail .pick:focus-visible { background: var(--title-a); color: #fff; }
+.list-detail .pick:hover .pick-hoods,
+.list-detail .pick:focus-visible .pick-hoods { color: var(--on-title-dim); }
+
+/* The current row keeps the selected blue after focus moves to the facts beside it, so the
+   list still says which one is showing. */
+.list-detail .pick[aria-current="true"] { background: var(--title-b); color: #fff; }
+.list-detail .pick[aria-current="true"] .pick-hoods { color: var(--on-title-dim); }
+
+.list-detail .pick-name { font-weight: 700; }
+.list-detail .pick-hoods {
+  font-size: 11px;
+  color: var(--muted);
+  /* Two lines at most: a neighbourhood list runs to 200 characters and would otherwise make
+     one row taller than the pane. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* The panes stack when the window is narrow, which is a window query and not a media query —
+   a 400px window on a 1600px desktop has a phone's problem and `@media` cannot see it. */
+@container window (max-width: 34rem) {
+  .list-detail { grid-template-columns: 1fr; grid-template-rows: 12rem 1fr; }
+}

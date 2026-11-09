@@ -12,18 +12,56 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HEADERS = REPO_ROOT / "_headers"
-ASSETS = REPO_ROOT / "src" / "showup" / "assets"
-#: `site.js` went with the static pages. `address.js` is the one script left in `assets/`
-#: that fetches anything, and it is the only one these patterns can read: the programs under
-#: `apps/` are ES modules written with single quotes, and widening this to them without
-#: rewriting the patterns would report clean over files it never parsed.
-FRONTEND = ("address.js",)
+PACKAGE = REPO_ROOT / "src" / "showup"
+ASSETS = PACKAGE / "assets"
 
-LITERAL_FETCH_TARGET_PATTERNS = (
-    r'fetch\(\s*"([^"]+)"',
-    r'loadJSON\(\s*"([^"]+)"',
-    r'"(https://[^"]+)"',
+
+def frontend_sources() -> dict[str, str]:
+    """Every script this project ships that could fetch, as a label -> its text.
+
+    `vendor/` is excluded: it is pinned third-party code, and the hosts it reaches are
+    recorded in `ALLOWED_ORIGINS` as owner decisions rather than discovered here.
+
+    This read `("address.js",)` until 2026-11-09 — one file that no page loads, while the
+    five programs that actually fetch at runtime went unparsed. The patterns below were the
+    reason: they were double-quote-only, and the programs are written with single quotes, so
+    widening the list without widening them would have reported clean over files it never
+    read.
+    """
+    sources = {}
+    for path in [
+        ASSETS / "address.js",
+        PACKAGE / "boot.mjs",
+        *sorted((PACKAGE / "apps").rglob("*.mjs")),
+    ]:
+        if "vendor" in path.relative_to(PACKAGE).parts or path.name == "manifest.mjs":
+            continue
+        sources[path.relative_to(PACKAGE).as_posix()] = path.read_text(encoding="utf-8")
+    return sources
+
+
+#: Every absolute URL the frontend names, in either quote style.
+#:
+#: Read off string literals rather than off `fetch(` call sites, which is the second attempt
+#: at this. Matching call sites looked tighter and covered almost nothing: every program
+#: holds its target in a constant — `const LOOKUP = '/data/lookup.json'`, `BUILT_AT_URL`,
+#: `LAYERS.council.url` — so a call-site pattern saw `fetch(url)` and learned nothing, and
+#: this check still read only `address.js` after its file list was widened to all of them.
+#:
+#: It over-collects: a module specifier like `/vendor/webxp/webxp.mjs` is an import, not a
+#: fetch. That is the safe direction. Same-origin URLs are satisfied by `'self'` either way,
+#: and what matters is that no *external* host appears without a decision behind it.
+NAMED_URL_PATTERN = r"""['"]((?:/|https://)[^'"]*)['"]"""
+
+#: Every external origin the frontend writes as a link rather than fetching. Navigation, so
+#: outside `connect-src` — but still a host this site sends a reader to, which is a decision.
+LINKED_ORIGINS = (
+    "https://council.nyc.gov",
+    "https://communityprofiles.planning.nyc.gov",
 )
+
+#: Any external literal, wherever it appears, for the sweep that holds the two lists total.
+EXTERNAL_LITERAL_PATTERN = r"""['"](https://[^'"]+)['"]"""
 VARIABLE_FETCH_CALL_PATTERN = r"fetch\(\s*[a-zA-Z_$]"
 
 
@@ -42,25 +80,26 @@ def csp_directives() -> dict[str, list[str]]:
     return directives
 
 
-def fetched_urls() -> dict[str, str]:
-    """Every URL the frontend fetches literally, as url -> the file that fetches it.
+def named_urls() -> dict[str, str]:
+    """Every absolute URL the frontend names, as url -> the file that names it.
 
-    Targets assembled at runtime are invisible here;
-    `test_there_are_only_two_variable_fetch_call_sites` fails if a new one appears.
+    A URL assembled at runtime is invisible here;
+    `test_every_variable_fetch_site_is_a_wrapper_over_a_named_url` is what keeps that set
+    from growing unnoticed.
     """
     url_to_source_file = {}
-    for source_file in FRONTEND:
-        source = (ASSETS / source_file).read_text(encoding="utf-8")
-        for pattern in LITERAL_FETCH_TARGET_PATTERNS:
-            for match in re.finditer(pattern, source):
-                url_to_source_file[match.group(1)] = source_file
+    for source_file, source in frontend_sources().items():
+        for match in re.finditer(NAMED_URL_PATTERN, source):
+            url_to_source_file[match.group(1)] = source_file
     return url_to_source_file
 
 
 class TestConnectSrc:
-    def test_every_fetched_url_is_allowed(self):
+    def test_every_named_url_is_allowed(self):
         connect_src = csp_directives().get("connect-src", [])
-        for url, source_file in fetched_urls().items():
+        for url, source_file in named_urls().items():
+            if url.startswith(LINKED_ORIGINS):
+                continue  # navigation, which no fetch directive governs
             if url.startswith("/"):
                 assert "'self'" in connect_src, (
                     f"{source_file} fetches the same-origin {url}, but connect-src is "
@@ -135,28 +174,88 @@ class TestTheRestOfThePolicyIsStillClosed:
 
 
 class TestTheCrossCheckStillSeesEverything:
-    """Guards this file's own premise: that every fetch target is greppable."""
+    """Guards this file's own premise: that every URL the frontend names is greppable."""
 
-    def test_the_same_origin_fetch_targets_are_exactly_these_two(self):
-        """`/manifest.json` was the third, fetched by `site.js`. The readme program fetches
-        it now, from a module these patterns cannot read — see `FRONTEND` above."""
-        same_origin = {url for url in fetched_urls() if url.startswith("/")}
-        assert same_origin == {
-            "/data/lookup.json",
-            "/data/districts.geo.json",
-        }, f"the set of same-origin fetches changed: {sorted(same_origin)}"
+    #: Every JSON artifact the frontend reads, and which build writes it. Pinned so that a
+    #: new one is a visible change rather than a line in a diff: each is a request a reader
+    #: makes, and each has to survive the CSP and exist in the built site.
+    DATA_TARGETS = (
+        "/data/lookup.json",
+        "/data/districts.geo.json",
+        "/data/boards.geo.json",
+        "/data/preview.json",
+        "/data/board-meetings.json",
+        "/data/references.json",
+        "/manifest.json",
+    )
 
-    def test_there_are_only_two_variable_fetch_call_sites(self):
+    def test_the_data_targets_are_the_ones_pinned_here(self):
+        found = {url for url in named_urls() if url.startswith("/data/") or url == "/manifest.json"}
+        assert found == set(self.DATA_TARGETS), (
+            f"the set of data the frontend reads changed: {sorted(found)}"
+        )
+
+    def test_the_sweep_reaches_past_the_one_unreachable_script(self):
+        """This check read `address.js` alone until 2026-11-09 — the one file no page loads —
+        while the five programs that fetch at runtime went unparsed."""
+        by_file: dict[str, set[str]] = {}
+        for url, source_file in named_urls().items():
+            by_file.setdefault(source_file, set()).add(url)
+        assert "apps/shared/data.mjs" in by_file, sorted(by_file)
+        assert "apps/showup-readme/app.mjs" in by_file, sorted(by_file)
+        assert "/manifest.json" in by_file["apps/showup-readme/app.mjs"]
+
+    def test_every_variable_fetch_site_is_a_wrapper_over_a_named_url(self):
+        """A `fetch(url)` is fine when `url` arrives from a literal this file can read. The
+        count is pinned so that a sixth has to be looked at: if it fetches something
+        assembled at runtime, nothing here covers it."""
         variable_call_sites = []
-        for source_file in FRONTEND:
-            source = (ASSETS / source_file).read_text(encoding="utf-8")
+        for source_file, source in frontend_sources().items():
+            newline = chr(10)
             variable_call_sites += [
-                f"{source_file}:{source[: match.start()].count('\n') + 1}"
+                f"{source_file}:{source[: match.start()].count(newline) + 1}"
                 for match in re.finditer(VARIABLE_FETCH_CALL_PATTERN, source)
             ]
-        assert len(variable_call_sites) == 2, (
-            f"expected two variable fetch call sites (the loadJSON wrapper and the "
-            f"geocoder), found {len(variable_call_sites)}: {variable_call_sites}. A new "
-            "one needs a matching entry in this file, or the CSP cross-check no longer "
-            "covers it."
+        assert len(variable_call_sites) == 6, (
+            f"expected six wrappers — address.js's loadJSON and geocoder, shared/data.mjs's "
+            f"cache, the map's fetchJson, and the Readme's manifest and source-list reads — "
+            f"found {len(variable_call_sites)}: {variable_call_sites}. A new one needs its "
+            "target named by a literal, or the cross-check no longer covers it."
         )
+
+
+class TestExternalHostsAreDecisions:
+    """Every external host the frontend names, whether it fetches it or links to it.
+
+    `TestConnectSrc` covers what is fetched, because that is what the policy governs. This
+    covers the rest: a link to a new third party is still a reader sent somewhere, and the
+    point of listing hosts in this file is that adding one is deliberate.
+    """
+
+    def test_every_external_literal_is_in_one_of_the_two_lists(self):
+        decided = (*TestConnectSrc.ALLOWED_ORIGINS, *LINKED_ORIGINS)
+        undeclared = {}
+        for source_file, source in frontend_sources().items():
+            for match in re.finditer(EXTERNAL_LITERAL_PATTERN, source):
+                url = match.group(1)
+                if not url.startswith(decided):
+                    undeclared[url] = source_file
+        assert not undeclared, (
+            f"these external hosts are named by the frontend and declared nowhere: "
+            f"{undeclared}. A fetch target belongs in ALLOWED_ORIGINS and the CSP; a link "
+            f"belongs in LINKED_ORIGINS."
+        )
+
+    def test_the_sweep_actually_found_something(self):
+        """Harness honesty: a pattern that stopped matching would report clean over nothing."""
+        found = [
+            match.group(1)
+            for source in frontend_sources().values()
+            for match in re.finditer(EXTERNAL_LITERAL_PATTERN, source)
+        ]
+        assert found, "no external literal found at all; the pattern no longer matches"
+
+    def test_no_linked_origin_is_also_a_fetch_target(self):
+        """Two lists, one subject each. A host in both would make it unclear which decision
+        was taken, and whether the CSP needs to name it."""
+        assert not set(LINKED_ORIGINS) & set(TestConnectSrc.ALLOWED_ORIGINS)

@@ -69,11 +69,22 @@ await desktop.autostart();
  */
 heading.focus();
 
-// The readiness half of the `data-ready-when` contract the document opens with. The gates
-// read it rather than sleeping: a desktop measured mid-build reports whatever the half-built
-// state happened to be, which is how an axe sweep came to report a contrast failure on a
-// loading placeholder and three undersized title boxes that measure 24px at rest.
-//
-// Set last, and only on success: the attribute is absent if `loadApps` or `autostart` throws,
-// which is what makes a harness waiting on it fail instead of passing over a broken desktop.
-document.documentElement.dataset.ready = 'desktop';
+/* The readiness half of the `data-ready-when` contract the document opens with. The gates
+ * read it rather than sleeping: a desktop measured mid-build reports whatever the half-built
+ * state happened to be, which is how an axe sweep came to report a contrast failure on a
+ * loading placeholder and three undersized title boxes that measure 24px at rest.
+ *
+ * Withheld when a program failed to register, which is what makes a harness waiting on it
+ * fail rather than sweep a desktop with a hole in it. `broken` is the only failure boot can
+ * see: neither `loadApps` nor `autostart` throws — `autostart` catches each `launch` and
+ * `console.error`s it — so a program that throws inside `mount` or `ready` still reaches
+ * `data-ready`. That path is gated instead by `scripts/console_check.py`, which reads
+ * `Runtime.consoleAPICalled` for exactly this reason.
+ */
+const brokenIds = Object.keys(broken);
+if (brokenIds.length) {
+  document.documentElement.dataset.readyError =
+    `these programs did not register: ${brokenIds.join(', ')}`;
+} else {
+  document.documentElement.dataset.ready = 'desktop';
+}

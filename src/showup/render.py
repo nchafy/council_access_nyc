@@ -434,3 +434,120 @@ def board_schedule_payload(
 #: months: long enough that a board publishing one month at a time, or taking the summer
 #: recess, is not accused of neglect, and short enough that a site abandoned mid-2025 is.
 SOURCE_BEHIND_DAYS = 90
+
+
+# ---------------------------------------------------------------------------
+# The sources artifact.
+#
+# Every dataset identifier, fetch date, freshness window and caveat. This was the
+# `/references/` page until 2026-11-08, and went with it when the static pages were
+# deleted — along with the invariant `fetch.Source` still states, that `label`, `dataset`
+# and `url` exist "so a source cannot be fetched without being disclosed". It is published
+# as data now and rendered by the Readme program, which is what the desktop's own footer
+# promises when it says "Open Readme for every source".
+# ---------------------------------------------------------------------------
+
+#: Values this site computes rather than reads, and how. Each one is a number a reader could
+#: otherwise only take on trust.
+DERIVED = (
+    (
+        "Council district to community board crosswalk",
+        "Areal overlap between the shoreline-clipped council district boundaries (872g-cjhh) "
+        "and the community district boundaries (5crt-au7u), regenerated when either boundary "
+        "file changes. Percentages are rounded to a whole number and approximate; on a board "
+        "the denominator is that board, on a district it is that district. The boards dataset "
+        "also carries a council_district column, which holds 44 distinct values across 59 "
+        "rows and omits 7 council districts — it records the board office's district rather "
+        "than the districts a board covers, so it is not used for this join.",
+    ),
+    (
+        "Written-testimony safe-until timestamp",
+        "Hearing start plus 72 hours. Adjournment times are not published and adjournment is "
+        "at or after the start, so the stamp is a provable lower bound on the real deadline "
+        "rather than the deadline.",
+    ),
+    (
+        "Accommodation request-by date",
+        "Three business days before the hearing, against a committed holiday table.",
+    ),
+)
+
+#: Named in the text but never fetched, so no row above covers them.
+CITED = (
+    (
+        "The City Record (dg92-zbpx)",
+        "A few dozen land-use hearing notices a year across all 59 community boards. It is "
+        "the only City dataset carrying dated board notices, and no City dataset publishes a "
+        "dated board calendar.",
+    ),
+    (
+        "Each board's own website",
+        "Agendas, minutes and the meeting location are published there and nowhere in the "
+        "City's data. A board on its own domain rather than a City one is given as text "
+        "rather than a link, because the host cannot be verified at build time.",
+    ),
+)
+
+#: What the data does not mean. Every one of these qualifies a figure shown elsewhere, which
+#: is why they are published rather than kept in the repository.
+CAVEATS = (
+    "The City publishes no community board meeting calendar, so each of the 59 boards is read "
+    "from whatever it publishes itself — a feed, a page, a PDF, a scan. A source can answer "
+    "and still be months behind, which is why the Community boards program reports both.",
+    "Community board meeting cadence is quoted exactly as ruf7-3wgc records it. That is the "
+    "City's record of the cadence, and it has been observed to disagree with what boards "
+    "publish on their own sites.",
+    "ruf7-3wgc records the board office address, not the meeting venue. Committees often sit "
+    "at the office and the full board often does not.",
+    "Unlike Council committees, which are called by their chair, a community board meets on a "
+    "standing monthly cadence.",
+    "Budget requests are an annual filing rather than current activity: the register appears a "
+    "few times a year, so an entry can be months old. A board shows the newest edition of the "
+    "register (vn4m-mk4t) published on or before the build date, capped at five requests with "
+    "the total stated beside it. Priority numbers repeat because each one ranks within a "
+    "budget category — capital, capital support, expense.",
+    "Agency replies are quoted rather than sorted into yes and no: the phrasing changes "
+    "between editions of the same row, and it records a position rather than an outcome. A "
+    "request is not a commitment and not a funded outcome.",
+    "The Council Members listed against a board can introduce legislation for that area, and "
+    "nominate half of the board's members.",
+    "Council district geometry ships simplified — 132 KB gzipped against 3.8 MB raw, measured "
+    "to assign the same district as full precision on 99.99% of a citywide lattice.",
+    "No figure anywhere on this site compares one board or district with another.",
+)
+
+
+def _window(max_age_hours: float) -> str:
+    """A freshness window in the unit a reader thinks in. 960 hours is nobody's sentence."""
+    hours = float(max_age_hours)
+    if hours >= 48 and hours % 24 == 0:
+        days = int(hours // 24)
+        return f"{days} day{'' if days == 1 else 's'}"
+    rounded = int(hours) if hours == int(hours) else hours
+    return f"{rounded} hour{'' if rounded == 1 else 's'}"
+
+
+def references_payload(dataset_rows: list[dict], *, window_end: date | None) -> dict:
+    """`/data/references.json`: what the Readme program renders.
+
+    `dataset_rows` comes from the `fetch.py` registry joined to the manifest, so no
+    identifier, URL or window is typed here — a source that is fetched is disclosed.
+    """
+    return {
+        "datasets": [
+            {
+                "label": row["label"],
+                "dataset": row["dataset"],
+                "url": row["url"],
+                "why": row["why"],
+                "fetched_at": row["fetched_at"],
+                "window": _window(row["max_age_hours"]),
+                "rows": row["rows"],
+            }
+            for row in dataset_rows
+        ],
+        "derived": [{"term": term, "detail": detail} for term, detail in DERIVED],
+        "cited": [{"term": term, "detail": detail} for term, detail in CITED],
+        "caveats": list(CAVEATS),
+        "calendar_window_end": window_end.isoformat() if window_end else None,
+    }

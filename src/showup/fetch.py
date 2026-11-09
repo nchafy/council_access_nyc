@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from .model import BOARD_COUNT, DISTRICT_COUNT
@@ -370,7 +370,9 @@ def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
         recorded: dict = {
             "kind": kind,
             "url": urls[0] if urls else None,
-            "fetched_at": datetime.now().isoformat(timespec="seconds"),
+            # Offset-aware: this stamp is published and read in a browser. See
+            # `build._mtime` for what a naive one costs.
+            "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         if len(urls) > 1:
             recorded["other_urls"] = list(urls[1:])

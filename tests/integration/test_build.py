@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 
+from showup import render
 from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
@@ -62,6 +63,103 @@ class TestBuild:
             assert "max_age_hours" in source
         # Staleness is the browser's job; a baked boolean is what lets a dead site lie.
         assert "degraded" not in json.dumps(manifest)
+
+    def test_every_fetched_source_is_disclosed(self, raw_dir, tmp_path):
+        """`fetch.Source` says `label`, `dataset` and `url` exist "so a source cannot be
+        fetched without being disclosed". That held because `/references/` rendered them;
+        when those pages were deleted on 2026-11-08 the fields stayed populated and nothing
+        read them, so the promise was broken silently. `/data/references.json` is where it
+        lives now, and this is what keeps it.
+        """
+        from showup.fetch import SOURCES
+
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        references = json.loads((out / "data" / "references.json").read_text())
+
+        assert len(references["datasets"]) == len(SOURCES)
+        for source in references["datasets"]:
+            assert source["dataset"], source
+            assert source["url"], source
+            assert source["why"], source
+            assert source["window"], source
+
+        published = {source["dataset"] for source in references["datasets"]}
+        for identifier in ("uvw5-9znb", "ruf7-3wgc", "vn4m-mk4t", "5crt-au7u", "872g-cjhh"):
+            assert any(identifier in name for name in published), (
+                f"{identifier} is fetched and no longer disclosed anywhere a reader can see"
+            )
+
+    def test_a_short_references_artifact_fails_the_build(self, raw_dir, tmp_path, monkeypatch):
+        """A source silently missing from the list is the disclosure promise broken in the
+        quietest way: the Readme renders a shorter table and looks complete."""
+        import showup.build as build_module
+
+        def short(*args, **kwargs):
+            payload = render.references_payload(*args, **kwargs)
+            payload["datasets"].pop()
+            return payload
+
+        monkeypatch.setattr(build_module, "references_payload", short)
+        with pytest.raises(BuildError, match="references covers"):
+            build_site(raw_dir, tmp_path / "out", today=date(2026, 9, 22))
+
+    def test_a_source_with_no_identifier_fails_the_build(self, raw_dir, tmp_path, monkeypatch):
+        """A row with a label and no dataset id renders as a named source a reader cannot
+        check, which is worse than an absent row because it looks cited."""
+        import showup.build as build_module
+
+        # Bound before the patch, or the replacement calls itself.
+        real_rows = build_module._reference_rows
+
+        def undisclosed(*args, **kwargs):
+            rows = real_rows(*args, **kwargs)
+            rows[0] = {**rows[0], "dataset": ""}
+            return rows
+
+        monkeypatch.setattr(build_module, "_reference_rows", undisclosed)
+        with pytest.raises(BuildError, match="carry no identifier"):
+            build_site(raw_dir, tmp_path / "out", today=date(2026, 9, 22))
+
+    def test_the_caveats_that_qualify_a_published_figure_are_published_with_it(
+        self, raw_dir, tmp_path
+    ):
+        """Each of these qualifies a number shown elsewhere on the site, so losing it leaves
+        the number looking more certain than it is. All four were deleted with
+        `/references/` and existed nowhere in the repository for a day."""
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        prose = " ".join(json.loads((out / "data" / "references.json").read_text())["caveats"])
+        for clause in (
+            "ranks within a budget category",
+            "not a commitment and not a funded outcome",
+            "the board office address, not the meeting venue",
+            "compares one board or district with another",
+        ):
+            assert clause in prose, f"{clause!r} qualifies a published figure and is unpublished"
+
+    def test_every_published_timestamp_names_an_instant(self, raw_dir, tmp_path):
+        """Staleness is computed in the reader's browser, so a wall clock is not enough.
+
+        A naive ISO string is read by a browser as *local* time, so the same stamp written by
+        a UTC build reads five hours younger in New York — age under-reported, in the
+        direction that hides the problem. Every timestamp the manifest publishes therefore
+        carries an offset, and `datetime.fromisoformat` is what proves it: it returns a naive
+        value for a string without one.
+        """
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        manifest = json.loads((out / "manifest.json").read_text())
+        stamps = {"built_at": manifest["built_at"]} | {
+            f"sources.{name}.fetched_at": source["fetched_at"]
+            for name, source in manifest["sources"].items()
+        }
+        naive = {
+            where: value
+            for where, value in stamps.items()
+            if datetime.fromisoformat(value).tzinfo is None
+        }
+        assert not naive, f"these stamps name a wall clock rather than an instant: {naive}"
 
     def test_a_short_calendar_fails_closed(self, raw_dir, tmp_path):
         (raw_dir / "legistar_calendar.html").write_text(

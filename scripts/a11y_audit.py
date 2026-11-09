@@ -98,6 +98,12 @@ TAG_FOCUSABLE_JS = """
     // bypass check below has two shapes and has to know which one it is looking at.
     skipLink:
       element.tagName === 'A' && (element.getAttribute('href') || '').startsWith('#'),
+    // Read off the element in DOM order, not off whatever has focus. SC 2.4.1 is a question
+    // about the document's order, and asking it by pressing Tab cannot answer it here: the
+    // host focuses a heading inside the main landmark on load, so the next stop is inside
+    // that landmark whatever the order is. Proven — with the taskbar moved ahead of the
+    // desktop surface, the Tab form of both checks still passed.
+    inMain: !!element.closest('main, [role=\"main\"]'),
   }));
 })()
 """
@@ -224,9 +230,9 @@ def audit_keyboard(page: Session, path: str) -> list[Check]:
         )
     else:
         record(
-            "the first Tab lands on content, not on chrome",
-            not first_focus["outside"] and first_focus["inMain"],
-            f"first Tab went to {first_focus.get('tag')} {first_focus.get('text')!r}, "
+            "the first stop in the tab order is content, not chrome",
+            focusable[0]["inMain"],
+            f"the first focusable is {focusable[0]['tag']} {focusable[0]['text']!r}, "
             "which is outside <main>",
         )
 
@@ -280,6 +286,10 @@ def audit_bypass(page: Session, path: str) -> list[Check]:
     position. The desktop has no skip link and needs none — its content is the first thing
     in the tab order, so there is no block to bypass — and what is checked there is that
     this stays true. A page that grew chrome in front of its content would fail.
+
+    The second shape is read off DOM order rather than by pressing Tab. See `inMain` in
+    `TAG_FOCUSABLE_JS`: the host focuses a heading inside the main landmark on load, which
+    makes any Tab-based form of this question unfailable.
     """
     # Before reading the tab order, as in `audit_keyboard`: this ran on a freshly navigated
     # page with no wait and measured a desktop that was still only a taskbar, so the first
@@ -308,15 +318,13 @@ def audit_bypass(page: Session, path: str) -> list[Check]:
             )
         ]
 
-    page.press("Tab")
-    state = page.evaluate(FOCUS_STATE_JS)
     return [
         Check(
             path,
             "the content comes before the chrome, so there is nothing to bypass",
-            not state["outside"] and state["inMain"],
-            f"the first stop is {state.get('tag')} {state.get('text')!r}, outside <main>; "
-            "a page whose chrome comes first owes a skip link",
+            focusable[0]["inMain"],
+            f"the first focusable is {focusable[0]['tag']} {focusable[0]['text']!r}, "
+            "outside <main>; a page whose chrome comes first owes a skip link",
         )
     ]
 

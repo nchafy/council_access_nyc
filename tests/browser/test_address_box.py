@@ -181,8 +181,10 @@ class TestSourceInvariants:
 
     def test_no_innerhtml_anywhere_in_the_frontend(self):
         # `site.js` was the second half of this sweep until 2026-11-08. It is deleted: every
-        # surface it drew is a webxp program now, and the programs' own modules are swept by
-        # `tests/integration/test_apps.py`.
+        # surface it drew is a webxp program now, and every module this project authors —
+        # `boot.mjs`, `apps/shared/*.mjs` and each program's `app.mjs` — is swept by
+        # `tests/unit/test_template_safety.py::TestFrontendMarkupSinksStayBanned`, which
+        # runs unmarked and so covers them on every commit rather than only here.
         for name in ("address.js",):
             source = _strip_js_comments(
                 (REPO_ROOT / "src" / "showup" / "assets" / name).read_text()

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from .crosswalk import (
@@ -21,7 +21,7 @@ from .crosswalk import (
     load_zips,
 )
 from .crosswalk import load as load_crosswalk
-from .fetch import MEMBER_ROW_FLOOR, cache_path, manifest_key
+from .fetch import MEMBER_ROW_FLOOR, SOURCES, cache_path, manifest_key
 from .geo import load_features, to_geojson
 from .model import (
     BOARD_COUNT,
@@ -36,6 +36,7 @@ from .model import (
 from .render import (
     board_schedule_payload,
     preview_payload,
+    references_payload,
     render_index,
 )
 from .sources.board_meetings import BoardMeetingsError, load_board_meetings, source_freshness
@@ -318,6 +319,30 @@ def _load_districts(
     return districts, current, boards_by_code
 
 
+def _reference_rows(raw: Path, manifest_sources: dict[str, dict]) -> list[dict]:
+    """Every fetched source as the Readme shows it: the `fetch.py` registry joined to the
+    manifest's fetch dates and row counts. Nothing here is typed by hand, which is what
+    makes `fetch.Source`'s own promise hold — that a source cannot be fetched without being
+    disclosed."""
+    rows: list[dict] = []
+    for source in SOURCES:
+        recorded = manifest_sources.get(manifest_key(source.name), {})
+        cached = raw / source.filename
+        fetched_at = recorded.get("fetched_at") or (_mtime(cached) if cached.exists() else None)
+        rows.append(
+            {
+                "label": source.label,
+                "dataset": source.dataset,
+                "url": source.url,
+                "why": source.why,
+                "fetched_at": str(fetched_at) if fetched_at else None,
+                "max_age_hours": recorded.get("max_age_hours", source.max_age_hours),
+                "rows": recorded.get("rows"),
+            }
+        )
+    return rows
+
+
 def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> dict:
     """Build into a temporary directory, then swap it in, so a half-rendered site is
     never visible."""
@@ -546,11 +571,32 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "rows": budget_request_rows,
         }
 
+    references = references_payload(_reference_rows(raw, manifest_sources), window_end=window_end)
+    if len(references["datasets"]) != len(SOURCES):
+        raise BuildError(
+            f"references covers {len(references['datasets'])} of {len(SOURCES)} sources"
+        )
+    undisclosed = [
+        row["label"] or "(unnamed)" for row in references["datasets"] if not row["dataset"]
+    ]
+    if undisclosed:
+        # `fetch.Source` promises that a fetched source is a disclosed one. A row with no
+        # identifier is that promise broken, and it is invisible in a rendered page.
+        raise BuildError(f"these sources are fetched but carry no identifier: {undisclosed}")
+    (data_dir / "references.json").write_text(
+        json.dumps(references, separators=(",", ":")), encoding="utf-8"
+    )
+
     manifest = Manifest(sources=manifest_sources, built_at=now, calendar_window_end=window_end)
     (staging / "manifest.json").write_text(
         json.dumps(
             {
-                "built_at": manifest.built_at.isoformat(timespec="seconds"),
+                # `.astimezone()` rather than the naive value: the clock stays naive
+                # because every deadline in `deadlines.py` is NYC wall-clock, but what is
+                # *published* has to name an instant. A naive ISO string is read by a
+                # browser as local time, so a stamp written in a UTC build read five hours
+                # younger in New York. See `_mtime`.
+                "built_at": manifest.built_at.astimezone().isoformat(timespec="seconds"),
                 "calendar_window_end": window_end.isoformat() if window_end else None,
                 "sources": manifest.sources,
             },
@@ -590,4 +636,11 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
 
 
 def _mtime(path: Path) -> str:
-    return datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
+    """A cache file's fetch time, as an instant rather than as a wall clock.
+
+    UTC, and so carrying `+00:00`. A naive ISO string is read by a browser as *local* time
+    (ECMA-262, Date Time String Format), so the staleness notice this feeds read a stamp
+    written in a UTC build as five hours younger for a reader in New York — under-reporting
+    age, which is the direction that hides the problem rather than showing it.
+    """
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat(timespec="seconds")

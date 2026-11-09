@@ -36,7 +36,10 @@ def await_declared_ready(page: Any, attempts: int = 40, pause: float = 0.25) -> 
         if page.evaluate("document.documentElement.dataset.ready || null") == promised:
             return promised
         time.sleep(pause)
+    # The page may say why it never became ready. Repeated here because "it timed out" sends
+    # a reader to the harness, and "this program did not register" sends them to the program.
+    reason = page.evaluate("document.documentElement.dataset.readyError || null")
     raise NotReadyError(
         f"the page declares data-ready-when={promised!r} but never set data-ready; "
-        f"waited {attempts * pause:.1f}s"
+        f"waited {attempts * pause:.1f}s" + (f" — the page says: {reason}" if reason else "")
     )

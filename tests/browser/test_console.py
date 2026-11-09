@@ -11,12 +11,14 @@ import json
 import re
 import shutil
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from cdp import Browser
 from console_check import check
-from pageset import REPRESENTATIVE, every_page
+from pageset import PROGRAM_SURFACES, REPRESENTATIVE, every_page
+from ready import await_declared_ready
 from serve import background_server
 
 pytestmark = pytest.mark.browser
@@ -45,11 +47,19 @@ class TestTheConsoleIsSilent:
             for entry in found
         )
 
-    def test_it_looked_at_every_page_type(self, complaints):
-        assert set(complaints) == set(REPRESENTATIVE)
+    def test_it_looked_at_every_surface(self, complaints):
+        """One document and every program's window. Four of the five programs are not
+        autostarted, so a sweep of routes never runs their `mount` or `ready` — which is
+        where a program throws, and where the shell catches it and `console.error`s it."""
+        assert set(complaints) == set(REPRESENTATIVE) | {
+            surface.name for surface in PROGRAM_SURFACES
+        }
 
-    def test_the_page_types_are_all_real_pages(self, complaints, built_site):
-        assert set(complaints) <= set(every_page(built_site))
+    def test_the_routes_it_looked_at_are_all_real_pages(self, complaints, built_site):
+        """The route half only. A surface is a window, not a file, so it has no page to be."""
+        routes = set(complaints) & set(REPRESENTATIVE)
+        assert routes <= set(every_page(built_site))
+        assert routes, "the sweep visited no route at all"
 
 
 @pytest.fixture(scope="module")
@@ -113,6 +123,53 @@ def aged_site(built_site, tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
+def fresh_site(built_site, tmp_path_factory):
+    """A copy whose manifest claims every source was fetched a minute ago.
+
+    The real fixture build is already past its own windows — its calendar was fetched on
+    2026-10-07 with a 12-hour window — so the fresh branch is unreachable without forging
+    one, and the two branches have to be compared to show the text tells them apart.
+    """
+    fresh = tmp_path_factory.mktemp("fresh-site")
+    shutil.copytree(built_site, fresh, dirs_exist_ok=True)
+    manifest_path = fresh / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    just_now = datetime.now(UTC) - timedelta(minutes=1)
+    for source in manifest["sources"].values():
+        source["fetched_at"] = just_now.isoformat(timespec="seconds")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return fresh
+
+
+def _freshness_text(base_url: str) -> str:
+    """The Readme program's freshness line, from a desktop served at `base_url`."""
+    with Browser() as browser:
+        page = browser.page()
+        page.navigate(base_url + "/")
+        await_declared_ready(page)
+        page.evaluate(
+            'window.webxp.launch("showup-readme").then((w) => Boolean(w))', await_promise=True
+        )
+        deadline = time.monotonic() + 20
+        text = ""
+        while time.monotonic() < deadline:
+            text = page.evaluate(
+                "(() => { const el = document.querySelector('.readme-freshness');"
+                " return el ? el.textContent : ''; })()"
+            )
+            if text and "Reading" not in text:
+                break
+            time.sleep(0.2)
+        return text
+
+
+@pytest.fixture(scope="module")
+def fresh_notice(chrome, fresh_site):
+    with background_server(fresh_site) as base_url:
+        return _freshness_text(base_url)
+
+
+@pytest.fixture(scope="module")
 def staleness_notice(chrome, aged_site):
     """The Readme program's freshness line, against a manifest aged to 2019.
 
@@ -160,6 +217,26 @@ class TestTheStalenessNoticeReallyRenders:
     def test_it_names_the_source_the_stamp_belongs_to(self, staleness_notice):
         """ "Something is stale" is not an answer a reader can act on."""
         assert "legistar calendar" in staleness_notice
+
+    def test_the_two_states_differ_in_words_and_not_only_in_colour(
+        self, staleness_notice, fresh_notice
+    ):
+        """SC 1.4.1. The stale branch wears `--urgent-bg`/`--urgent-ink` and the fresh one
+        does not; for a reader in forced colours, in monochrome, or using a screen reader,
+        that fill is nothing. So the text has to carry it — and did not until 2026-11-09,
+        when both branches read `Data fetched <stamp>` and differed only by the fill.
+
+        No automated gate catches 1.4.1, which is why this is asserted here by hand.
+        """
+        assert fresh_notice, "the fresh branch rendered nothing, so nothing was compared"
+        assert staleness_notice != fresh_notice
+        assert "stated window" in staleness_notice, staleness_notice
+        assert "stated window" not in fresh_notice, fresh_notice
+
+    def test_the_stated_window_is_the_sources_own_number(self, staleness_notice):
+        """The calendar's window is 12 hours in the manifest, and stating any other number
+        would be this site inventing a threshold the data did not declare."""
+        assert "Its stated window is 12 hours." in staleness_notice, staleness_notice
 
     def test_it_carries_no_verdict_and_no_instruction(self, staleness_notice):
         for ours in ("out of date", "stale", "was last fetched", "days ago", "should"):

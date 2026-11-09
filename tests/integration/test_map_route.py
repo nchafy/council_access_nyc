@@ -29,6 +29,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 APPS = REPO_ROOT / "src" / "showup" / "apps"
 MAP_APP = APPS / "showup-map" / "app.mjs"
 
+#: Any module-level or dynamic reach for the map library, in every spelling that resolves it.
+#: Deliberately not anchored to `import` followed by a quote: that form matched a bare
+#: `import '/vendor/basemap.mjs'` and a dynamic `import(...)` and missed the ordinary
+#: `import maplibregl from '/vendor/maplibre-gl.mjs'` entirely, which is the one a person
+#: would actually write. Matching the module specifier is what the rule is about, so the
+#: specifier is what this looks for and the keyword in front of it is not constrained.
+LIBRARY_IMPORT = re.compile(
+    r"""(?:^|[\s(=])(?:import|export|require)\b[^;\n]*?['"][^'"\n]*(?:maplibre|basemap)"""
+)
+
 
 @pytest.fixture(scope="module")
 def site(tmp_path_factory, raw_dir_session) -> Path:
@@ -132,8 +142,7 @@ class TestOnlyTheMapPaysForTheMap:
         offenders = [
             path.relative_to(REPO_ROOT).as_posix()
             for path in self.OUR_MODULES
-            if path != MAP_APP
-            and re.search(r"""import\s*\(?\s*['"][^'"\n]*(maplibre|basemap)""", path.read_text())
+            if path != MAP_APP and re.search(LIBRARY_IMPORT, path.read_text())
         ]
         assert not offenders, f"these modules would download the map library: {offenders}"
 
@@ -142,9 +151,15 @@ class TestOnlyTheMapPaysForTheMap:
         before anybody has opened the map."""
         source = MAP_APP.read_text(encoding="utf-8")
         assert "await import('/vendor/basemap.mjs')" in source
-        assert not re.search(
-            r"""^import[^\n]*['"][^'"\n]*(maplibre|basemap)""", source, re.MULTILINE
-        ), "the base map is imported at the top level, so loading the program loads it"
+        top_level = [
+            line
+            for line in source.splitlines()
+            if line.startswith("import") and LIBRARY_IMPORT.search(line)
+        ]
+        assert not top_level, (
+            f"the base map is imported at the top level, so loading the program loads it: "
+            f"{top_level}"
+        )
 
     def test_no_document_loads_the_library_as_a_script(self, site):
         """The library is imported from a module, never as a script tag, so the document's

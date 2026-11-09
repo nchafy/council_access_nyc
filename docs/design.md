@@ -35,7 +35,10 @@ map panel.
 | `--title-b` | `#3a6ea5` | title bar, light end |
 
 **The map: early-2000s satnav.** A bounded, high-contrast, low-detail palette, not a
-general-purpose basemap. Values in `src/showup/assets/map.mjs`:
+general-purpose basemap. The palette moved upstream with the base map and is pinned by
+sha256 in `scripts/fetch_basemap.py`; what this project still chooses is in
+`src/showup/apps/showup-map/app.mjs`, whose `BOUNDARY` table re-steps the boundary
+hairline per basemap because one navy line is invisible over satellite imagery:
 
 | Element | Value |
 |---|---|
@@ -183,8 +186,9 @@ decoration.
 
 ## 9. Verifying a visual change
 
-A layout defect is invisible to an HTTP assertion. These MUST run on any change to
-`map.mjs`, a template, or a stylesheet — `site.css`, `map.css` or `shared.css`:
+A layout defect is invisible to an HTTP assertion. These MUST run on any change to a
+program under `src/showup/apps/`, to `boot.mjs`, to `index.html`, or to a stylesheet —
+`showup.css`, a program's own `app.css`, or the pinned `vendor/webxp/*.css`:
 
 | Gate | Catches |
 |---|---|

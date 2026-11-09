@@ -25,6 +25,7 @@ from fetch_axe import AXE_SOURCE, AxeFetchError, ensure_axe
 from pageset import PROGRAM_SURFACES, REPRESENTATIVE, Surface, document_file, every_page
 from ready import await_declared_ready
 from serve import background_server
+from surface import open_surface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -43,12 +44,6 @@ MINIMUM_RULES_EXERCISED = 8
 #: Measured over the seven surfaces: the Readme is the thinnest at 6, then the folder and the
 #: district list at 12, the board list 13, the map 15, and a populated board 16.
 MINIMUM_WINDOW_RULES = 5
-
-#: Elements a window must contain before a clean result from it means anything. A window that
-#: mounted nothing still answers its selector, and axe over an empty div reports no
-#: violations. Measured over the five programs: the map is the thinnest at 29 — a canvas and
-#: its controls — then the folder 36, the Readme 58, and the two lists 208 and 243.
-MINIMUM_WINDOW_ELEMENTS = 10
 
 
 def _run_axe(page: Any, tags: tuple[str, ...], context: str = "document") -> dict[str, Any]:
@@ -125,51 +120,6 @@ def _record(
     report["incomplete"] += len(incomplete)
 
 
-def _open(page: Any, surface: Surface) -> str:
-    """Launch `surface`'s program, press its click if it has one, and return its selector.
-
-    `launch` resolves after the program's own `ready` hook, so awaiting it is the readiness
-    signal for a window and no settling time is guessed. It answers null for a program that
-    is not registered, which is a stale `apps/manifest.mjs` and must fail here.
-    """
-    scope = f".app-{surface.program}"
-    opened = page.evaluate(
-        f"window.webxp.launch({surface.program!r}).then((win) => Boolean(win))",
-        await_promise=True,
-    )
-    if not opened:
-        raise CDPError(
-            f"{surface.name}: the desktop has no program {surface.program!r}, so nothing was "
-            "checked. `apps/manifest.mjs` is probably stale — run `make apps`."
-        )
-    # A window that mounted nothing answers its own selector, and axe over an empty div
-    # reports no violations. Asserted directly rather than inferred from the rule count,
-    # which a thin window can legitimately hold down.
-    held = page.evaluate(
-        f"(() => {{ const el = document.querySelector({scope!r});"
-        " return el ? el.querySelectorAll('*').length : -1; })()"
-    )
-    if held < MINIMUM_WINDOW_ELEMENTS:
-        raise CDPError(
-            f"{surface.name}: {scope} holds {held} elements, expected at least "
-            f"{MINIMUM_WINDOW_ELEMENTS}. The window is empty or absent, so a clean result "
-            "from it would be meaningless."
-        )
-    if surface.click:
-        # Loud rather than skipped: a selector that matches nothing would otherwise leave this
-        # surface checked in its empty state under the name of its populated one.
-        hit = page.evaluate(
-            f"(() => {{ const el = document.querySelector({scope + ' ' + surface.click!r});"
-            " if (!el) return false; el.click(); return true; })()"
-        )
-        if not hit:
-            raise CDPError(
-                f"{surface.name}: nothing matched {surface.click!r} inside {scope}, so the "
-                "surface was never put into the state it is named for."
-            )
-    return scope
-
-
 def check(
     root: Path, paths: list[str], surfaces: tuple[Surface, ...] = PROGRAM_SURFACES
 ) -> dict[str, Any]:
@@ -202,7 +152,7 @@ def check(
             page.evaluate(axe_source)
             for surface in surfaces:
                 started = time.monotonic()
-                scope = _open(page, surface)
+                scope = open_surface(page, surface)
                 _record(
                     report,
                     page,

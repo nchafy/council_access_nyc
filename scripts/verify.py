@@ -294,19 +294,28 @@ def _run_checks(base: str, site: Path) -> None:
     check("innerHTML" not in address_code, "address.js uses innerHTML")
 
     # Every module a reader runs, checked for the one sink that turns scraped text into
-    # markup. The pytest suite greps `assets/*.js`; these are the files that replaced it.
+    # markup. `tests/unit/test_template_safety.py` greps the same set in the source tree;
+    # this reads what the server actually serves.
+    #
+    # The status is asserted, not discarded. Without it a renamed module returned a 404 page
+    # whose body happens to contain none of the four sinks, so all four checks passed and
+    # this printed "7 shipped modules checked" while two programs failed to resolve in the
+    # browser. `/apps/shared/data.mjs` is the one that mattered: it is imported by both list
+    # programs and is in no other check, because it is a library rather than an entry in
+    # `APPS`.
     module_paths = ["/assets/boot.mjs", "/apps/shared/data.mjs"] + [
         f"/apps/{program}/app.mjs" for program in programs
     ]
     for path in module_paths:
-        _, _, module_source = fetch(base + path)
+        status, _, module_source = fetch(base + path)
+        check(status == 200, f"{path} returned {status}, so nothing about it was checked")
         for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
             check(
                 sink not in _strip_comments(module_source),
                 f"{path} uses {sink}, which puts scraped upstream text into the page "
                 f"as markup (docs/phase-1-scope.md §4.1)",
             )
-    print(f"markup sinks: {len(module_paths)} shipped modules checked")
+    print(f"markup sinks: {len(module_paths)} shipped modules checked, all served")
 
     # The committed fixture, not the gitignored cache, so this runs on a fresh clone.
     boards = json.loads((REPO_ROOT / "tests" / "fixtures" / "community_boards.json").read_text())

@@ -89,12 +89,29 @@ DARK_PAIRS: tuple[tuple[str, str, float, str], ...] = (
 )
 
 
+#: Pairs whose foreground is ours and whose background is the pinned shell's. Measured here
+#: because nothing else can: `--on-title-dim` is declared in `showup.css` and the two title
+#: blues in `vendor/webxp/theme.css`, so a check reading one file sees half the pair — and
+#: the half it misses is the one a pin bump changes.
+#:
+#: Both blues are scheme-invariant by that stylesheet's own choice, so one measurement each
+#: covers light and dark.
+PINNED_PAIRS: tuple[tuple[str, str, float, str], ...] = (
+    ("--on-title-dim", "--title-b", TEXT_MINIMUM, "a selected row's second line"),
+    ("--on-title-dim", "--title-a", TEXT_MINIMUM, "a hovered row's second line"),
+)
+
+#: The vendored shell's own palette, which `PINNED_PAIRS` reads the background out of.
+VENDOR_THEME = ASSETS.parent / "vendor" / "webxp" / "theme.css"
+
+
 def report() -> int:
     """Print the table and return a process exit status.
 
-    Only `showup.css` is read. The Luna title bars live in the vendored `webxp/theme.css`,
-    which is pinned upstream rather than ours to re-step; white on `--title-a` is 14.25:1 and
-    is that stylesheet's own to keep.
+    `showup.css` carries the steps this project chose. The Luna title bars are the pinned
+    shell's and are not re-stepped here — white on `--title-a` is 14.25:1 and is that
+    stylesheet's own to keep — but the text this project puts *on* them is ours, so
+    `PINNED_PAIRS` measures across the two files.
     """
     css = (ASSETS / "showup.css").read_text(encoding="utf-8")
     dark, light = tokens(css, dark=True), tokens(css, dark=False)
@@ -107,6 +124,17 @@ def report() -> int:
         failures += not ok
         print(
             f"  {foreground:9s} on {background:8s} {measured:5.2f}:1  "
+            f"need {need}  {'PASS' if ok else 'FAIL'}  {why}"
+        )
+
+    print("\nours on the pinned shell's title blues")
+    shell = tokens(VENDOR_THEME.read_text(encoding="utf-8"), dark=False)
+    for foreground, background, need, why in PINNED_PAIRS:
+        measured = ratio(light[foreground], shell[background])
+        ok = measured >= need
+        failures += not ok
+        print(
+            f"  {foreground:14s} on {background:10s} {measured:5.2f}:1  "
             f"need {need}  {'PASS' if ok else 'FAIL'}  {why}"
         )
 

@@ -19,8 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from cdp import Browser, CDPError, Session, find_chrome
-from pageset import REPRESENTATIVE, document_file, every_page
+from pageset import PROGRAM_SURFACES, REPRESENTATIVE, Surface, document_file, every_page
+from ready import await_declared_ready
 from serve import background_server
+from surface import open_surface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -59,8 +61,18 @@ def _is_complaint_worth_failing_on(entry: dict[str, Any]) -> bool:
     return not any(url.endswith(probe) for probe in BROWSER_PROBES)
 
 
-def check(root: Path, paths: list[str]) -> dict[str, list[dict[str, Any]]]:
-    """Load each path and return the complaints, keyed by path."""
+def check(
+    root: Path,
+    paths: list[str],
+    surfaces: tuple[Surface, ...] = PROGRAM_SURFACES,
+) -> dict[str, list[dict[str, Any]]]:
+    """Load each path, then open each program, and return the complaints keyed by surface.
+
+    The programs are opened for the same reason the accessibility sweep opens them: four of
+    the five are not autostarted, so loading `/` never runs their `mount` or `ready`. A
+    program that throws in either is caught by the shell, which puts "could not start" in the
+    window and `console.error`s the stack — measured, and invisible to a sweep of routes.
+    """
     complaints: dict[str, list[dict[str, Any]]] = {}
     with background_server(root) as base, Browser() as browser:
         page = browser.page()
@@ -73,6 +85,15 @@ def check(root: Path, paths: list[str]) -> dict[str, list[dict[str, Any]]]:
             # A trivial round trip flushes events Chrome queued but has not delivered.
             page.evaluate("1")
             complaints[path] = _drain_complaints(page)
+
+        if surfaces:
+            page.navigate(base + "/")
+            await_declared_ready(page)
+            for surface in surfaces:
+                page.drain_events()
+                open_surface(page, surface)
+                page.evaluate("1")
+                complaints[surface.name] = _drain_complaints(page)
     return complaints
 
 
@@ -88,6 +109,25 @@ def _drain_complaints(page: Session) -> list[dict[str, Any]]:
                         "source": entry.get("source"),
                         "text": entry.get("text", "")[:300],
                         "url": entry.get("url"),
+                    }
+                )
+        elif event["method"] == "Runtime.consoleAPICalled":
+            # `console.error` from a script is neither of the two above: not a browser Log
+            # entry, and not an uncaught exception. The shell catches a program's mount or
+            # ready failure and reports it this way, so without this branch a desktop whose
+            # program died said so only in devtools.
+            if event["params"].get("type") in ("error", "assert"):
+                complaints.append(
+                    {
+                        "level": event["params"]["type"],
+                        "source": "console",
+                        "text": " ".join(
+                            str(argument.get("value", argument.get("description", "")))
+                            for argument in event["params"].get("args") or []
+                        )[:300],
+                        "url": (event["params"].get("stackTrace") or {})
+                        .get("callFrames", [{}])[0]
+                        .get("url"),
                     }
                 )
         elif event["method"] == "Runtime.exceptionThrown":
@@ -113,7 +153,7 @@ def format_report(complaints: dict[str, list[dict[str, Any]]]) -> str:
             lines.append(
                 f"FAIL {path}  [{complaint['level']}/{complaint['source']}] {complaint['text']}"
             )
-    lines.append(f"{len(complaints)} pages loaded: {total} console complaints")
+    lines.append(f"{len(complaints)} surfaces loaded: {total} console complaints")
     return "\n".join(lines)
 
 

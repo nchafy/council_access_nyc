@@ -1,8 +1,9 @@
 """The webxp desktop: that it starts, that every program loads, and that the map paints.
 
-This is the front end's gate. It replaces what `test_a11y.py`, `test_reflow.py` and
-`test_keyboard.py` covered across 115 static pages, because there is one page now and the
-programs are built at runtime — a sweep over routes cannot see any of them.
+This is the front end's gate. It replaces what `test_a11y.py`, `test_reflow.py` and the
+deleted `test_keyboard.py` covered across 115 static pages, because there is one page now.
+A sweep over routes cannot see a program: `pageset.PROGRAM_SURFACES` is how the accessibility
+gate reaches them, and this file is what proves they are there to reach.
 
 The assertions are chosen against how this front end actually fails:
 
@@ -163,6 +164,15 @@ def opened(chrome, built_site):
                       councilLegends: legends('.app-showup-councils'),
                       boardLegends: legends('.app-showup-boards'),
                       freshness: (document.querySelector('.readme-freshness') || {}).textContent,
+                      readmeSources: document.querySelectorAll(
+                        '.app-showup-readme .readme-sources tbody tr'
+                      ).length,
+                      readmeLinks: document.querySelectorAll(
+                        '.app-showup-readme .readme-sources a[href^="https://"]'
+                      ).length,
+                      readmeText:
+                        (document.querySelector('.app-showup-readme .readme-sources') || {})
+                          .textContent || '',
                       mapRoot: box(root),
                       mapCanvas: box(canvas),
                       maxZoom: win && win.base ? win.base.map.getMaxZoom() : null,
@@ -197,6 +207,20 @@ class TestTheProgramsFillTheirWindows:
 
     def test_the_readme_reads_the_build_stamp(self, opened):
         assert "Data fetched" in (opened["freshness"] or ""), opened["freshness"]
+
+    def test_the_readme_discloses_every_dataset_it_is_built_from(self, opened):
+        """The `/references/` page's job, in the window that inherited it. Asserted in a real
+        window rather than on the artifact, because a build that writes the identifiers and a
+        program that renders them are two different things — and the program rendered a
+        five-row summary naming none of them until 2026-11-09."""
+        assert opened["readmeSources"] >= 11, opened["readmeSources"]
+        for identifier in ("uvw5-9znb", "ruf7-3wgc", "vn4m-mk4t"):
+            assert identifier in opened["readmeText"], identifier
+        assert "ranks within a budget category" in opened["readmeText"]
+
+    def test_every_disclosed_identifier_links_to_its_dataset(self, opened):
+        """An identifier a reader cannot follow is a string, not a citation."""
+        assert opened["readmeLinks"] >= 11, opened["readmeLinks"]
 
 
 class TestTheMapPaints:

@@ -535,3 +535,28 @@ function bindSelection(map, view) {
     if (id !== undefined && id !== null) view.select(String(id));
   });
 }
+
+/* Why nothing here moves the camera on selection.
+ *
+ * `/map/` had a `panIntoView` that fitted the selection into the part of the map its sliding
+ * detail panel did not cover, with three regression pins on it — no `cameraForBounds`, a
+ * non-zero camera padding, and panning the centroid rather than the bounding box. That page,
+ * the panel and the three pins were all deleted on 2026-11-08, and this program never
+ * carried the behaviour.
+ *
+ * That is deliberate, and it was checked rather than assumed. The pan existed because the
+ * panel slid in *after* the click and could land on top of the place the reader had just
+ * pressed. The facts card cannot do that: it is already on screen in a fixed place before
+ * any selection — measured at canvas x 8–392, y 157–291 of an 818x507 map — and it takes the
+ * pointer (`.map-cards > * { pointer-events: auto }`), so a click inside its box never
+ * reaches the map in the first place. The point a reader presses is therefore always one
+ * they can still see, which is the whole of what the pan was for.
+ *
+ * A pan written for the old reason was tried here first and measured as unreachable: its
+ * trigger is a click behind the card, and the card consumes those clicks.
+ *
+ * What is *not* preserved: part of a selected district's highlight can sit behind the card.
+ * That is a different complaint from the one the pins were about, and the fill is not what
+ * the reader is reading — the card over it carries the facts.
+ */
+

@@ -1,28 +1,33 @@
-# council_access_nyc — Show Up NYC
+# council_access_nyc — Show Up NYC, the data behind it
 
-A static site that tells a New Yorker the specific, dated things they can still
-do about their city government this week: which City Council hearings are
-happening, where the room is, how to get in, that they can walk in without
-registering, and how many hours are left to file written testimony.
+The ETL that tells a New Yorker the specific, dated things they can still do about their
+city government this week: which City Council hearings are happening, where the room is,
+how to get in, that they can walk in without registering, and how many hours are left to
+file written testimony.
+
+**This project renders nothing.** It scrapes the City's open data and writes eight JSON
+artifacts. The front end that used to read them — a Windows XP desktop with a map, the 51
+council districts, the 59 community boards and a read-me — moved to the `webxp` repository
+on 2026-11-09, by the owner's decision that webxp should be the site people open. Eighteen
+scripts that drove a browser, 23 test files and a Content-Security-Policy went with it.
+
+What that repository expects from this one is eight files. `scripts/refresh_showup.py` over
+there copies them out of `site/` and `--check` reports when its copy is behind; its
+`scripts/check_showup.py` asserts they carry the 51 districts and 59 boards its programs
+index by. `tests/integration/test_artifacts.py` here is the other side of that contract.
 
 ## The development loop
 
 ```bash
 make fetch    # refresh the upstream cache (~9 min cold; skips anything fresh)
-make verify   # build + lint + ~9,200 tests + 482 live-response assertions. The gate.
-make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
-make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
-make browser  # every browser gate in one pytest run (~100 s)
-make gates    # the same five gates as operator tools, with readable output
+make build    # write the eight JSON artifacts into site/
+make check    # lint + ~11,700 tests at 100% coverage. The gate.
 ```
 
-`make gates` is `axe` (WCAG 2.2 AA over all 116 pages), `a11y` (real `Tab` keypresses and
-the accessibility tree), `console` (any console error or CSP violation), `reflow`
-(WCAG 1.4.10 at 320 px and 390 px) and `perf` (page weight, and cold-load p95 on
-throttled 3G). They are deliberately **not** part of `make verify`:
-together they are about two minutes of real browser time, and the fast gate has to
-stay fast to keep being used. CI runs them as a separate job, and fails loudly rather than
-skipping if the runner has no Chrome.
+There is no `make serve`, `make shot`, `make browser` or `make gates`, and no `make
+verify`. Nothing here is served, so there is nothing to screenshot, no console to watch and
+no response header to assert. The accessibility, reflow, console and performance gates were
+about rendered pages and belong wherever those pages now live.
 
 Fetch and build are separate stages on purpose: the build never touches the
 network, so it is reproducible and a flaky download cannot half-write a site. A
@@ -30,9 +35,7 @@ download is validated against a size floor **and** a body invariant before it
 replaces a cache entry — these hosts return HTTP 200 carrying error pages, so a
 status check is not enough.
 
-Never serve with `python -m http.server`: it sends no CSP, so policy violations
-would surface for the first time at deploy. `scripts/serve.py` applies the real
-`_headers`. Skills: `verify-site`, `add-source-adapter`, `refresh-data`.
+Skills: `add-source-adapter`, `refresh-data`, `fuzz-and-corpus`.
 
 `district-3` is the deliberate degraded-state page — vacant-seat handling, the
 source-conflict notice, missing committees, designed empty states. Check it after
@@ -75,8 +78,9 @@ preference.
 | `docs/phase-1-scope.md` | scope, the §4 threat model, the §6 exit criteria |
 | `docs/OBSERVATIONS.md` | the dated evidence log. Append to it; never rewrite an entry |
 
-`make verify` passing is **necessary and not sufficient** — it excludes the four browser
-gates. `make gates` runs those.
+`make check` passing means the artifacts are right, which is all this repository can
+claim. Whether a reader can *use* them is a question about the site that renders them, and
+that gate lives in the `webxp` repository now.
 
 Building a gate? **Serve behind the real `_headers`, always.** `scripts/serve.py` has
 `background_server()` for this. The CSP already broke a shipped feature silently once:

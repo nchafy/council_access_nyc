@@ -46,7 +46,7 @@ detail = safe_url(href, base="https://nyc.legistar.com/")
 ```
 
 Adding a host to `urls.ALLOWED_HOSTS` is a security decision. It also needs a
-matching entry in `_headers` `connect-src` if the *browser* will contact it.
+matching entry in the consuming site's `connect-src` if the *browser* will contact it — that policy lives in the `webxp` repository; see `docs/dependencies.md` for the hosts and their terms.
 
 **3. Never guess a value.** A missing time stays `None`; a missing field is
 recorded in `missing` and surfaced in the UI. "Deferred" must not become `00:00`.
@@ -84,7 +84,7 @@ slightly stale name.
 ## Before you finish
 
 ```bash
-make verify
+make check
 ```
 
 Then check the district-3 screenshot: it is the page where degraded states show.

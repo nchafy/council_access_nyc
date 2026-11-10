@@ -38,7 +38,7 @@ So the shape is fixed by the hosting decision, not by this document.
 ## The design, for when hosting lands
 
 1. **Scheduled job, twice daily**, running `showup fetch --only calendar` then `showup build`
-   then `scripts/verify.py`, and deploying only if all three pass.
+   then `make check`, and copying the artifacts onward only if both pass.
 2. **Fail closed, which already works.** A fetch below its row floor or violating its body
    invariant leaves the previous cache in place and exits non-zero, so a bad upstream day leaves
    the last good site serving — labelled with its real fetch time, which is now what the footer

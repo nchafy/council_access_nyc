@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from . import templates
 from .deadlines import accommodation_state, written_state
 from .model import BoardBudgetRequests, District, DistrictBoard, Meeting
 from .sources.participatory_budgeting import PB_PROGRAMME_URL, Participation
@@ -19,22 +18,7 @@ from .sources.participatory_budgeting import PB_PROGRAMME_URL, Participation
 __all__ = [
     "board_schedule_payload",
     "preview_payload",
-    "render_index",
 ]
-
-
-def render_index() -> str:
-    """The landing page: the mount point the window manager builds the desktop into.
-
-    It has no content of its own. The template spells out no desktop on purpose — windows are
-    created, moved and destroyed at runtime, so markup for one would be a picture of it and
-    the two copies would drift.
-
-    It takes no data at all, not even the build stamp: staleness is computed in the browser
-    from `manifest.json` against the current time, which is what keeps an abandoned site
-    honest, so nothing about this build may be baked into the page.
-    """
-    return templates.render("index.html", title="Council districts and community boards")
 
 
 _MODE_LABEL = {

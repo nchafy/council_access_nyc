@@ -7,7 +7,6 @@ is left in place.
 from __future__ import annotations
 
 import json
-import re
 import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -33,12 +32,7 @@ from .model import (
     Manifest,
     Member,
 )
-from .render import (
-    board_schedule_payload,
-    preview_payload,
-    references_payload,
-    render_index,
-)
+from .render import board_schedule_payload, preview_payload, references_payload
 from .sources.board_meetings import BoardMeetingsError, load_board_meetings, source_freshness
 from .sources.boards import JOINT_INTEREST_AREAS, load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
@@ -73,131 +67,6 @@ FLOORS = {
 
 class BuildError(RuntimeError):
     """A source failed its floor or invariant. The build must not continue."""
-
-
-#: The vendored browser dependency, served from our own origin. `scripts/fetch_maplibre.py`
-#: puts these in the cache, pinned by checksum; the build only copies them.
-VENDOR_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "maplibre-gl"
-#: `maplibre-gl.css` is fetched and pinned but deliberately not shipped — 7 of its 135
-#: selectors matched anything on `/map/`, and the base map's own `xp.css` carries those seven
-#: at the foot of the file. The licence still travels with the code.
-VENDOR_FILES = ("maplibre-gl.mjs", "maplibre-gl-worker.mjs", "LICENSE.txt")
-
-#: The base map and window chrome, pinned by `scripts/fetch_basemap.py`. The map route
-#: imports these from `/vendor/`; the build only copies them.
-BASEMAP_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "basemap"
-#: The base map, fetched from the 30 Day Map Challenge and sha256-pinned by
-#: `scripts/fetch_basemap.py`. One file: that project's taskbar, themes and stylesheets went
-#: with `/map/` when webxp's shell took over the desktop.
-BASEMAP_FILES = ("basemap.mjs",)
-
-#: Hosts the base map names only in its attribution links, which a reader clicks and the
-#: page never fetches. Everything else it names is a tile, glyph or sprite source and must
-#: appear in `connect-src`, so anything new upstream fails the build until it is classified
-#: here or allowed there.
-BASEMAP_LINK_ONLY_HOSTS = frozenset(
-    {
-        "https://creativecommons.org",
-        "https://openfreemap.org",
-        "https://opentopomap.org",
-        "https://www.esri.com",
-        "https://www.openstreetmap.org",
-    }
-)
-
-
-def _copy_vendor(staging: Path) -> None:
-    """Copy the pinned MapLibre files into `site/vendor/`.
-
-    Fails the build rather than shipping a map route whose library 404s. The licence travels
-    with the code because BSD-3-Clause asks it to.
-    """
-    missing = [name for name in VENDOR_FILES if not (VENDOR_CACHE / name).is_file()]
-    if missing:
-        raise BuildError(
-            f"no vendored MapLibre in {VENDOR_CACHE} (missing {', '.join(missing)}). "
-            "Run `make maplibre-fetch` once; it is pinned by checksum and cached."
-        )
-    absent = [name for name in BASEMAP_FILES if not (BASEMAP_CACHE / name).is_file()]
-    if absent:
-        raise BuildError(
-            f"no vendored base map in {BASEMAP_CACHE} (missing {', '.join(absent)}). "
-            "Run `make basemap-fetch` once; it is pinned by commit and checksum."
-        )
-    vendor = staging / "vendor"
-    vendor.mkdir(parents=True, exist_ok=True)
-    for name in VENDOR_FILES:
-        shutil.copy2(VENDOR_CACHE / name, vendor / name)
-    for name in BASEMAP_FILES:
-        shutil.copy2(BASEMAP_CACHE / name, vendor / name)
-    _assert_policy_covers_basemap()
-
-
-#: A `https://` origin in the base map, with `${...}` left in place so a templated
-#: subdomain is recognised as the pattern it is.
-_ORIGIN = re.compile(r"https://[A-Za-z0-9.$~{}_-]+")
-
-
-#: A templated subdomain, as the base map spells one: `https://${s}.tile.example.org`.
-_TEMPLATED_SUBDOMAIN = re.compile(r"\$\{[A-Za-z0-9_]+\}")
-
-
-def _basemap_fetch_origins() -> set[str]:
-    """Every origin the base map fetches from, templated subdomains left as patterns."""
-    text = (BASEMAP_CACHE / "basemap.mjs").read_text(encoding="utf-8")
-    origins = set()
-    for match in _ORIGIN.finditer(text):
-        parts = match.group().split("/")
-        if len(parts) >= 3:
-            origins.add(f"{parts[0]}//{parts[2]}")
-    return origins - BASEMAP_LINK_ONLY_HOSTS
-
-
-#: Stands in for a templated subdomain while the rest of the origin is escaped. Letters
-#: only, because `re.escape` would otherwise escape the sentinel along with everything else
-#: and the placeholder would never be substituted back.
-_WILDCARD_SENTINEL = "SUBDOMAINWILDCARD"
-
-
-def _origin_allowed(origin: str, hosts: list[str]) -> bool:
-    """Whether one origin, or a templated one's subdomains, is allowed.
-
-    A templated origin is satisfied by any one matching host, because the pattern carries
-    no list of the subdomains it stands for. So a policy naming only `a.tile.example.org`
-    passes while the base map also fetches `b` and `c`, and the missing two would fail in a
-    reader's browser. The check catches an unallowed *host*; it does not prove a templated
-    set is complete.
-    """
-    if "${" not in origin:
-        return origin in hosts
-    masked = _TEMPLATED_SUBDOMAIN.sub(_WILDCARD_SENTINEL, origin)
-    pattern = re.compile("^" + re.escape(masked).replace(_WILDCARD_SENTINEL, "[^.]+") + "$")
-    return any(pattern.match(host) for host in hosts)
-
-
-def _assert_policy_covers_basemap() -> None:
-    """Fail the build when the base map would fetch a host `connect-src` forbids.
-
-    Nothing else compares the policy against what the vendored base map actually requests,
-    so without this a new upstream tile host ships a map that passes every local check and
-    is blocked in production.
-    """
-    policy = (Path(__file__).resolve().parents[2] / "_headers").read_text(encoding="utf-8")
-    # The served header, not the first mention: `connect-src` is discussed in the comments
-    # above it, and matching those collected prose instead of hosts.
-    served = next((line for line in policy.splitlines() if "Content-Security-Policy:" in line), "")
-    allowed = re.search(r"connect-src ([^;]+)", served)
-    hosts = allowed.group(1).split() if allowed else []
-    uncovered = [
-        origin for origin in sorted(_basemap_fetch_origins()) if not _origin_allowed(origin, hosts)
-    ]
-    if uncovered:
-        raise BuildError(
-            f"the vendored base map fetches {', '.join(uncovered)}, which connect-src in "
-            f"`_headers` does not allow. Add them there and to ALLOWED_ORIGINS in "
-            f"tests/unit/test_csp.py, or record them as link-only in "
-            f"BASEMAP_LINK_ONLY_HOSTS."
-        )
 
 
 def _check_floor(name: str, count: int) -> None:
@@ -395,8 +264,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
 
-    (staging / "index.html").write_text(render_index(), encoding="utf-8")
-
     # The 51 districts and the 59 boards were a page each and are programs now. The
     # 59-boards-or-none floor moved to `preview_payload`'s output below, which is what the
     # programs read: a build that silently covered 58 boards is the failure that floor exists
@@ -513,29 +380,6 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
         ),
         encoding="utf-8",
     )
-
-    assets_src = Path(__file__).parent / "assets"
-    shutil.copytree(assets_src, staging / "assets")
-
-    # The host page's boot module sits beside the assets rather than in them: it is the one
-    # script the document loads, and `assets/` is a directory of things apps and pages ask
-    # for. Copied rather than templated — it has no build-time values in it.
-    shutil.copy2(Path(__file__).parent / "boot.mjs", staging / "assets" / "boot.mjs")
-
-    # The vendored window manager, pinned by commit in its own PROVENANCE.md and checked by
-    # `scripts/check_webxp.py`. Served from our origin, which is what `script-src 'self'`
-    # and `style-src 'self'` require.
-    shutil.copytree(Path(__file__).parent / "vendor" / "webxp", staging / "vendor" / "webxp")
-
-    # Every program is a folder under `apps/`, and the generated manifest is how the desktop
-    # learns which folders exist — a browser cannot list a directory over static HTTP.
-    shutil.copytree(Path(__file__).parent / "apps", staging / "apps")
-
-    _copy_vendor(staging)
-
-    headers = Path(__file__).resolve().parents[2] / "_headers"
-    if headers.exists():
-        shutil.copy2(headers, staging / "_headers")
 
     manifest_sources: dict[str, dict[str, str | int]] = {
         manifest_key("calendar"): {

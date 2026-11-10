@@ -51,7 +51,7 @@ uv run pytest -m "not upstream and not browser" -q      # 100% coverage enforced
 ```
 
 Touched the renderer, assets, headers or a source: add `make build && uv run python
-scripts/verify.py`. Touched anything a reader sees: add `make gates` — `make verify` excludes the
+make check`. Touched anything a reader sees: that lives in the `webxp` repository now, and its gates are the
 four browser gates, so it is necessary and not sufficient (`.claude/skills/validate/SKILL.md`).
 
 Then read `git show --stat HEAD` and `git log -1` before pushing. A body that names a file the
@@ -61,4 +61,4 @@ splices its output into the message. Both have happened here; see `docs/OBSERVAT
 2026-10-08.
 
 **Never commit:** `etl/raw/`, `site/`, a secret, or a loosened threshold. Thresholds live in
-`perf-budget.json`; changing one is its own commit with a reason.
+`tests/integration/test_artifacts.py`; changing one is its own commit with a reason.

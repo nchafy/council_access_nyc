@@ -4,8 +4,10 @@ Read this before writing any code. It supersedes the outline's §8 milestones fo
 
 **Status: built and running locally as of 2026-09-23.** Six of seven exit criteria (§6) are met.
 Criterion 5 is met except for the one thing that cannot be automated: **a real screen-reader pass has
-not been run** (`docs/accessibility-pass.md` §3.2). Run with `make fetch && make serve`, gates with
-`make gates`.
+not been run**. Run with `make fetch && make build`, and `make check` for the gates. The
+accessibility, reflow, console and performance gates — and the document that recorded the
+human pass — went to the `webxp` repository with the front end on 2026-11-09, because every
+one of them was about a rendered page.
 
 Owner decisions, 2026-09-21: barebones; one input produces one page of facts and links; no map; no
 analysis; security is the top priority; P8, P9, P10 all in. **Phase 1 runs locally only** — no domain,
@@ -188,7 +190,7 @@ Criterion 5, leg by leg:
 | Keyboard, automated | ✅ | 135 checks over 10 page types with real `Tab` keypresses in a real browser: skip link first and visible, focus into `<main>`, DOM order, reachability, ≥2px ring at every stop, `Shift+Tab` in reverse. Plus the accessibility tree (landmarks, accessible names, one h1, no skipped levels) and the no-JavaScript path verified with script execution disabled, not inferred from markup |
 | **Screen reader** | ❌ | **Has not been run.** Reading the accessibility tree is not listening to a screen reader, and automating that distinction away is the one shortcut this product cannot take. `docs/accessibility-pass.md` §3.2 is the procedure, §4 the record, and the record says NOT RUN. **This is the one thing left in Phase 1.** |
 | 60 KB page budget | ✅ | Gated in CI as arithmetic over built bytes: front page 13.9 KB gzipped, district pages 7.6 KB, boards 6.1 KB; all JavaScript 6.7 KB against a separate 12 KB ceiling; geometry 132 KB against its 300 KB after-first-paint budget |
-| 3 s throttled-3G gate | ✅ | p95 over 20 cold runs per page on 3G Fast with a 4× CPU throttle: 906 ms, 741 ms, 723 ms against 3000 ms. Thresholds and profiles in the committed `perf-budget.json`. DevTools' Slow 3G preset yields 4.3–5.1 s: reported but not gated, with the reasoning in that file rather than as a quiet omission |
+| 3 s throttled-3G gate | ✅ | p95 over 20 cold runs per page on 3G Fast with a 4× CPU throttle: 906 ms, 741 ms, 723 ms against 3000 ms. Thresholds and profiles were in `perf-budget.json`, deleted on 2026-11-09 with the gate that read it; the figures above are the measurement of record. DevTools' Slow 3G preset yields 4.3–5.1 s: reported but not gated, with the reasoning in that file rather than as a quiet omission |
 
 **Criterion 6, corrected 2026-09-23:** the staleness claim used to be true only over HTTP and false in a
 browser — `connect-src` omitted `'self'`, so `/manifest.json` could not be fetched and the notice never

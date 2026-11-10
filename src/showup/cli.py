@@ -35,16 +35,17 @@ def _build(args: argparse.Namespace) -> int:
         print(f"build refused: {error}", file=sys.stderr)
         return 1
 
-    # Not "pages": there is one page. The counts are what the programs can answer about, so
-    # they are the covered districts and boards rather than files written.
+    # Not "pages", and not "the desktop" either: this writes eight JSON artifacts and
+    # renders nothing. The counts are what a consumer of those artifacts can answer about,
+    # so they are the districts and boards that reached the data rather than files written.
     print(
-        f"built the desktop, covering {report['districts']} districts and "
+        f"built the data, covering {report['districts']} districts and "
         f"{report['board_pages']} community boards -> {report['out']}"
     )
     print(f"  meetings parsed : {report['meetings_parsed']}")
     print(f"  shortlist shown : {report['shortlist']}")
     print(f"  calendar through: {report['window_end']}")
-    print(f"  pages with gaps : {report['districts_with_gaps']}")
+    print(f"  districts w/gaps: {report['districts_with_gaps']}")
     print(
         f"  board links     : {report['boards_linked']} "
         f"({report['boards_without_email']} without a publishable email)"
@@ -119,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="showup", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build", help="build the static site from cached sources")
+    build = sub.add_parser("build", help="generate the JSON artifacts from cached sources")
     build.add_argument("--raw", default="etl/raw", help="directory of cached upstream payloads")
     build.add_argument("--out", default="site", help="output directory")
 

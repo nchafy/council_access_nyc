@@ -39,8 +39,8 @@ Same shape each time: **a measurement answering a different question than the on
 ### 2. Run the gates
 
 ```bash
-make verify     # build + lint + tests + 391 live checks
-make gates      # axe, keyboard, console, perf — not included in make verify
+make build      # the eight JSON artifacts
+make check      # lint + every test at 100% coverage
 ```
 
 Green is the floor. The question is **what would have made this red?** If nothing, the gate is
@@ -50,7 +50,7 @@ nothing running, hence `tests/fixtures/a11y_broken/` and a rules-exercised floor
 
 ### 3. Check what is not in the diff
 
-- A moved threshold — `perf-budget.json`, the axe tag list, `--cov-fail-under`. Its own commit,
+- A moved threshold — the geometry budget in `tests/integration/test_artifacts.py`, `--cov-fail-under`. Its own commit,
   with a reason.
 - An assertion weakened rather than updated. Repointing a literal at new copy is correct;
   shortening it to a substring is not.
@@ -72,7 +72,7 @@ the old implementation and may encode its bugs.
 
 ### 6. Read it as a reader
 
-`make serve`, then `/district/3/` — the degraded-state page — and `/board/302/`. `docs/voice.md`
+Nothing here renders, so there is no page to look at. District 3 is still the designed degraded state and board 302 the populated one; both are now surfaces in the `webxp` repository. `docs/voice.md`
 is binding on every user-facing string. No gate can check tone.
 
 ## Merging

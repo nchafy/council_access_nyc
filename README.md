@@ -17,7 +17,7 @@ board pages**. There is no domain and no hosting yet, by decision — see
 ```bash
 uv sync         # install the toolchain
 make fetch      # ~9 min cold; see the note below
-make serve      # then open http://127.0.0.1:8000
+make build      # writes the eight JSON artifacts into site/
 ```
 
 **`make fetch` is required on a fresh clone.** The upstream cache (`etl/raw/`) is
@@ -37,7 +37,7 @@ will be skipped.
 |---|---|
 | Tests | **~9,300**, of which ~8,500 are generated fuzz cases |
 | Coverage | **100%**, enforced (`--cov-fail-under=100`) |
-| Live checks | **471** against a running server (`make verify`) |
+| Artifact contract | `tests/integration/test_artifacts.py` — the eight files, their counts, the geometry budget |
 | Runtime dependencies | **two** — jinja2, beautifulsoup4; both build-time only |
 
 ## What it answers today
@@ -131,7 +131,7 @@ measurements of deliberately different kinds:
 | Geometry ≤ 300 KB, after first paint | plus "no page names it as a subresource" | 132 KB |
 | Cold load to interactive ≤ 3 s | Chrome, network-shaped, 4× CPU, 20 cold runs, p95 | 906 ms |
 
-Thresholds live in the committed [`perf-budget.json`](perf-budget.json), each carrying a
+The one surviving threshold — 300 KB gzipped for the two geometry layers — lives in `tests/integration/test_artifacts.py`, carrying a
 note recording where its number came from, so changing a promise is a reviewable diff.
 
 The p95 interaction budgets in the table above are **not** gated — those need the map and

@@ -93,6 +93,13 @@ def text_lines(markup: str | None) -> list[str]:
     return [line for raw in joined.split("\n") if (line := collapse(raw))]
 
 
+#: `esc` has no production caller since 2026-11-09, when the front end moved to the `webxp`
+#: repository and this one stopped rendering HTML. It is kept rather than deleted because it
+#: is load-bearing in the property tests: six of them assert `not MARKUP.search(esc(
+#: strip_tags(x)))`, and `strip_tags` alone cannot carry that — its output may legitimately
+#: contain the characters `<script>`, as the module docstring above says. Dropping `esc`
+#: would make those properties false rather than simpler, which is a redesign and not a
+#: deletion. A candidate for removal, not a dependency.
 def esc(value: object) -> str:
     """Escape a value for interpolation into HTML, including attribute context.
 

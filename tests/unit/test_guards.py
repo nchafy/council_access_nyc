@@ -8,7 +8,6 @@ Grouped by the module under test, so a failure points at one file.
 from __future__ import annotations
 
 import json
-import re
 from datetime import date
 from pathlib import Path
 
@@ -244,10 +243,10 @@ class TestBuildGuards:
     def test_rebuilding_over_an_existing_site_replaces_it(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         out.mkdir()
-        (out / "stale.html").write_text("old")
+        (out / "stale.json").write_text("old")
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert not (out / "stale.html").exists()
-        assert (out / "index.html").exists()
+        assert not (out / "stale.json").exists()
+        assert (out / "manifest.json").exists()
 
 
 class TestDistrictPageGuards:
@@ -411,80 +410,3 @@ class TestZipCrosswalkSkips:
         data = generate(council, community, zips, spacing=COARSE)
         assert "99999" not in data["zips"]
         assert "10001" in data["zips"]
-
-
-class TestTheAddressHarnessMatchesTheRealMarkup:
-    """`address.js` returns early if any element it needs is missing, so a harness fixture
-    that drifts from the script does not fail loudly — it silently stops testing.
-
-    That happened on 2026-10-29: adding `#address-suggest` to both templates left the
-    harness without it, `address.js` bailed, and four checks failed at once including
-    "section revealed", which has nothing to do with suggestions.
-
-    The harness is the only surface left to check. No page hosts the box since the front end
-    became a window manager; `address.js` is kept unported, so `tests/browser/test_address_box.py`
-    against this fixture is the only thing exercising it.
-    """
-
-    #: Exactly the elements `address.js` refuses to start without.
-    REQUIRED = (
-        "address-form",
-        "address-input",
-        "address-status",
-        "address-results",
-        "address-section",
-        "address-suggest",
-    )
-
-    def test_the_guard_list_matches_the_script(self):
-        """If the script starts demanding another element, this test is the reminder."""
-        source = (REPO_ROOT / "src" / "showup" / "assets" / "address.js").read_text(
-            encoding="utf-8"
-        )
-        guard = source[source.index("if (!form") :]
-        guard = guard[: guard.index("return;")]
-        named = set(re.findall(r"!(\w+)", guard))
-        assert named == {"form", "input", "status", "results", "section", "listbox"}, named
-
-    @pytest.mark.parametrize("path", ["tests/browser/harness.html"])
-    def test_every_required_element_is_present(self, path: str):
-        markup = (REPO_ROOT / path).read_text(encoding="utf-8")
-        missing = sorted(name for name in self.REQUIRED if f'id="{name}"' not in markup)
-        assert not missing, f"{path} is missing {missing}; address.js will return early"
-
-
-#: Every stylesheet this project authors: what the desktop adds to the vendored theme, and
-#: one per program. Globbed rather than listed so a new program cannot skip the brace count.
-#: `vendor/webxp/*.css` is excluded on purpose — it is pinned upstream, not ours to edit.
-OUR_STYLESHEETS = sorted(
-    path.relative_to(REPO_ROOT).as_posix()
-    for path in [
-        REPO_ROOT / "src" / "showup" / "assets" / "showup.css",
-        *(REPO_ROOT / "src" / "showup" / "apps").glob("*/app.css"),
-    ]
-)
-
-
-class TestTheStylesheetParses:
-    """A stray brace silently discards everything after it.
-
-    On 2026-10-31 removing a dead `@media` block left its closing `}` behind. The braces
-    went one out of balance, the CSS parser dropped the whole Windows XP theme, and the
-    site rendered in the base stylesheet's colours. `make axe` caught it as 12 contrast
-    violations; the console, a11y and reflow gates all stayed green, and the only visible
-    symptom was that the site looked wrong. Counting braces is cheaper than any of that.
-    """
-
-    def test_the_sheets_checked_are_the_ones_we_author(self):
-        """A guard that stops running when a program is added is not a guard."""
-        assert len(OUR_STYLESHEETS) == 1 + len(
-            list((REPO_ROOT / "src" / "showup" / "apps").glob("*/app.mjs"))
-        ), OUR_STYLESHEETS
-
-    @pytest.mark.parametrize("name", OUR_STYLESHEETS)
-    def test_braces_balance(self, name: str):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        assert text.count("{") == text.count("}"), (
-            f"{name} has {text.count('{')} opening and {text.count('}')} closing braces; "
-            "an unbalanced sheet drops every rule after the stray one"
-        )

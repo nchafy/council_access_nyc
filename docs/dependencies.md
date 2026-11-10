@@ -278,3 +278,54 @@ One compatibility detail, in `templates.py`: MarkupSafe spells the two quote ent
 `&#39;` and `&#34;` where `text.esc` spells them `&#x27;` and `&quot;`. Both are inert, and
 keeping `esc`'s spelling is what made the migration byte-identical over all 114 pages —
 which is the only way a renderer swap can be reviewed as changing nothing.
+
+## The basemap tile hosts, and who owes their terms now
+
+Recorded here on 2026-11-09 because the file that carried it is being deleted. `_headers`
+held this project's Content-Security-Policy, and the front end it protected has moved to the
+`webxp` repository. An ETL serves nothing, so a response-header file here would be a policy
+over no responses.
+
+The three basemap types each name their own tile hosts, and two carry an obligation beyond
+attribution:
+
+| Basemap | Hosts | Term |
+|---|---|---|
+| Simple | `tiles.openfreemap.org` | Attribution. The owner decision of 2026-10-22, `product-brief.md` §5. |
+| Satellite | `server.arcgisonline.com` | Esri's Light Gray Canvas, chosen 2026-10-26. A **commercial** service whose keyless endpoints nobody here has confirmed are licensed for this use. The owner chose it on 2026-11-04 having been told so. |
+| Geography | `{a,b,c}.tile.opentopomap.org` | **CC-BY-SA**, and OpenTopoMap asks that its tiles not carry heavy traffic. Also the owner's choice of 2026-11-04. |
+
+Two things follow for whoever now serves the map, and neither is this repository's to do:
+
+- **That site will need a CSP, and `webxp` has none.** Not a live exposure today: that
+  repository is public *source* with nothing deployed — no Pages, no host config, no CI —
+  so there is no response for a header to ride on and nobody is fetching a tile. It becomes
+  one the moment a static host is pointed at the tree. The policy these hosts belong in is
+  `connect-src`: all three serve raster tiles, which MapLibre fetches, and `img-src`,
+  `worker-src` and `blob:` were each measured unnecessary on 2026-10-22. The policy this
+  project served, which covered one site with one map, was:
+
+  ```
+  default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self';
+  connect-src 'self' https://geosearch.planninglabs.nyc https://tiles.openfreemap.org
+    https://server.arcgisonline.com https://a.tile.opentopomap.org
+    https://b.tile.opentopomap.org https://c.tile.opentopomap.org;
+  form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  ```
+
+  It is **not** sufficient there. That desktop runs forty-odd programs whose network needs
+  nobody here has read, so copying this verbatim would block them; it is a floor to extend,
+  not a policy to adopt. The other headers it served — `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer`, HSTS, `X-Frame-Options: DENY`,
+  `Cross-Origin-Opener-Policy: same-origin`, and a `Permissions-Policy` denying geolocation,
+  camera, microphone, payment and USB — carry over unchanged and depend on no app.
+
+- **The heavy-traffic request is now a hosting question.** It was answerable while this was
+  one static site behind one CDN. A public desktop with a map in it is a different traffic
+  shape, and the OpenTopoMap term should be re-read against it rather than assumed to carry.
+  The distinction worth keeping: the term is *recorded* upstream, but the assessment behind
+  it was made under the old premise, and nothing says so. A term re-read under a changed
+  premise is a different question from a term recorded once.
+
+Both of the above are gated upstream rather than here — that repository now carries the
+pre-deploy checklist, because it is the one that will serve.

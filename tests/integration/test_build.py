@@ -8,7 +8,6 @@ now that the one page the build writes renders no upstream text.
 from __future__ import annotations
 
 import json
-import re
 from datetime import date, datetime
 from pathlib import Path
 
@@ -18,7 +17,7 @@ from showup import render
 from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
-from showup.render import PREVIEW_REQUESTS, render_index
+from showup.render import PREVIEW_REQUESTS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
@@ -30,29 +29,6 @@ class TestBuild:
         assert report["districts"] == 51
         assert report["meetings_parsed"] == 60
         assert report["shortlist"] == 5
-
-    def test_writes_the_expected_files(self, raw_dir, tmp_path):
-        """One page, the module that boots it, the programs, and the data they read."""
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert (out / "index.html").is_file()
-        assert (out / "manifest.json").is_file()
-        assert (out / "assets" / "boot.mjs").is_file()
-        assert (out / "assets" / "showup.css").is_file()
-        assert (out / "apps" / "manifest.mjs").is_file()
-        assert (out / "vendor" / "webxp" / "webxp.mjs").is_file()
-        for name in ("lookup.json", "preview.json", "board-meetings.json"):
-            assert (out / "data" / name).is_file(), name
-
-    def test_it_is_the_only_page(self, raw_dir, tmp_path):
-        """The 51 district pages, the 59 board pages, both indexes, `/references/` and the
-        404 were deleted when the front end became a window manager. A second document
-        appearing here means a route came back without a decision."""
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert [page.relative_to(out).as_posix() for page in sorted(out.rglob("*.html"))] == [
-            "index.html"
-        ]
 
     def test_manifest_carries_inputs_not_a_verdict(self, raw_dir, tmp_path):
         out = tmp_path / "site"
@@ -169,55 +145,20 @@ class TestBuild:
         with pytest.raises(BuildError, match="floor"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
 
-    def test_failed_build_leaves_the_previous_site_intact(self, raw_dir, tmp_path):
+    def test_a_failed_build_leaves_the_previous_output_intact(self, raw_dir, tmp_path):
+        """The staging-then-swap. Read off `manifest.json` rather than the page it used to
+        read: the output is eight artifacts now, and a consumer that committed half of a
+        failed run would ship a desktop whose programs disagree with each other."""
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        marker = (out / "index.html").read_text()
+        marker = (out / "manifest.json").read_text()
 
         (raw_dir / "legistar_calendar.html").write_text(
             '<table id="ctl00_ContentPlaceHolder1_gridCalendar_ctl00"></table>', encoding="utf-8"
         )
         with pytest.raises(BuildError):
             build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert (out / "index.html").read_text() == marker
-
-
-class TestRenderedSafety:
-    def test_no_inline_script_or_style_anywhere(self, raw_dir, tmp_path):
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        for page in out.rglob("*.html"):
-            html = page.read_text()
-            assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", html), page
-            assert not re.search(r"\sstyle\s*=\s*[\"']", html), page
-            assert " onclick=" not in html.lower(), page
-
-
-class TestIndex:
-    def test_the_landing_page_is_the_webxp_desktop(self):
-        """Owner's decision 2026-11-07: webxp is the front end. The page is a mount point for
-        the window manager and carries no content of its own."""
-        html = render_index()
-        assert 'id="webxp"' in html
-        assert 'src="/assets/boot.mjs"' in html
-        for sheet in ("theme", "shell", "window"):
-            assert f'href="/vendor/webxp/{sheet}.css"' in html, sheet
-
-    def test_the_landing_page_says_so_without_a_script(self):
-        """There is no static version of a window manager, so the one thing owed to a reader
-        without a script is that fact and the data, rather than a blank page."""
-        html = render_index()
-        assert "<noscript>" in html
-        # Only files the build actually writes: a cited path that 404s is worse than none.
-        for href in ("/data/lookup.json", "/data/preview.json", "/manifest.json"):
-            assert f'href="{href}"' in html, href
-
-    def test_the_landing_page_carries_no_markup_for_the_shell(self):
-        """Windows are created and destroyed at runtime, so a desktop spelled out here would
-        be a picture of one and the two copies would drift."""
-        html = render_index()
-        for absent in ('class="taskbar"', 'class="window-title"', "icon-grid"):
-            assert absent not in html, absent
+        assert (out / "manifest.json").read_text() == marker
 
 
 class TestCrosswalk:
@@ -289,8 +230,11 @@ class TestBoardsInTheShippedData:
             if (row.get(field) or "").strip()
         }
         assert names, "fixture should carry some names to check against"
-        written = [*sorted((out / "data").glob("*.json")), out / "index.html"]
-        assert len(written) >= 6, written
+        written = [*sorted((out / "data").glob("*.json")), out / "manifest.json"]
+        # A floor, because the sweep is only worth anything over the files that exist: this
+        # read `out / "index.html"` until the front end was deleted on 2026-11-09, and a
+        # list that silently lost an entry would still pass over the rest.
+        assert len(written) == 8, written
         for artifact in written:
             text = artifact.read_text()
             for name in names:

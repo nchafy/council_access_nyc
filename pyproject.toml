@@ -12,7 +12,6 @@ requires-python = ">=3.12"
 # install surface. Asserted in tests/unit/test_html_parsing.py and test_board_pdf.py.
 dependencies = [
     "beautifulsoup4>=4.15.0",
-    "jinja2>=3.1.6",
     "pypdf>=6.21.4",
 ]
 
@@ -32,9 +31,14 @@ ocr = [
 showup = "showup.cli:main"
 
 [dependency-groups]
-# `websocket-client` drives the browser gates from `scripts/cdp.py` and is deliberately
-# NOT a runtime dependency: `showup build` must not need it. Pure Python, no compiled
-# extension, nothing executed at install — the rule that still rules out Playwright.
+# `websocket-client` is the transport for `showup/cdp.py`, the Chrome DevTools client that
+# one board's schedule needs: `sources/board_browser.py` renders an Airtable view that only
+# exists once a browser has run it. Deliberately NOT a runtime dependency, and that is safe
+# because the import is lazy and guarded — `browser_available()` catches `ImportError` and
+# answers False, so a machine without it reports that board unavailable rather than
+# crashing, which is the contract the registry's `needs` field expresses. Pure Python, no
+# compiled extension, nothing executed at install — the rule that still rules out
+# Playwright.
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "websocket-client>=1.9.2"]
 
 [build-system]
@@ -62,18 +66,23 @@ addopts = [
 filterwarnings = ["error"]
 markers = [
     "upstream: hits a real third-party host; excluded from CI, run on a schedule",
-    "browser: needs a local Chrome; excluded from the default run",
     "slow: takes more than a few seconds; still runs by default",
 ]
 
 [tool.coverage.run]
-# `cdp.py` is the Chrome DevTools client. It moved into the package when the browser
-# became a way of *loading* a board's schedule and not only a way of testing the site, and
-# that brought it under this gate — where it cannot honestly sit. Every line of it needs a
-# real Chrome, so the only way to cover it is `make browser`, which the default `make
-# check` deliberately excludes. Measuring it here would make the 100% floor depend on a
-# browser being installed, which is exactly the coupling the `needs` field exists to
-# avoid. `tests/browser/test_cdp.py` is where it is actually exercised.
+# `cdp.py` is the Chrome DevTools client, and it is the one file this floor does not cover.
+#
+# It is not front-end tooling, which is why it survived the 2026-11-09 deletion: one board
+# publishes its schedule as an Airtable view that only exists once a browser has run it, so
+# `sources/board_browser.py` drives a real Chrome through this module and `board-meetings.json`
+# depends on it.
+#
+# Measured on 2026-11-09: the suite reaches 27% of it — 47 of 173 statements — and the
+# remaining 126 are the websocket conversation with a live browser. The previous
+# justification here was that `tests/browser/test_cdp.py` exercised it; that file drove real
+# Chrome and was deleted with the rest of the browser suite, so this exemption now covers a
+# genuine gap rather than a differently-tested file. Closing it means a fake-websocket
+# harness, which is worth doing and is not done.
 omit = ["src/showup/cdp.py"]
 
 [tool.ruff]
@@ -111,4 +120,3 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH", "RET", "A
 "src/showup/sources/*.py" = ["TID252"]
 # The handler's class attributes are configuration set once before the server
 # starts, which is how http.server is designed to be parameterised.
-"scripts/serve.py" = ["RUF012"]

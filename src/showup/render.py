@@ -539,3 +539,98 @@ def references_payload(dataset_rows: list[dict], *, window_end: date | None) -> 
         "caveats": list(CAVEATS),
         "calendar_window_end": window_end.isoformat() if window_end else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# The detail artifact.
+#
+# `preview.json` was built for a map side-panel: `PREVIEW_REQUESTS` caps the budget table at
+# five rows of two columns, and a district carries only its member's name and seat status.
+# That was the right shape while a page per district and per board carried everything else.
+#
+# When those pages were deleted the summary silently became the only thing published, so
+# every build computed the member's email, offices and term, and every board's budget
+# explanations and agency responses, and threw them away. This is the artifact that stops
+# that: the facts the pages showed, published whole, for a consumer that renders detail.
+# ---------------------------------------------------------------------------
+
+
+def _office(office) -> dict:
+    return {
+        "label": office.label,
+        "address": office.address,
+        "phone": office.phone,
+        "fax": office.fax,
+        "hours": office.hours,
+    }
+
+
+def _member_detail(member) -> dict | None:
+    """Everything the district page showed about the member, or None for a vacant seat."""
+    if member is None:
+        return None
+    return {
+        "name": member.name,
+        "seat_status": member.seat_status,
+        "email": member.email,
+        "page_url": member.page_url,
+        "offices": [_office(office) for office in member.offices],
+        "term_start": member.term_start.isoformat() if member.term_start else None,
+        "term_end": member.term_end.isoformat() if member.term_end else None,
+        # Disclosed rather than resolved: council.nyc.gov names a member the open dataset has
+        # no current term for, and the reader is told the two sources disagree.
+        "seat_conflict": member.seat_conflict,
+    }
+
+
+def _request_detail(request) -> dict:
+    """One budget line in the board's words and the agency's.
+
+    The pair is the point. `preview.json` publishes the request and its category; what it
+    drops is the board's own explanation of why it asked, and what the agency said back.
+    Quoted, never sorted into yes and no: the phrasing changes between editions of the same
+    row, and it records a position rather than an outcome.
+    """
+    return {
+        "priority": request.priority,
+        "category": request.category,
+        "tracking_code": request.tracking_code,
+        "request": request.request,
+        "agency": request.agency,
+        "explanation": request.explanation,
+        "response": request.response,
+    }
+
+
+def detail_payload(districts, boards, budget_requests) -> dict:
+    """`/data/detail.json`: what the deleted pages showed and `preview.json` does not.
+
+    Keyed the same way as `preview.json` — districts by number, boards by `boro_cd` — so a
+    consumer can read one against the other without a join table.
+    """
+    return {
+        "districts": {
+            str(district.number): {
+                "member": _member_detail(district.member),
+                # Per field, where the fact came from and when it was seen. The district page
+                # carried this inline; it is the only record of which source answered.
+                "provenance": dict(district.provenance),
+                "missing": list(district.missing),
+            }
+            for district in districts
+        },
+        "boards": {
+            str(board.code): {
+                "budget": (
+                    {
+                        "publication": entry.publication.isoformat(),
+                        "fiscal_year": entry.fiscal_year,
+                        "requests": [_request_detail(request) for request in entry.requests],
+                    }
+                    if (entry := budget_requests.get(str(board.code))) is not None
+                    else None
+                ),
+            }
+            for board in boards
+        },
+    }

@@ -32,7 +32,12 @@ from .model import (
     Manifest,
     Member,
 )
-from .render import board_schedule_payload, preview_payload, references_payload
+from .render import (
+    board_schedule_payload,
+    detail_payload,
+    preview_payload,
+    references_payload,
+)
 from .sources.board_meetings import BoardMeetingsError, load_board_meetings, source_freshness
 from .sources.boards import JOINT_INTEREST_AREAS, load_boards
 from .sources.budget_requests import BudgetRequestError, load_budget_requests
@@ -415,6 +420,34 @@ def build_site(raw_dir: Path, out_dir: Path, *, today: date | None = None) -> di
             "max_age_hours": 24 * 30,
             "rows": budget_request_rows,
         }
+
+    detail = detail_payload(
+        districts, sorted(boards_by_code.values(), key=lambda b: b.code), budget_requests
+    )
+    if len(detail["districts"]) != DISTRICT_COUNT or len(detail["boards"]) != BOARD_COUNT:
+        raise BuildError(
+            f"detail covers {len(detail['districts'])} districts and "
+            f"{len(detail['boards'])} boards, expected {DISTRICT_COUNT} and {BOARD_COUNT}"
+        )
+    # The whole reason this artifact exists: `preview.json` caps the budget table at
+    # `PREVIEW_REQUESTS` rows per board, and this one must not. Checked against the source
+    # rather than against that cap — every request the register parsed has to appear here.
+    #
+    # An aggregate floor was tried first and was wrong: it compared the total against the
+    # cap times 59, which a fixture of 16 requests fails for no reason, and which a real
+    # register would pass while silently truncating one board.
+    parsed = sum(len(entry.requests) for entry in budget_requests.values())
+    published = sum(
+        len(entry["budget"]["requests"]) for entry in detail["boards"].values() if entry["budget"]
+    )
+    if published != parsed:
+        raise BuildError(
+            f"detail publishes {published} of the {parsed} budget requests the register "
+            "parsed, so some board's detail is truncated"
+        )
+    (data_dir / "detail.json").write_text(
+        json.dumps(detail, separators=(",", ":")), encoding="utf-8"
+    )
 
     references = references_payload(_reference_rows(raw, manifest_sources), window_end=window_end)
     if len(references["datasets"]) != len(SOURCES):

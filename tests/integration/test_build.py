@@ -231,10 +231,12 @@ class TestBoardsInTheShippedData:
         }
         assert names, "fixture should carry some names to check against"
         written = [*sorted((out / "data").glob("*.json")), out / "manifest.json"]
-        # A floor, because the sweep is only worth anything over the files that exist: this
+        # Pinned, because the sweep is only worth anything over the files that exist: this
         # read `out / "index.html"` until the front end was deleted on 2026-11-09, and a
-        # list that silently lost an entry would still pass over the rest.
-        assert len(written) == 8, written
+        # list that silently lost an entry would still pass over the rest. Nine since
+        # `detail.json` was added on 2026-11-10 — which is the artifact that matters most
+        # here, because it is the only one carrying the boards' own free text.
+        assert len(written) == 9, written
         for artifact in written:
             text = artifact.read_text()
             for name in names:

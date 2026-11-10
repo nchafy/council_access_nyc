@@ -31,6 +31,7 @@ from showup.render import PREVIEW_REQUESTS, preview_payload
 ARTIFACTS = (
     "data/board-meetings.json",
     "data/boards.geo.json",
+    "data/detail.json",
     "data/districts.geo.json",
     "data/lookup.json",
     "data/preview.json",
@@ -99,6 +100,130 @@ class TestTheCountsAConsumerIndexesBy:
     def test_the_preview_is_dated(self, site):
         preview = json.loads((site / "data" / "preview.json").read_text(encoding="utf-8"))
         assert preview["as_of"], "without as_of no pane can say how old it is"
+
+
+class TestTheDetailArtifact:
+    """What the deleted district and board pages showed, and `preview.json` does not.
+
+    `preview.json` is a map side-panel summary: `PREVIEW_REQUESTS` caps the budget table at
+    five rows of two columns, and a district carries only its member's name and seat status.
+    That was right while pages carried the rest. When the pages were deleted the summary
+    became the only thing published, so every build computed this and discarded it.
+    """
+
+    @staticmethod
+    @pytest.fixture(scope="module")
+    def detail(site):
+        return json.loads((site / "data" / "detail.json").read_text(encoding="utf-8"))
+
+    def test_it_covers_every_district_and_board(self, detail):
+        assert len(detail["districts"]) == DISTRICT_COUNT
+        assert len(detail["boards"]) == BOARD_COUNT
+
+    def test_a_member_carries_what_the_district_page_showed(self, detail, site):
+        """The fields `preview.json` drops. Asserted over every filled seat rather than one,
+        because a single district proves only that the key exists."""
+        preview = json.loads((site / "data" / "preview.json").read_text(encoding="utf-8"))
+        filled = [
+            number
+            for number, entry in detail["districts"].items()
+            if entry["member"] and entry["member"]["seat_status"] == "filled"
+        ]
+        assert filled, "no filled seat in the fixture to check"
+        for number in filled:
+            member = detail["districts"][number]["member"]
+            assert set(member) == {
+                "name",
+                "seat_status",
+                "email",
+                "page_url",
+                "offices",
+                "term_start",
+                "term_end",
+                "seat_conflict",
+            }, number
+            # The point of the artifact: strictly more than the summary beside it.
+            assert set(preview["districts"][number]["member"]) < set(member)
+
+    def test_at_least_one_member_has_an_office_and_a_term(self, detail):
+        """A schema can be right and empty. These come from two different sources — the
+        scraped district page and the open dataset — so one being absent everywhere means a
+        source stopped answering rather than that the field was dropped."""
+        members = [e["member"] for e in detail["districts"].values() if e["member"]]
+        assert any(m["offices"] for m in members), "no member has an office address"
+        assert any(m["term_start"] for m in members), "no member has a term"
+        assert any(m["email"] for m in members), "no member has an email"
+
+    def test_budget_requests_are_uncapped_and_carry_both_voices(self, detail):
+        """The board's own explanation and the agency's reply, which the preview drops.
+
+        Quoted, never sorted into yes and no: the phrasing changes between editions of the
+        same row, and it records a position rather than an outcome.
+        """
+        boards = [e["budget"] for e in detail["boards"].values() if e["budget"]]
+        assert boards, "no board carries a budget edition"
+        assert any(len(b["requests"]) > PREVIEW_REQUESTS for b in boards), (
+            "no board exceeds the preview's cap, so this artifact is adding nothing"
+        )
+        requests = [r for b in boards for r in b["requests"]]
+        assert any(r["explanation"] for r in requests), "no request carries an explanation"
+        assert any(r["response"] for r in requests), "no request carries an agency response"
+        for request in requests:
+            assert set(request) == {
+                "priority",
+                "category",
+                "tracking_code",
+                "request",
+                "agency",
+                "explanation",
+                "response",
+            }
+
+    def test_provenance_survives(self, detail):
+        """Per field, which source answered and when. The district page carried it inline and
+        it reaches no other artifact."""
+        assert any(e["provenance"] for e in detail["districts"].values())
+
+    def test_a_short_detail_fails_the_build(self, raw_dir, tmp_path, monkeypatch):
+        """A district or board silently missing from the detail is a pane with nothing in it
+        for that one, which looks identical to a district whose sources said nothing."""
+        import showup.build as build_module
+
+        real = build_module.detail_payload
+
+        def short(*args, **kwargs):
+            payload = real(*args, **kwargs)
+            payload["districts"].pop(next(iter(payload["districts"])))
+            return payload
+
+        monkeypatch.setattr(build_module, "detail_payload", short)
+        with pytest.raises(BuildError, match="detail covers"):
+            build_site(raw_dir, tmp_path / "out", today=date(2026, 9, 22))
+
+    def test_a_vacant_seat_publishes_no_member(self):
+        """None, not a dict of nulls. A member object whose every field is null reads as a
+        person about whom nothing is known, where the fact is that nobody holds the seat —
+        and `seat_status` already carries that on the district."""
+        assert render._member_detail(None) is None
+
+    def test_a_truncated_detail_fails_the_build(self, raw_dir, tmp_path, monkeypatch):
+        """The floor that makes this artifact's existence checkable: it must publish every
+        request the register parsed. A payload that silently went back to a capped list would
+        otherwise still be nine valid files."""
+        import showup.build as build_module
+
+        real = build_module.detail_payload
+
+        def capped(*args, **kwargs):
+            payload = real(*args, **kwargs)
+            for entry in payload["boards"].values():
+                if entry["budget"]:
+                    entry["budget"]["requests"] = entry["budget"]["requests"][:1]
+            return payload
+
+        monkeypatch.setattr(build_module, "detail_payload", capped)
+        with pytest.raises(BuildError, match="budget requests the register parsed"):
+            build_site(raw_dir, tmp_path / "out", today=date(2026, 9, 22))
 
 
 class TestTheGeometryBudget:

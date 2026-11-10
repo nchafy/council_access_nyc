@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 """Drive a real Chrome over the DevTools Protocol.
 
-A rendered accessibility tree, real `Tab` keypresses and the browser's own clock under
-its own throttling cannot be had from outside a browser. CDP is JSON over a loopback
-WebSocket, so the useful subset is small enough to own rather than depend on Playwright,
-which installs and runs its own browser build — the `docs/dependencies.md` rule this file
-exists because of. Used as a library by `axe_check`, `a11y_audit`, `console_check`
-and `perf`.
+Why this is still here, since nothing in this project renders: one community board
+publishes its schedule as an Airtable view that only exists once a browser has run the
+page. `sources/board_browser.py` drives Chrome through this module to read it, so
+`board-meetings.json` depends on it and `showup fetch` would lose that board without it.
 
-    python3 scripts/cdp.py https://example.com
+It was written for the accessibility, console and performance gates, which drove a browser
+over a rendered site. Those moved to the `webxp` repository with the front end on
+2026-11-09 and this stayed, which is why it reads like test tooling and is not.
+
+CDP is JSON over a loopback WebSocket, so the useful subset is small enough to own rather
+than depend on Playwright, which installs and runs its own browser build — the
+`docs/dependencies.md` rule this file exists because of. The transport is
+`websocket-client`, a dev dependency: the import is guarded, so a machine without it
+reports that one board unavailable rather than failing.
+
+Coverage: the suite reaches 27% of this file. The rest is the conversation with a live
+browser, and `pyproject.toml` records that exemption and what closing it would take.
 """
 
 from __future__ import annotations

@@ -145,12 +145,16 @@ register in advance". Rewritten to state each requirement — "Photo ID is requi
 through security and metal detectors" — with every procedural fact kept. Copy in a Python
 constant is still copy.
 
-Both checks are now gated rather than re-measured by hand: `tests/unit/test_templates.py` and
-`tests/unit/test_venues.py` fail on `\b(you|your|yours|yourself|you're)\b` in any shipped
-template or venue string, and pin the sentences already cut so they cannot come back. Two
-categories are deliberately out: form-control text (`Select a council district…`, `Go`, `Find`,
-`Skip to content`) is an affordance rather than prose, and `assets/address.js`'s six runtime
-status strings about the reader's own typed address have never been in scope.
+`tests/unit/test_venues.py` gates the half that survives: it fails on
+`\b(you|your|yours|yourself|you're)\b` in any venue string, and pins the sentences already
+cut so they cannot come back. The template half was `tests/unit/test_templates.py`, deleted
+on 2026-11-09 with the one template this project had — the copy it policed now lives in the
+`webxp` repository, and so does the question of what gates it there.
+
+Two categories were deliberately out and are worth keeping on the record for whoever
+re-gates that copy: form-control text (`Select a council district…`, `Go`, `Find`, `Skip to
+content`) is an affordance rather than prose, and the address box's six runtime status
+strings about the reader's own typed address have never been in scope.
 
 ## Provenance belongs on `/references/`, not in the paragraph
 

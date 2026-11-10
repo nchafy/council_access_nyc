@@ -4,8 +4,9 @@ Owner's instruction, 2026-11-02: implement the browser route.
 
 **These tests do not launch a browser.** `tests/fixtures/board_browser/111.txt` is the text
 Chrome actually showed for Manhattan CB11's Airtable view, so what is tested is the part
-that is ours — reading those rows — and the suite passes on a machine with no Chrome. The
-browser gates under `tests/browser` are where a real one is driven.
+that is ours — reading those rows — and the suite passes on a machine with no Chrome.
+Nothing drives a real one any more: `showup fetch` does, against the live view, and that is
+not a thing a test should depend on.
 """
 
 from __future__ import annotations

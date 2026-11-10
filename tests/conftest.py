@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
@@ -16,10 +15,6 @@ ZCTA_FIXTURE_COUNT = 178
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[1]
-
-# The tests drive the operator tools in `scripts/`, not a second copy of them.
-if str(REPO_ROOT / "scripts") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 
 @pytest.fixture(scope="session")

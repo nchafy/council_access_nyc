@@ -82,8 +82,9 @@ preference.
 claim. Whether a reader can *use* them is a question about the site that renders them, and
 that gate lives in the `webxp` repository now.
 
-Building a gate? **Serve behind the real `_headers`, always.** `scripts/serve.py` has
-`background_server()` for this. The CSP already broke a shipped feature silently once:
+Building a gate for whatever renders this data? **Serve behind the real policy, always** —
+a lesson this project paid for and no longer has the code to apply. The CSP broke a shipped
+feature silently once:
 `connect-src` omitted `'self'`, so the address box's local index could not be fetched
 and every query fell through to the geocoder — the opposite of what the privacy design
 promises. It was invisible because the only browser test used a bare file server that

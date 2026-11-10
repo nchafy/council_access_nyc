@@ -55,13 +55,13 @@ side effect of adding a library.
 | pytest | >=8 | MIT | dev | test runner |
 | pytest-cov | >=5 | MIT | dev | the 100% coverage gate |
 | ruff | >=0.6 | MIT | dev | lint + format |
-| websocket-client | 1.9.2 (`>=1.9.2`, pinned in `uv.lock`) | Apache-2.0 | dev | Replaces the 127-line hand-written RFC 6455 client inside `scripts/cdp.py` — frame headers, client masking, 16- and 64-bit lengths, continuation reassembly, ping/pong; the most error-prone code in the repo and the least specific to this project |
-| axe-core | 4.13.0 | MPL-2.0 | dev, fetched | R39's accessibility gate; not committed, see `vendor` note in `scripts/fetch_axe.py` |
+| websocket-client | 1.9.2 (`>=1.9.2`, pinned in `uv.lock`) | Apache-2.0 | dev | Replaces the 127-line hand-written RFC 6455 client inside `src/showup/cdp.py` — frame headers, client masking, 16- and 64-bit lengths, continuation reassembly, ping/pong; the most error-prone code in the repo and the least specific to this project |
 | pypdf | 6.21.4 (`>=6.21.4`, pinned in `uv.lock`) | BSD-3-Clause | runtime (build-time) | Reads the schedule PDFs that 21 community boards publish instead of a feed or a page. Replaces nothing — without it those boards' meetings are simply absent. One `py3-none-any` wheel and **no required runtime dependency at all** on 3.12; see below for why it is not poppler and not pdfminer.six |
-| maplibre-gl | 6.15.0 | BSD-3-Clause | **browser, vendored** | The M3 district map. Replaces hand-rolling pan, zoom, projection and hit-testing over 51 polygons in WebGL. 449 KB gzipped across three files, so it is loaded on demand and never on first paint. Pinned by tarball sha512 plus a sha256 per extracted file in `scripts/fetch_maplibre.py`; not committed. Published 2026-10-18, so rule 3 is comfortable. npm runs at no point, so the `prepare` script in its `package.json` never executes — rule 5 holds for the same reason it does for axe-core |
 
-One entry reaches a reader — `maplibre-gl`, on the map route only, served from `site/vendor/`.
-Every other entry runs at build time. `site/` still contains **no third-party bytes**: nothing
+**No entry reaches a reader.** Two did until 2026-11-09 — `axe-core`, fetched for the
+accessibility gate, and `maplibre-gl`, vendored and served to the map route — and both left
+with the front end for the `webxp` repository, which is where their pins, licences and
+load-gating now belong. Every remaining entry runs at build or fetch time. `site/` still contains **no third-party bytes**: nothing
 in it is fetched from anyone else's host at read time.
 
 ## The HTML parser, and why it is not selectolax or lxml
@@ -262,22 +262,24 @@ Jinja2 landed 2026-09-30 and **improves** the security posture rather than weake
 forgotten. The risk inverts: it becomes the opt-outs. So the gate changed shape rather than
 disappearing, and all three parts are live:
 
-- `autoescape=True` and `undefined=StrictUndefined` on the one environment in
-  `src/showup/templates.py`, asserted by `tests/unit/test_templates.py` and
-  `tests/unit/test_template_safety.py`.
-- **No `|safe`, no `Markup()`, no `{% autoescape false %}`** — `test_template_safety.py`
-  greps every `.py`, `.html`, `.jinja` and `.j2` file under `src/showup/` and fails the
-  build on any of them, exactly as one already fails on `innerHTML` and `document.write`.
-  Composition uses `{% extends %}`, `{% import %}` and macros, none of which needs an
-  opt-out, so wanting one is a sign the template is being handed pre-rendered HTML.
-- The hostile-content fixture (`tests/integration/test_build.py`) still passes **unchanged**.
-  It is the end-to-end proof that scraped text cannot become markup, and it did not need
-  editing to accommodate the new renderer.
+Two of the three parts left with the templates on 2026-11-09, and the reasoning is kept
+because it is what any renderer downstream will need rather than because it is live here:
 
-One compatibility detail, in `templates.py`: MarkupSafe spells the two quote entities
-`&#39;` and `&#34;` where `text.esc` spells them `&#x27;` and `&quot;`. Both are inert, and
-keeping `esc`'s spelling is what made the migration byte-identical over all 114 pages —
-which is the only way a renderer swap can be reviewed as changing nothing.
+- `autoescape=True` and `undefined=StrictUndefined` on one environment, with no `|safe`, no
+  `Markup()` and no `{% autoescape false %}` anywhere — the grep was over every `.py`,
+  `.html`, `.jinja` and `.j2` file in the package. Composition used `{% extends %}`,
+  `{% import %}` and macros, none of which needs an opt-out, so wanting one was a sign the
+  template was being handed pre-rendered HTML. `templates.py`, its one template and both
+  guards are deleted; whatever renders this data now owns that argument.
+- **Live, and the half that matters most:** the hostile-content fixture at
+  `tests/integration/test_build.py::test_hostile_register_text_arrives_stripped` passes
+  unchanged. It is the end-to-end proof that scraped text cannot become markup, and it
+  proves it at *ingest* — `text.strip_tags` runs before any payload is written — which is
+  why it survived a change that deleted every render-time escape.
+
+`text.esc` survives with no production caller, and `src/showup/text.py` records why: six
+property tests assert `not MARKUP.search(esc(strip_tags(x)))`, and `strip_tags` alone cannot
+carry that claim because its output may legitimately contain the characters `<script>`.
 
 ## The basemap tile hosts, and who owes their terms now
 

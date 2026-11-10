@@ -150,8 +150,10 @@ measurement on a reference profile, and the gate's own output says so in those w
 - **Third parties in the browser: exactly two, each a recorded decision.** The CSP names
   `geosearch.planninglabs.nyc` for geocoding an address, and — since 2026-10-22 —
   `tiles.openfreemap.org` for the basemap. Nothing else: no analytics, no tag manager, no
-  hosted fonts, no CDN-served script. `tests/unit/test_csp.py` holds that to an explicit
-  two-host allowlist, so a third is a decision somebody has to make on purpose.
+  hosted fonts, no CDN-served script. That policy and the check that held it to an explicit
+  allowlist moved to the `webxp` repository on 2026-11-09 with the front end; the hosts, the
+  exact `connect-src`, and the two licence terms with teeth are recorded in
+  `docs/dependencies.md` so the decision survives the move.
   **What changed, and it is a real loss:** the site used to promise that no third party saw
   a reader's request. It no longer does. A tile host can observe which area is being looked
   at and roughly how closely. It cannot see a typed address — that still goes only to the
@@ -186,11 +188,12 @@ measurement on a reference profile, and the gate's own output says so in those w
   invariant
 - The community board view — a second page type, not a variant of the first
 - 100% coverage, a committed fuzz corpus, and the testing rules in `CLAUDE.md`
-- **M5, nearly all of it** — axe clean on all 115 pages at WCAG 2.2 AA; 148 keyboard and
-  accessibility-tree checks over 11 page types driven with real `Tab` keypresses; a gate
-  that fails on any console error or CSP violation; WCAG 1.4.10 reflow enforced at 320 px
-  and 390 px; the 60 KB and 3 s budgets enforced.
-  All five run in CI, and all five fail loudly rather than skipping if Chrome is absent.
+- **M5, nearly all of it — then moved.** axe clean at WCAG 2.2 AA; keyboard and
+  accessibility-tree checks driven with real `Tab` keypresses; a gate failing on any console
+  error or CSP violation; WCAG 1.4.10 reflow at 320 px and 390 px; the 60 KB and 3 s budgets.
+  All five were about rendered pages, so all five went to the `webxp` repository on
+  2026-11-09 with the front end. What they found is kept below, because the findings outlive
+  the gates.
   The gates immediately found a real one: the CSP's `connect-src` omitted `'self'`, so the
   address box's local index could not be fetched and every query fell through to the
   geocoder — the opposite of what the privacy design promises. Fixed, and now covered from

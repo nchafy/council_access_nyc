@@ -1,10 +1,14 @@
-"""The build's output shapes: the one page it writes, and the payloads the programs read.
+"""The build's output shapes: the payloads a consumer of the artifacts reads.
 
-`index.html` is a mount point, so almost nothing here becomes markup. What does is still the
-environment's job rather than a thing to remember — `templates.py` sets `autoescape=True` and
-`tests/unit/test_template_safety.py` fails the build on every way of opting out. Upstream
-text reaches the payloads below with its tags already stripped at ingest, which is what
-docs/phase-1-scope.md §4.1 rests on now that no page renders a scraped string.
+Nothing here becomes markup. It did until 2026-11-09, when the front end moved to the
+`webxp` repository and `render_index`, `templates.py` and the escaping guards around them
+went with it. What is left builds the dicts that become `preview.json`,
+`board-meetings.json` and `references.json`.
+
+So the whole of docs/phase-1-scope.md §4.1 now rests on the ingest half: upstream text has
+its tags stripped by `text.strip_tags` before it reaches any payload below, proved end to
+end by `tests/integration/test_build.py::test_hostile_register_text_arrives_stripped`.
+There is no render-time escape to forget, because there is no render.
 """
 
 from __future__ import annotations

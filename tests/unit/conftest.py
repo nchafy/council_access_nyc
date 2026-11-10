@@ -6,7 +6,9 @@ fetcher's getter does not contain it, and any test that calls `_fetch_board_meet
 without saying otherwise really did start a browser and wait on a live Airtable view.
 
 This makes that a loud failure instead of a slow test. A test that wants a browser stubs
-one itself; the browser gates under `tests/browser` are where a real one is driven.
+one itself. Nothing in this suite drives a real one: the gates that did were about rendered
+pages and left with the front end on 2026-11-09, so `showup/cdp.py` is now exercised only
+through stubs here and for real only by `showup fetch` against that one board.
 """
 
 from __future__ import annotations

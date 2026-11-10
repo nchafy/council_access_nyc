@@ -4,8 +4,10 @@ Read this before writing any code. It supersedes the outline's §8 milestones fo
 
 **Status: built and running locally as of 2026-09-23.** Six of seven exit criteria (§6) are met.
 Criterion 5 is met except for the one thing that cannot be automated: **a real screen-reader pass has
-not been run** (`docs/accessibility-pass.md` §3.2). Run with `make fetch && make serve`, gates with
-`make gates`.
+not been run**. Run with `make fetch && make build`, and `make check` for the gates. The
+accessibility, reflow, console and performance gates — and the document that recorded the
+human pass — went to the `webxp` repository with the front end on 2026-11-09, because every
+one of them was about a rendered page.
 
 Owner decisions, 2026-09-21: barebones; one input produces one page of facts and links; no map; no
 analysis; security is the top priority; P8, P9, P10 all in. **Phase 1 runs locally only** — no domain,
@@ -65,7 +67,10 @@ literally.
 
 ## 3. Explicitly not in Phase 1
 
-Cut for now, each recoverable later: the map (no MapLibre, tiles, choropleth or rendered geometry);
+Cut for now, each recoverable later: tiles and any choropleth (the **map itself landed
+2026-10-22 as a full-screen route at `/map/`** — MapLibre vendored and self-hosted, council
+districts and community boards behind a toggle, uniform fill, no basemap, no third-party
+request);
 all analysis (no shortlist ranking, salience, vote parsing, dissent figures, `bloc_concentration`,
 agenda-item classification or PDF parsing); transcripts and participation data (all of J4's measured
 half); per-committee and per-hearing pages; `.ics` files; search by subject and the citywide browse
@@ -114,11 +119,11 @@ scripts, no inline styles, no `unsafe-inline`.** Plus `frame-ancestors 'none'`,
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, HSTS with a long max-age, HTTPS
 only, and `rel="noopener noreferrer"` on every outbound link.
 
-Committed as a `_headers` file for the eventual Cloudflare Pages deploy, because these must be
-**response** headers and a meta tag cannot deliver most of them. **Locally, `scripts/serve.py` reads
-`_headers` and applies it** (stdlib only, matching the sibling project): under `python -m http.server`
+Was committed as a `_headers` file for the eventual Cloudflare Pages deploy, because these must be
+**response** headers and a meta tag cannot deliver most of them. **Locally, a server read
+`_headers` and applied it** (stdlib only, matching the sibling project): under `python -m http.server`
 there is no CSP, so every violation would first surface at deploy — exactly when it gets waived. A
-test asserts the served response carries the headers, against the local server now and a real host
+test asserted the served response carried the headers, against the local server and a real host
 later.
 
 ### 4.3 Zero third parties
@@ -137,7 +142,7 @@ A CI grep fails the build if a geocoder call site omits `private=true`.
 
 - **Open-source dependencies are allowed** (owner, 2026-09-30) and pinned via lockfile; the checklist
   is `docs/dependencies.md`. Two rules survive: no install-time code execution (why Playwright was
-  refused, not why dependencies were), and **no browser dependency** — "zero third parties" is a
+  refused, not why dependencies were), and **no browser dependency** — a two-host CSP allowlist is a
   CSP-enforced promise to readers, not a dependency preference.
 - GitHub Actions pinned to commit SHAs, not tags; `permissions:` least privilege (`contents: read` by
   default).
@@ -169,9 +174,9 @@ constraints return when the map does.
 
 | # | Status | Criterion |
 |---|---|---|
-| 1 | ✅ | `scripts/serve.py` serves the built site locally, and any of the 51 districts — by dropdown, address, ZIP, neighbourhood or district number — renders all six blocks correctly. Plus 59 community board pages, added after this list was written |
+| 1 | ✅ (moved) | Served locally at the time of writing: any of the 51 districts — by dropdown, address, ZIP, neighbourhood or district number — renders all six blocks correctly. Plus 59 community board pages, added after this list was written |
 | 2 | ✅ | An address outside NYC is refused by name ("that looks like Newark") rather than silently mis-assigned, checked against what the geocoder says it *parsed* before anything renders |
-| 3 | ✅ | Response headers from the local server match §4.2, asserted by `scripts/verify.py` against live responses. `_headers` is committed for the later deploy and the assertion can be pointed at a real host unchanged |
+| 3 | ✅ (moved) | Response headers matched §4.2, asserted against live responses by a gate that served the site. Both the policy and the gate left for the `webxp` repository on 2026-11-09; the exact `connect-src`, the headers that carry over and the two licence terms with teeth are recorded in `docs/dependencies.md` |
 | 4 | ✅ | The hostile-content fixture renders inert, asserted end to end, plus ~8,500 generated fuzz cases over the parsers and a committed corpus of 104 input/expected pairs |
 | 5 | ⚠️ | **Mostly met; one half genuinely open.** Built 2026-09-23. Five legs below |
 | 6 | ✅ | The refresh runs as one local command (`make fetch`), fails closed on a bad fetch, and the staleness notice provably appears when `manifest.json` is hand-aged. Running it *on a schedule* is deferred with hosting. Crawl rates come from each host's own `robots.txt`, and an `upstream` test fails if the City raises its delay above ours |
@@ -185,14 +190,16 @@ Criterion 5, leg by leg:
 | Keyboard, automated | ✅ | 135 checks over 10 page types with real `Tab` keypresses in a real browser: skip link first and visible, focus into `<main>`, DOM order, reachability, ≥2px ring at every stop, `Shift+Tab` in reverse. Plus the accessibility tree (landmarks, accessible names, one h1, no skipped levels) and the no-JavaScript path verified with script execution disabled, not inferred from markup |
 | **Screen reader** | ❌ | **Has not been run.** Reading the accessibility tree is not listening to a screen reader, and automating that distinction away is the one shortcut this product cannot take. `docs/accessibility-pass.md` §3.2 is the procedure, §4 the record, and the record says NOT RUN. **This is the one thing left in Phase 1.** |
 | 60 KB page budget | ✅ | Gated in CI as arithmetic over built bytes: front page 13.9 KB gzipped, district pages 7.6 KB, boards 6.1 KB; all JavaScript 6.7 KB against a separate 12 KB ceiling; geometry 132 KB against its 300 KB after-first-paint budget |
-| 3 s throttled-3G gate | ✅ | p95 over 20 cold runs per page on 3G Fast with a 4× CPU throttle: 906 ms, 741 ms, 723 ms against 3000 ms. Thresholds and profiles in the committed `perf-budget.json`. DevTools' Slow 3G preset yields 4.3–5.1 s: reported but not gated, with the reasoning in that file rather than as a quiet omission |
+| 3 s throttled-3G gate | ✅ | p95 over 20 cold runs per page on 3G Fast with a 4× CPU throttle: 906 ms, 741 ms, 723 ms against 3000 ms. Thresholds and profiles were in `perf-budget.json`, deleted on 2026-11-09 with the gate that read it; the figures above are the measurement of record. DevTools' Slow 3G preset yielded 4.3–5.1 s: reported but not gated, and the reasoning was recorded beside the threshold rather than left as a quiet omission |
 
 **Criterion 6, corrected 2026-09-23:** the staleness claim used to be true only over HTTP and false in a
 browser — `connect-src` omitted `'self'`, so `/manifest.json` could not be fetched and the notice never
-rendered for any reader. The tick now rests on
-`tests/browser/test_console.py::TestTheStalenessNoticeReallyRenders`, which ages the manifest, loads a
-real page in a real browser behind the real headers, and asserts the rendered text names the source,
-its age in days, and the instruction not to rely on the meeting times.
+rendered for any reader. The tick rested on a browser test that aged the manifest, loaded a real page behind the real
+headers, and asserted the rendered text named the source and its age. That test moved to the `webxp`
+repository with the notice itself on 2026-11-09 — read-time staleness is a property of whatever
+renders, and this project only supplies the `fetched_at` and `max_age_hours` it is computed from.
+`tests/integration/test_build.py::test_manifest_carries_inputs_not_a_verdict` is this side of it: the
+manifest carries inputs and never a baked verdict, which is what lets a dead site tell the truth.
 
 ## 7. Open, for the owner
 

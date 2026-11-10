@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from showup.geo import Polygon, load_features, locate, overlap_shares
+from showup.model import COUNCIL_KEY, COUNCIL_KEY_WATER
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -175,11 +176,12 @@ class TestSimplifiedGeometryAgrees:
         source = REPO_ROOT / "etl" / "raw" / "districts.geojson"
         if not source.exists():
             pytest.skip("etl/raw/districts.geojson absent (gitignored cache; run showup fetch)")
-        full = load_features(source, "coundist")
+        # The shipped file is the water-included one, which spells the key `coun_dist`.
+        full = load_features(source, COUNCIL_KEY_WATER)
 
         path = tmp_path / "simplified.geojson"
-        path.write_text(json.dumps(to_geojson(full, "coundist")))
-        simple = load_features(path, "coundist")
+        path.write_text(json.dumps(to_geojson(full, COUNCIL_KEY)))
+        simple = load_features(path, COUNCIL_KEY)
 
         min_x = min(p.min_x for p in full)
         max_x = max(p.max_x for p in full)

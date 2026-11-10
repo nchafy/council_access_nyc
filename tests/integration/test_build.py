@@ -1,25 +1,23 @@
 """Building a whole site from fixtures, and the hostile-content case.
 
-`test_hostile_committee_name_renders_inert` drives a hostile string from an upstream
-payload to rendered HTML, which is the end-to-end proof of docs/phase-1-scope.md §4.1.
+`test_hostile_register_text_arrives_stripped` drives a hostile string from an upstream
+payload to a shipped data file, which is the end-to-end proof of docs/phase-1-scope.md §4.1
+now that the one page the build writes renders no upstream text.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from datetime import date, datetime
-from html import unescape
 from pathlib import Path
 
 import pytest
 
+from showup import render
 from showup.build import BuildError, build_site
 from showup.crosswalk import CrosswalkError
 from showup.crosswalk import load as load_crosswalk
-from showup.model import Committee, District, DistrictBoard, Member, Office
-from showup.render import render_district, render_index
-from showup.sources.calendar import parse_calendar, upcoming
+from showup.render import PREVIEW_REQUESTS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
@@ -32,17 +30,6 @@ class TestBuild:
         assert report["meetings_parsed"] == 60
         assert report["shortlist"] == 5
 
-    def test_writes_the_expected_files(self, raw_dir, tmp_path):
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert (out / "index.html").is_file()
-        assert (out / "404.html").is_file()
-        assert (out / "manifest.json").is_file()
-        assert (out / "assets" / "site.css").is_file()
-        assert (out / "assets" / "site.js").is_file()
-        for number in (1, 25, 51):
-            assert (out / "district" / str(number) / "index.html").is_file()
-
     def test_manifest_carries_inputs_not_a_verdict(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
@@ -53,6 +40,103 @@ class TestBuild:
         # Staleness is the browser's job; a baked boolean is what lets a dead site lie.
         assert "degraded" not in json.dumps(manifest)
 
+    def test_every_fetched_source_is_disclosed(self, raw_dir, tmp_path):
+        """`fetch.Source` says `label`, `dataset` and `url` exist "so a source cannot be
+        fetched without being disclosed". That held because `/references/` rendered them;
+        when those pages were deleted on 2026-11-08 the fields stayed populated and nothing
+        read them, so the promise was broken silently. `/data/references.json` is where it
+        lives now, and this is what keeps it.
+        """
+        from showup.fetch import SOURCES
+
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        references = json.loads((out / "data" / "references.json").read_text())
+
+        assert len(references["datasets"]) == len(SOURCES)
+        for source in references["datasets"]:
+            assert source["dataset"], source
+            assert source["url"], source
+            assert source["why"], source
+            assert source["window"], source
+
+        published = {source["dataset"] for source in references["datasets"]}
+        for identifier in ("uvw5-9znb", "ruf7-3wgc", "vn4m-mk4t", "5crt-au7u", "872g-cjhh"):
+            assert any(identifier in name for name in published), (
+                f"{identifier} is fetched and no longer disclosed anywhere a reader can see"
+            )
+
+    def test_a_short_references_artifact_fails_the_build(self, raw_dir, tmp_path, monkeypatch):
+        """A source silently missing from the list is the disclosure promise broken in the
+        quietest way: the Readme renders a shorter table and looks complete."""
+        import showup.build as build_module
+
+        def short(*args, **kwargs):
+            payload = render.references_payload(*args, **kwargs)
+            payload["datasets"].pop()
+            return payload
+
+        monkeypatch.setattr(build_module, "references_payload", short)
+        with pytest.raises(BuildError, match="references covers"):
+            build_site(raw_dir, tmp_path / "out", today=date(2026, 9, 22))
+
+    def test_a_source_with_no_identifier_fails_the_build(self, raw_dir, tmp_path, monkeypatch):
+        """A row with a label and no dataset id renders as a named source a reader cannot
+        check, which is worse than an absent row because it looks cited."""
+        import showup.build as build_module
+
+        # Bound before the patch, or the replacement calls itself.
+        real_rows = build_module._reference_rows
+
+        def undisclosed(*args, **kwargs):
+            rows = real_rows(*args, **kwargs)
+            rows[0] = {**rows[0], "dataset": ""}
+            return rows
+
+        monkeypatch.setattr(build_module, "_reference_rows", undisclosed)
+        with pytest.raises(BuildError, match="carry no identifier"):
+            build_site(raw_dir, tmp_path / "out", today=date(2026, 9, 22))
+
+    def test_the_caveats_that_qualify_a_published_figure_are_published_with_it(
+        self, raw_dir, tmp_path
+    ):
+        """Each of these qualifies a number shown elsewhere on the site, so losing it leaves
+        the number looking more certain than it is. All four were deleted with
+        `/references/` and existed nowhere in the repository for a day."""
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        prose = " ".join(json.loads((out / "data" / "references.json").read_text())["caveats"])
+        for clause in (
+            "ranks within a budget category",
+            "not a commitment and not a funded outcome",
+            "the board office address, not the meeting venue",
+            "compares one board or district with another",
+        ):
+            assert clause in prose, f"{clause!r} qualifies a published figure and is unpublished"
+
+    def test_every_published_timestamp_names_an_instant(self, raw_dir, tmp_path):
+        """Staleness is computed in the reader's browser, so a wall clock is not enough.
+
+        A naive ISO string is read by a browser as *local* time, so the same stamp written by
+        a UTC build reads five hours younger in New York — age under-reported, in the
+        direction that hides the problem. Every timestamp the manifest publishes therefore
+        carries an offset, and `datetime.fromisoformat` is what proves it: it returns a naive
+        value for a string without one.
+        """
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        manifest = json.loads((out / "manifest.json").read_text())
+        stamps = {"built_at": manifest["built_at"]} | {
+            f"sources.{name}.fetched_at": source["fetched_at"]
+            for name, source in manifest["sources"].items()
+        }
+        naive = {
+            where: value
+            for where, value in stamps.items()
+            if datetime.fromisoformat(value).tzinfo is None
+        }
+        assert not naive, f"these stamps name a wall clock rather than an instant: {naive}"
+
     def test_a_short_calendar_fails_closed(self, raw_dir, tmp_path):
         (raw_dir / "legistar_calendar.html").write_text(
             '<table id="ctl00_ContentPlaceHolder1_gridCalendar_ctl00"></table>',
@@ -61,132 +145,20 @@ class TestBuild:
         with pytest.raises(BuildError, match="floor"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
 
-    def test_failed_build_leaves_the_previous_site_intact(self, raw_dir, tmp_path):
+    def test_a_failed_build_leaves_the_previous_output_intact(self, raw_dir, tmp_path):
+        """The staging-then-swap. Read off `manifest.json` rather than the page it used to
+        read: the output is eight artifacts now, and a consumer that committed half of a
+        failed run would ship a desktop whose programs disagree with each other."""
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        marker = (out / "index.html").read_text()
+        marker = (out / "manifest.json").read_text()
 
         (raw_dir / "legistar_calendar.html").write_text(
             '<table id="ctl00_ContentPlaceHolder1_gridCalendar_ctl00"></table>', encoding="utf-8"
         )
         with pytest.raises(BuildError):
             build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert (out / "index.html").read_text() == marker
-
-
-class TestRenderedSafety:
-    def _district(self, committee_name: str) -> District:
-        return District(
-            number=9,
-            neighborhoods="Test neighbourhood",
-            member=Member(
-                name="Jane Doe",
-                seat_status="filled",
-                email="District9@council.nyc.gov",
-                page_url="https://council.nyc.gov/district-9/",
-                offices=(Office("District office", "1 Test St", "212-555-0000"),),
-                committees=(Committee(committee_name),),
-            ),
-        )
-
-    def test_hostile_committee_name_renders_inert(self, calendar_html):
-        """The end-to-end XSS case from docs/phase-1-scope.md §4.1."""
-        payload = "<script>alert('xss')</script>Committee on Aging"
-        district = self._district(payload)
-        meetings = upcoming(parse_calendar(calendar_html), date(2026, 1, 1), 5)
-
-        html = render_district(
-            district,
-            meetings,
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=date(2026, 12, 17),
-            today=date(2026, 9, 22),
-            now=datetime(2026, 9, 22, 9, 0),
-        )
-
-        assert "<script>alert" not in html
-        assert "&lt;script&gt;" in html
-        assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", html)
-        assert "onerror" not in html.lower()
-        assert "javascript:" not in html.lower()
-
-    def test_quote_in_a_name_cannot_break_an_attribute(self):
-        district = self._district('Committee" onmouseover="alert(1)')
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        # The characters "onmouseover=" are legitimate text; what must be absent is the
-        # unescaped quote that would end the attribute and start a new one.
-        assert '" onmouseover="' not in html
-        assert "&quot; onmouseover=&quot;" in html
-
-    def test_no_inline_script_or_style_anywhere(self, raw_dir, tmp_path):
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        for page in out.rglob("*.html"):
-            html = page.read_text()
-            assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", html), page
-            assert not re.search(r"\sstyle\s*=\s*[\"']", html), page
-            assert " onclick=" not in html.lower(), page
-
-
-class TestVacantSeat:
-    def test_vacancy_is_a_designed_state(self):
-        district = District(number=3, neighborhoods="Chelsea", member=None)
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        assert "vacant" in html.lower()
-        assert "Testimony and attendance" in html
-        assert "hearings@council.nyc.gov" in html
-
-
-class TestIndex:
-    def _boards(self):
-        return [
-            DistrictBoard(
-                code=code,
-                label=f"Brooklyn Community Board {code[1:]}",
-                borough_name="Brooklyn",
-                share=1.0,
-                neighborhoods=None,
-                address=None,
-                phone=None,
-                email=None,
-                email_suppressed=None,
-                website=None,
-                board_meeting=None,
-                cabinet_meeting=None,
-            )
-            for code in ("301", "302")
-        ]
-
-    def test_lists_every_district(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
-        html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
-        )
-        for n in (1, 25, 51):
-            assert f'href="/district/{n}/"' in html
-        assert "<select" in html
-
-    def test_offers_both_views(self):
-        districts = [District(number=n, neighborhoods=None, member=None) for n in range(1, 52)]
-        html = render_index(
-            districts, self._boards(), built_at=datetime(2026, 9, 22, 9, 0), window_end=None
-        )
-        assert 'id="district-select"' in html
-        assert 'id="board-select"' in html
-        assert 'href="/board/302/"' in html
-        assert "most local unit" in html
+        assert (out / "manifest.json").read_text() == marker
 
 
 class TestCrosswalk:
@@ -228,18 +200,26 @@ class TestCrosswalk:
             load_crosswalk(path)
 
 
-class TestBoardsOnThePage:
-    def test_boards_render_with_contact_details(self, raw_dir, tmp_path):
+class TestBoardsInTheShippedData:
+    """The board facts the programs read. They were a district page section and 59 board
+    pages; `data/preview.json` is where they live now."""
+
+    def test_boards_carry_their_contact_details(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        page = (out / "district" / "35" / "index.html").read_text()
-        assert "Brooklyn Community Board 2" in page
-        assert "community board" in page.lower()
+        board = json.loads((out / "data" / "preview.json").read_text())["boards"]["302"]
+        assert board["label"] == "Brooklyn Community Board 2"
+        assert board["phone"]
+        assert board["address"]
         # Verbatim, not reformatted into a date.
-        assert "Wednesday" in page or "Tuesday" in page or "Thursday" in page
+        assert any(day in (board["cadence"] or "") for day in ("Tuesday", "Wednesday", "Thursday"))
 
     def test_chair_and_district_manager_are_never_rendered(self, raw_dir, tmp_path):
-        """The privacy line: we publish the institution, not the individuals."""
+        """The privacy line: we publish the institution, not the individuals.
+
+        Checked over every file the build writes that is derived from the boards dataset,
+        which is where the names could leak now that no page carries a board.
+        """
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
         boards = json.loads((raw_dir / "community_boards.json").read_text())
@@ -250,185 +230,127 @@ class TestBoardsOnThePage:
             if (row.get(field) or "").strip()
         }
         assert names, "fixture should carry some names to check against"
-        for page in (out / "district").rglob("index.html"):
-            html = page.read_text()
+        written = [*sorted((out / "data").glob("*.json")), out / "manifest.json"]
+        # Pinned, because the sweep is only worth anything over the files that exist: this
+        # read `out / "index.html"` until the front end was deleted on 2026-11-09, and a
+        # list that silently lost an entry would still pass over the rest. Nine since
+        # `detail.json` was added on 2026-11-10 — which is the artifact that matters most
+        # here, because it is the only one carrying the boards' own free text.
+        assert len(written) == 9, written
+        for artifact in written:
+            text = artifact.read_text()
             for name in names:
-                assert name not in html, f"{name} leaked into {page}"
+                assert name not in text, f"{name} leaked into {artifact.relative_to(out)}"
+
+    def test_the_officer_fields_never_reach_the_build(self, raw_dir, tmp_path):
+        """A negative control for the names above: the dataset's own column names must be
+        absent too, so a future field carrying a name cannot arrive unnoticed."""
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        preview = (out / "data" / "preview.json").read_text()
+        for field in ("cb_chair", "cb_district_manager", "chair", "district_manager"):
+            assert field not in preview, field
 
 
-class TestBoardView:
-    """The board view is a different page, not a district page variant."""
+class TestBoardCoverage:
+    """59 boards or none, and the join that says which districts cover one."""
 
-    def test_all_59_board_pages_are_written(self, raw_dir, tmp_path):
+    def test_all_59_boards_are_covered(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         report = build_site(raw_dir, out, today=date(2026, 9, 22))
         assert report["board_pages"] == 59
-        pages = [p for p in (out / "board").iterdir() if p.is_dir()]
-        assert len(pages) == 59
+        preview = json.loads((out / "data" / "preview.json").read_text())
+        assert len(preview["boards"]) == 59
 
-    def test_board_page_carries_the_involvement_route(self, raw_dir, tmp_path):
+    def test_a_board_names_the_council_districts_covering_it(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
-        assert "non-Board (public) members" in page
-        assert "not allowed to vote" in page
-        assert "up to 50 unsalaried members" in page
-        assert "Borough President" in page
-        assert "reside, work, or have some other significant interest" in page
-
-    def test_board_page_says_the_office_is_not_the_venue(self, raw_dir, tmp_path):
-        """A field note, not a disclosure paragraph: the address is directly above it, and
-        silence there reads as "that is where the board meets" — wrong on 8 of 8 checked."""
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
-        assert "The City's dataset records the board office, not the meeting venue" in page
-        assert "<dd>350 Jay Street, 8th Floor, Brooklyn, NY 11201<br><small>" in page
-
-    def test_the_board_page_does_not_catalogue_what_is_missing(self, raw_dir, tmp_path):
-        """Owner, 2026-10-07: absences nobody asked about are padding, not honesty.
-
-        Refusing to *invent* a fact is untouched; listing what the City does not publish
-        is what went.
-        """
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
-        assert "Things the City does not publish" not in page
-        assert "could not find an official source" not in page
-        assert "measures public opinion" not in page
-
-    def test_board_page_distinguishes_the_office_from_the_full_board_venue(self, raw_dir, tmp_path):
-        """The office is the committee room for several boards, not the full-board venue.
-
-        Bronx CB11 lists "Board Office" against every committee and "Varies" against the
-        full board; Brooklyn CB4 and SI CB3 separate the two by name.
-        """
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        page = " ".join((out / "board" / "302" / "index.html").read_text().split())
-        assert "Committees often meet at the board office listed above" in page
-        assert "the full board often does not" in page
-        assert "others meet elsewhere or on video" in page
-
-    def test_board_page_links_its_council_districts(self, raw_dir, tmp_path):
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        page = (out / "board" / "302" / "index.html").read_text()
+        board = json.loads((out / "data" / "preview.json").read_text())["boards"]["302"]
+        rows = [
+            row[0]["text"]
+            for spec in board["tables"]
+            if spec["legend"] == "Council districts"
+            for row in spec["rows"]
+        ]
         # Brooklyn CB 2 spans council districts 33 and 35.
-        assert 'href="/district/33/"' in page
-        assert 'href="/district/35/"' in page
+        assert "Council District 33" in rows
+        assert "Council District 35" in rows
 
-    def test_board_shares_are_of_the_board_not_the_district(self, raw_dir, tmp_path):
-        """The two crosswalk directions answer different questions: Brooklyn CB 2 covers
-        ~44% *of district 35*, while district 33 holds ~53% *of CB 2*."""
+    def test_a_district_names_the_boards_covering_it(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        board_page = (out / "board" / "302" / "index.html").read_text()
-        assert "of this board" in board_page
-        district_page = (out / "district" / "35" / "index.html").read_text()
-        assert "of this council district" in district_page
-
-    def test_district_page_links_to_the_board_view(self, raw_dir, tmp_path):
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        page = (out / "district" / "35" / "index.html").read_text()
-        assert 'href="/board/302/"' in page
-
-    def test_no_board_officer_names_on_board_pages(self, raw_dir, tmp_path):
-        """The privacy rule holds on the new view too."""
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        rows = json.loads((raw_dir / "community_boards.json").read_text())
-        names = {
-            (row.get(field) or "").strip()
-            for row in rows
-            for field in ("cb_chair", "cb_district_manager")
-            if len((row.get(field) or "").strip()) > 4
-        }
-        for page in (out / "board").rglob("index.html"):
-            html = page.read_text()
-            for name in names:
-                assert name not in html, f"{name} leaked into {page}"
+        district = json.loads((out / "data" / "preview.json").read_text())["districts"]["35"]
+        rows = [
+            row[0]["text"]
+            for spec in district["tables"]
+            if spec["legend"] == "Community boards"
+            for row in spec["rows"]
+        ]
+        assert "Brooklyn Community Board 2" in rows
 
 
-class TestBudgetRequestsOnTheBoardPage:
-    """The eighth source, on the page it belongs to. The honesty boundary is the spec: an
-    annual filing not current activity, a request not a commitment, quoted not bucketed."""
+class TestBudgetRequestsInTheShippedData:
+    """The eighth source, in the artifact the board program reads. The honesty boundary is
+    the spec: an annual filing not current activity, a request not a commitment, quoted not
+    bucketed."""
 
     @staticmethod
-    def _page(raw_dir, tmp_path, code: str = "302") -> str:
+    def _board(raw_dir, tmp_path, code: str = "302") -> dict:
         out = tmp_path / "site"
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        return " ".join((out / "board" / code / "index.html").read_text().split())
+        return json.loads((out / "data" / "preview.json").read_text())["boards"][code]
+
+    def _requests(self, raw_dir, tmp_path, code: str = "302") -> dict | None:
+        return next(
+            (
+                spec
+                for spec in self._board(raw_dir, tmp_path, code)["tables"]
+                if spec["legend"] == "Budget requests"
+            ),
+            None,
+        )
 
     def test_the_section_names_the_fiscal_year_and_the_publication_date(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        assert "Fiscal Year Requests" in page
-        assert "Fiscal Year 2027" in page
-        assert "30 June 2026" in page
-
-    def test_it_links_the_register_it_came_from(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        assert 'href="https://data.cityofnewyork.us/d/vn4m-mk4t"' in page
-        assert "vn4m-mk4t" in page
-
-    def test_every_number_carries_its_denominator(self, raw_dir, tmp_path):
+        """The caption is the only place the denominator and the edition travel together, so
+        a request count without its fiscal year cannot ship."""
+        caption = self._requests(raw_dir, tmp_path)["caption"]
+        assert "Fiscal 2027" in caption
         # Brooklyn CB 2 has seven requests in the committed fixture's edition.
-        assert "5 of 7" in self._page(raw_dir, tmp_path)
+        assert "7 filed" in caption
 
-    def test_the_cap_is_five_requests(self, raw_dir, tmp_path):
-        assert self._page(raw_dir, tmp_path).count('<article class="request">') == 5
+    def test_the_cap_is_three_requests(self, raw_dir, tmp_path):
+        """Thinner than the page was: carrying every row took this artifact to 41 KB
+        gzipped for text the panel never shows."""
+        assert len(self._requests(raw_dir, tmp_path)["rows"]) == PREVIEW_REQUESTS
 
-    def test_the_agencys_reply_is_quoted_not_bucketed(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        # Five phrasings, none of which survives a supported/not-supported bucket.
-        assert "brought to the attention of your Elected Officials" in page
-        assert "recommended funding for this request in part" in page
-        assert "try to accommodate this issue within existing resources" in page
-        assert "does not support and cannot accommodate" in page
-
-    def test_no_single_top_request_is_presented(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        assert "top priority" not in page.lower()
-        assert "number one request" not in page.lower()
+    def test_the_reply_is_not_bucketed_into_a_verdict(self, raw_dir, tmp_path):
+        """Agency replies have five phrasings, none of which survives a
+        supported/not-supported bucket, so no column may claim one."""
+        columns = self._requests(raw_dir, tmp_path)["columns"]
+        assert columns == ["Request", "Category"]
+        for verdict in ("supported", "approved", "funded", "outcome"):
+            assert verdict not in " ".join(columns).lower()
 
     def test_the_section_neither_ranks_nor_scores_boards(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        section = page.split("Fiscal Year Requests", 1)[1].split("</section>", 1)[0]
+        blob = json.dumps(self._requests(raw_dir, tmp_path)).lower()
         for banned in ("score", "percentile", "league", "out of 100", "compared with"):
-            assert banned not in section.lower()
+            assert banned not in blob
 
-    def test_the_caveats_moved_to_references_rather_than_vanishing(self, raw_dir, tmp_path):
-        """The board page's "What this is not" paragraph was deleted on 2026-10-07.
-
-        Its clauses are provenance, so they relocated to /references/ instead. Without
-        the priority clause somewhere, repeated "Priority 01" labels read as the board
-        filing twenty-three number-one requests.
-        """
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        references = unescape(" ".join((out / "references" / "index.html").read_text().split()))
-        assert "ranks within a budget category" in references
-        assert "not a commitment and not a funded outcome" in references
-        assert "quoted" in references
-        board = self._page(raw_dir, tmp_path)
-        assert "What this is not" not in board
-
-    def test_a_board_the_register_does_not_cover_says_so(self, raw_dir, tmp_path):
-        # The fixture carries six boards, so the other 53 are the empty state.
-        page = self._page(raw_dir, tmp_path, "308")
-        assert "no budget requests on file" in page
-        assert "City Charter requires" in page
+    def test_a_board_the_register_does_not_cover_carries_no_table(self, raw_dir, tmp_path):
+        """The fixture carries six boards, so the other 53 are the empty state: the group is
+        absent rather than present and empty, which would read as "we looked and found
+        nothing"."""
+        assert self._requests(raw_dir, tmp_path, "308") is None
 
     def test_a_missing_register_does_not_break_the_build(self, raw_dir, tmp_path):
         (raw_dir / "board_budget_requests.json").unlink()
-        report = build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+        out = tmp_path / "site"
+        report = build_site(raw_dir, out, today=date(2026, 9, 22))
         assert report["board_pages"] == 59
         assert report["budget_requests"] == 0
         assert report["budget_publication"] is None
-        page = " ".join((tmp_path / "site" / "board" / "302" / "index.html").read_text().split())
-        assert "no budget requests on file" in page
+        board = json.loads((out / "data" / "preview.json").read_text())["boards"]["302"]
+        assert "Budget requests" not in [spec["legend"] for spec in board["tables"]]
 
     def test_an_empty_register_does_not_break_the_build(self, raw_dir, tmp_path):
         (raw_dir / "board_budget_requests.json").write_text("[]", encoding="utf-8")
@@ -451,7 +373,15 @@ class TestBudgetRequestsOnTheBoardPage:
         manifest = json.loads((out / "manifest.json").read_text())
         assert "board_budget_requests" in manifest["sources"]
 
-    def test_hostile_register_text_renders_inert(self, raw_dir, tmp_path):
+    def test_hostile_register_text_arrives_stripped(self, raw_dir, tmp_path):
+        """docs/phase-1-scope.md §4.1, end to end: a hostile upstream string reaches a
+        shipped artifact with its markup already gone.
+
+        Stripping happens at ingest rather than at render, which is what still makes this
+        provable now that no page renders upstream text: `preview.json` is consumed by
+        programs that write text nodes, so a tag that survived the parse would be the only
+        way markup could reach a reader.
+        """
         rows = json.loads((raw_dir / "board_budget_requests.json").read_text())
         hostile = "<script>alert('register')</script>Fix the &quot;park&quot;"
         for row in rows:
@@ -460,11 +390,14 @@ class TestBudgetRequestsOnTheBoardPage:
                 row["explanation"] = hostile
                 row["response"] = hostile
         (raw_dir / "board_budget_requests.json").write_text(json.dumps(rows), encoding="utf-8")
-        build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
-        html = (tmp_path / "site" / "board" / "302" / "index.html").read_text()
-        assert "<script>alert" not in html
-        assert "alert(" not in html
-        assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", html)
+        out = tmp_path / "site"
+        build_site(raw_dir, out, today=date(2026, 9, 22))
+        preview = (out / "data" / "preview.json").read_text()
+        # The negative control: the harmless half of the hostile string must be there, or
+        # this is asserting against a file the string never reached.
+        assert "Fix the" in preview
+        assert "<script" not in preview
+        assert "alert(" not in preview
 
 
 class TestShippedData:
@@ -494,116 +427,40 @@ class TestShippedData:
             assert code.isdigit() and len(code) == 5
             assert districts and all(1 <= n <= 51 for n in districts)
 
+    def test_an_unreadable_pb_roster_fails_closed(self, raw_dir, tmp_path):
+        """A roster that cannot be read must stop the build, not render 51 districts as
+        "not taking part" — a wrong answer is worse than a missing page."""
+        (raw_dir / "participatory_budgeting.json").write_text("{", encoding="utf-8")
+        with pytest.raises(BuildError, match=r"participatory_budgeting\.json"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_pb_roster_below_the_floor_fails_closed(self, raw_dir, tmp_path):
+        """The floor is enforced in the parser, so it surfaces here as a BuildError."""
+        payload = json.loads((raw_dir / "participatory_budgeting.json").read_text())
+        payload["idea_map_html"] = '<div data-district="1"></div>'
+        (raw_dir / "participatory_budgeting.json").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="floor is"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_broken_board_calendar_fails_closed(self, raw_dir, tmp_path):
+        """A thin calendar ingest stops the build rather than quietly emptying 21 board
+        pages: a board page with no calendar reads as "this board holds no meetings"."""
+        (raw_dir / "board_meetings.json").write_text(json.dumps({"feeds": {}}), encoding="utf-8")
+        with pytest.raises(BuildError, match="floor is"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
+    def test_a_thin_zip_geometry_fails_closed(self, raw_dir, tmp_path):
+        """The ZIP outline is only a hint, but a half-read file would draw the wrong
+        boundary for a ZIP, which is worse than drawing none."""
+        payload = json.loads((raw_dir / "modzcta.geojson").read_text())
+        payload["features"] = payload["features"][:3]
+        (raw_dir / "modzcta.geojson").write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(BuildError, match="ZIP geometry has 3 features"):
+            build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
+
     def test_a_wrong_district_count_fails_closed(self, raw_dir, tmp_path):
         (raw_dir / "districts.geojson").write_text(
             json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"
         )
         with pytest.raises(BuildError, match="district geometry"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
-
-
-class TestProgressiveDisclosureOnRequestCards:
-    """Owner, 2026-10-07: collapsed a card is its headers, expanded it is the detail.
-
-    Native `<details>`, because the CSP forbids inline script and R39 requires the page to
-    work without JavaScript. The `<h3>` inside the `<summary>` keeps both the heading and
-    the expanded state in the accessibility tree (tests/browser/test_keyboard.py).
-    """
-
-    @staticmethod
-    def _page(raw_dir, tmp_path) -> str:
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        return (out / "board" / "302" / "index.html").read_text()
-
-    def test_each_card_is_a_details_with_the_heading_inside_the_summary(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        assert page.count("<details>") == 5
-        assert page.count("<summary><h3>") == 5
-
-    def test_the_priority_label_stays_visible_collapsed(self, raw_dir, tmp_path):
-        """It is short, and it is what makes the collapsed list readable."""
-        page = self._page(raw_dir, tmp_path)
-        for summary in re.findall(r"<summary>(.*?)</summary>", page, re.DOTALL):
-            assert 'class="priority"' in summary
-
-    def test_the_detail_fields_are_inside_the_disclosure(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        for body in re.findall(r"</summary>(.*?)</details>", page, re.DOTALL):
-            assert "<dt>Register reference</dt>" in body
-        assert "<dt>Requestee</dt>" in page
-        assert "<dt>Response</dt>" in page
-
-    def test_the_old_narrated_field_labels_are_gone(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        for narration in ("Asked of", "The board&#x27;s words", "The reply, quoted"):
-            assert narration not in page
-
-    def test_nothing_about_the_disclosure_needs_script(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        assert "<script" not in page.split("<footer")[0]
-        assert "onclick" not in page.lower()
-
-
-class TestReferencesPage:
-    """One page carrying every identifier, fetch date, window and relocated caveat, built
-    from the `fetch.SOURCES` registry, so a source cannot be used without appearing."""
-
-    @staticmethod
-    def _page(raw_dir, tmp_path) -> str:
-        """Flattened and unescaped: these assertions are about text, not markup."""
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        return unescape(" ".join((out / "references" / "index.html").read_text().split()))
-
-    def test_it_is_written(self, raw_dir, tmp_path):
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert (out / "references" / "index.html").is_file()
-
-    def test_every_registered_source_is_disclosed(self, raw_dir, tmp_path):
-        from showup.fetch import SOURCES
-
-        page = self._page(raw_dir, tmp_path)
-        for source in SOURCES:
-            assert source.label in page, f"{source.name} is fetched and not disclosed"
-            assert source.dataset in page, f"{source.name} has no identifier on the page"
-            assert source.url in page, f"{source.name} has no link on the page"
-            assert source.why in page, f"{source.name} does not say what it is used for"
-
-    def test_each_source_carries_its_freshness_window(self, raw_dir, tmp_path):
-        from showup.fetch import SOURCES
-
-        page = self._page(raw_dir, tmp_path)
-        assert page.count("<dt>Freshness window</dt>") == len(SOURCES)
-        assert "12 hours" in page
-        assert "40 days" in page
-
-    def test_a_fetched_source_carries_its_fetch_date(self, raw_dir, tmp_path):
-        page = self._page(raw_dir, tmp_path)
-        # Six of the eight: the two geometry files are not in this fixture's cache.
-        assert page.count("<dt>Fetched</dt>") == 6
-
-    def test_the_relocated_provenance_all_landed(self, raw_dir, tmp_path):
-        """Deleting a disclosure paragraph may relocate a citation, never lose one."""
-        page = self._page(raw_dir, tmp_path)
-        for relocated in (
-            "dg92-zbpx",
-            "a few dozen land-use hearing notices a year across all 59 community boards",
-            "no City dataset publishes a dated board calendar",
-            "quoted exactly as ruf7-3wgc records it",
-            "disagree with what boards publish on their own sites",
-            "records the board office address, not the meeting venue",
-            "rounded to a whole number and approximate",
-            "nominate half of the board's members",
-            "called by their chair, a community board meets on a standing monthly cadence",
-        ):
-            assert relocated in page, f"lost in relocation: {relocated!r}"
-
-    def test_every_page_links_it(self, raw_dir, tmp_path):
-        out = tmp_path / "site"
-        build_site(raw_dir, out, today=date(2026, 9, 22))
-        for page_file in out.rglob("*.html"):
-            if page_file.parent.name == "references":
-                continue
-            assert 'href="/references/"' in page_file.read_text(), page_file

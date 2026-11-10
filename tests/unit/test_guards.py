@@ -8,7 +8,7 @@ Grouped by the module under test, so a failure points at one file.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -23,12 +23,11 @@ from showup.crosswalk import (
 )
 from showup.crosswalk import load as load_crosswalk
 from showup.geo import Polygon, load_features, overlap_shares, simplify_rings, to_geojson
-from showup.model import District, DistrictBoard, Member, Office
-from showup.render import render_board, render_district
 from showup.sources.districts import _parse_committees
 from showup.urls import safe_url
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Coarse on purpose: no guard here depends on resolution, and 0.001 costs ~35 s.
 COARSE = 0.004
@@ -166,21 +165,21 @@ class TestGeoGuards:
                     "type": "FeatureCollection",
                     "features": [
                         {
-                            "properties": {"coundist": "1"},
+                            "properties": {"coun_dist": "1"},
                             "geometry": {"type": "Point", "coordinates": [0, 0]},
                         }
                     ],
                 }
             )
         )
-        assert load_features(path, "coundist") == []
+        assert load_features(path, "coun_dist") == []
 
     def test_a_feature_with_no_key_is_dropped(self, tmp_path):
         path = tmp_path / "g.geojson"
-        payload = _squares("coundist", ["1"])
+        payload = _squares("coun_dist", ["1"])
         payload["features"][0]["properties"] = {}
         path.write_text(json.dumps(payload))
-        assert load_features(path, "coundist") == []
+        assert load_features(path, "coun_dist") == []
 
     def test_a_row_with_no_candidate_polygons_is_skipped(self):
         # Latitudes above every polygon: the row filter short-circuits.
@@ -244,118 +243,10 @@ class TestBuildGuards:
     def test_rebuilding_over_an_existing_site_replaces_it(self, raw_dir, tmp_path):
         out = tmp_path / "site"
         out.mkdir()
-        (out / "stale.html").write_text("old")
+        (out / "stale.json").write_text("old")
         build_site(raw_dir, out, today=date(2026, 9, 22))
-        assert not (out / "stale.html").exists()
-        assert (out / "index.html").exists()
-
-
-class TestRenderFallbacks:
-    def _member(self, **kwargs):
-        defaults = {
-            "name": "Jane Doe",
-            "seat_status": "filled",
-            "email": None,
-            "page_url": None,
-            "offices": (Office("District office", None, None),),
-            "committees": (),
-        }
-        defaults.update(kwargs)
-        return Member(**defaults)
-
-    def test_an_unlinkable_url_renders_as_inert_text(self):
-        district = District(number=9, neighborhoods=None, member=self._member())
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        # page_url is None, so the official-page row must not appear as a dead link.
-        assert 'href="None"' not in html
-
-    def test_an_empty_definition_list_renders_nothing(self):
-        district = District(
-            number=9,
-            neighborhoods=None,
-            member=self._member(offices=(), email=None, page_url=None),
-        )
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        assert "<h2>Council Member</h2>" in html
-
-    def test_a_window_end_of_none_says_so_rather_than_implying_completeness(self):
-        district = District(number=9, neighborhoods=None, member=None)
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        assert "No forward window" in html
-
-    def _board(self, **kwargs):
-        defaults = {
-            "code": "302",
-            "label": "Brooklyn Community Board 2",
-            "borough_name": "Brooklyn",
-            "share": 0.44,
-            "neighborhoods": None,
-            "address": None,
-            "phone": None,
-            "email": None,
-            "email_suppressed": None,
-            "website": None,
-            "board_meeting": None,
-            "cabinet_meeting": None,
-        }
-        defaults.update(kwargs)
-        return DistrictBoard(**defaults)
-
-    def test_a_board_with_a_website_links_it(self):
-        html = render_board(
-            self._board(website="https://brooklyncb6.org/"),
-            [(35, 0.44)],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
-        assert "brooklyncb6.org" in html
-
-    def test_a_board_with_no_cadence_says_so(self):
-        html = render_board(
-            self._board(),
-            [(35, 0.44)],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
-        assert "does not publish a meeting cadence" in html
-
-    def test_a_board_in_an_unknown_borough_still_renders(self):
-        html = render_board(
-            self._board(borough_name="Atlantis"),
-            [(35, 0.44)],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-        )
-        assert "nyc.gov/communityboards" in html
-
-    def test_a_district_with_no_boards_routes_elsewhere(self):
-        district = District(number=9, neighborhoods=None, member=None, boards=())
-        html = render_district(
-            district,
-            [],
-            built_at=datetime(2026, 9, 22, 9, 0),
-            window_end=None,
-            today=date(2026, 9, 22),
-        )
-        assert "could not match a community board" in html
+        assert not (out / "stale.json").exists()
+        assert (out / "manifest.json").exists()
 
 
 class TestDistrictPageGuards:
@@ -389,61 +280,6 @@ class TestDistrictPageGuards:
 class TestUrlControlCharacters:
     def test_a_value_that_is_entirely_unprintable_after_a_base_is_rejected(self):
         assert safe_url("\x00\x01", base="https://nyc.legistar.com/") is None
-
-
-class TestRenderHelpers:
-    """Three helpers whose fallback branches the page-level tests do not reach."""
-
-    def test_link_with_no_url_renders_inert_text(self):
-        from showup.render import _link
-
-        assert _link(None, "Agenda") == '<span class="nolink">Agenda</span>'
-        assert "href" not in _link(None, "Agenda")
-
-    def test_link_escapes_both_url_and_label(self):
-        from showup.render import _link
-
-        out = _link("https://council.nyc.gov/?a=1&b=2", '<script>"')
-        assert "&amp;b=2" in out
-        assert "<script>" not in out
-
-    def test_an_internal_link_gets_no_noopener(self):
-        from showup.render import _link
-
-        assert "noopener" not in _link("/district/35/", "District 35")
-
-    def test_an_empty_definition_list_is_omitted_entirely(self):
-        from showup.render import _dl
-
-        assert _dl([]) == ""
-
-    def test_a_definition_list_drops_rows_with_no_value(self):
-        from showup.render import _dl
-
-        out = _dl([("Phone", "212-555-0000"), ("Fax", "")])
-        assert "Phone" in out
-        assert "Fax" not in out
-
-    def test_a_board_card_on_a_district_page_links_its_website(self):
-        from showup.render import _board_card
-
-        board = DistrictBoard(
-            code="302",
-            label="Brooklyn Community Board 2",
-            borough_name="Brooklyn",
-            share=0.44,
-            neighborhoods=None,
-            address=None,
-            phone=None,
-            email=None,
-            email_suppressed=None,
-            website="https://brooklyncb6.org/",
-            board_meeting=None,
-            cabinet_meeting=None,
-        )
-        out = _board_card(board)
-        assert "brooklyncb6.org" in out
-        assert 'href="/board/302/"' in out
 
 
 class TestFetchInvariantMessages:
@@ -520,23 +356,25 @@ class TestBuildBoardPageFloor:
     def test_a_crosswalk_with_too_few_distinct_boards_is_refused(
         self, raw_dir, tmp_path, monkeypatch
     ):
-        """59 board pages or none.
+        """59 boards or none.
 
         `load_crosswalk` checks every district has a board, not that all 59 boards are
-        reachable, so 58 referenced codes would quietly publish 58 pages.
+        reachable, so 58 referenced codes would quietly leave the programs unable to answer
+        about the other one. The floor moved from the board pages to `preview.json`, which is
+        the file those programs read.
         """
         # Real codes, because the build checks every crosswalk code against the dataset.
         from showup.sources.boards import load_boards
 
         codes = sorted(load_boards(FIXTURES / "community_boards.json"))
         assert len(codes) == 59
-        # Only the first 40 codes, so 19 boards would have no page.
+        # Only the first 40 codes, so 19 boards would be missing from the preview.
         districts = {str(n): [[codes[n % 40], 1.0]] for n in range(1, 52)}
         boards = {code: [[1, 1.0]] for code in codes}
         path = tmp_path / "c.json"
         path.write_text(json.dumps({"districts": districts, "boards": boards, "zips": {}}))
         monkeypatch.setattr("showup.build.CROSSWALK_PATH", path)
-        with pytest.raises(BuildError, match="board pages, expected 59"):
+        with pytest.raises(BuildError, match="40 boards, expected 51 and 59"):
             build_site(raw_dir, tmp_path / "site", today=date(2026, 9, 22))
 
 
@@ -552,26 +390,6 @@ class TestOverlapSharesEmptyTally:
         result = overlap_shares([big, missed], [big], spacing=1.0, min_share=0.01)
         assert result["missed"] == []
         assert result["big"], "the large polygon should still be sampled"
-
-
-class TestShortHelper:
-    def test_short_returns_empty_for_no_value(self):
-        from showup.render import _short
-
-        assert _short(None) == ""
-        assert _short("") == ""
-
-    def test_short_truncates_on_a_word_boundary_with_an_ellipsis(self):
-        from showup.render import _short
-
-        out = _short("A" * 80)
-        assert out.endswith("…")
-        assert len(out) <= 58
-
-    def test_short_leaves_a_fitting_value_alone(self):
-        from showup.render import _short
-
-        assert _short("Fort Greene, Clinton Hill") == "Fort Greene, Clinton Hill"
 
 
 class TestZipCrosswalkSkips:

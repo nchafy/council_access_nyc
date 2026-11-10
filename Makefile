@@ -1,21 +1,22 @@
 # The development cycle, as one target per thing you actually want.
 #
-# `make verify` is the gate: it builds, lints, tests, then starts the real server
-# and asserts against live responses. If it passes, the change is validated rather
-# than assumed — which is the whole point of having it.
+# `make check` is the gate: it lints, then runs every test. There is nothing to serve and
+# nothing to screenshot — this project generates data and stops. The front end it used to
+# build moved to the `webxp` repository on 2026-11-09, and the eighteen scripts that drove
+# a browser went with it, along with `serve`, `verify`, `shot` and the five `gates`.
+#
+# `make build` writes eight JSON artifacts into site/. A consumer commits them as static
+# files; `scripts/refresh_showup.py` over there performs the copy, and `--check` reports
+# when its copy is behind this one.
 #
 # uv manages the toolchain; nothing here needs a pre-activated virtualenv.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup build serve test browser lint fmt check verify shot clean fetch open \
-	axe axe-fetch a11y console perf reflow gates
-
-PORT ?= 8000
-ROOT ?= site
+.PHONY: help setup build test lint fmt check clean fetch fetch-calendar
 
 help: ## show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 setup: ## install the toolchain and dev dependencies
 	uv sync
@@ -26,16 +27,8 @@ fetch: ## refresh the upstream cache (~9 min cold; skips fresh sources)
 fetch-calendar: ## refresh just the daily-changing calendar
 	uv run showup fetch --only calendar --force
 
-build: ## build the static site into site/
+build: ## generate the eight JSON artifacts into site/
 	uv run showup build
-
-serve: build ## build, then serve locally with the real security headers
-	@echo "→ http://127.0.0.1:$(PORT)"
-	uv run python scripts/serve.py --port $(PORT) --root $(ROOT)
-
-open: build ## build and open the site in a browser
-	@uv run python scripts/serve.py --port $(PORT) --root $(ROOT) & \
-	sleep 1; open http://127.0.0.1:$(PORT); wait
 
 lint: ## ruff check and format check
 	uv run ruff check .
@@ -47,58 +40,13 @@ fmt: ## apply ruff formatting
 
 # COVERAGE_FILE is per-process: two suites in one worktree otherwise share the default
 # .coverage and overwrite each other, which reports a wrong total while every test passes.
-test: ## unit and contract tests (no network, no browser)
-	COVERAGE_FILE=.coverage.$$$$ uv run pytest -m "not upstream and not browser"
+test: ## every test (no network, no browser)
+	COVERAGE_FILE=.coverage.$$$$ uv run pytest -m "not upstream"
 	@rm -f .coverage.*
 
-browser: build axe-fetch ## every browser gate in one pytest run (~110 s)
-	# --no-cov: the 100% floor in addopts applies to whatever subset runs, and the
-	# browser gates deliberately touch ~70% of `showup` — they drive the built site,
-	# not every parser. `make test` is where the floor means something.
-	uv run pytest -m browser -v --no-cov
-
-check: ## the fast gate: lint + test
+check: ## the gate: lint + test
 	@$(MAKE) --no-print-directory lint
 	@$(MAKE) --no-print-directory test
-
-verify: build ## the real gate: build, lint, test, then assert against a live server
-	@$(MAKE) --no-print-directory lint
-	@$(MAKE) --no-print-directory test
-	uv run python scripts/verify.py
-	@echo "verified."
-
-shot: build ## screenshot the built site with headless Chrome
-	uv run python scripts/shot.py
-
-# The five M5 gates. Each runs against the real site/ here and against a
-# fixture-built site in CI, using the same code either way — see tests/browser/.
-# `make verify` deliberately does not call them: together they are about two
-# minutes of real browser time, and the fast gate has to stay fast to stay used.
-
-axe-fetch: ## download the pinned axe-core into .cache/ (verified, idempotent, no-op when current)
-	uv run python scripts/fetch_axe.py
-
-axe: build axe-fetch ## axe-core over every page type (add ALL=1 for all 114)
-	uv run python scripts/axe_check.py $(if $(ALL),--all,)
-
-a11y: build ## real Tab keys and the accessibility tree, over every page type
-	uv run python scripts/a11y_audit.py
-
-console: build ## fail on any console error or CSP violation (add ALL=1 for all 114)
-	uv run python scripts/console_check.py $(if $(ALL),--all,)
-
-perf: build ## page weight, and cold load p95 on throttled 3G (slow: ~2 min)
-	uv run python scripts/perf.py
-
-reflow: build ## WCAG 1.4.10 at 320 px and 390 px, over every page type (add ALL=1 for all 114)
-	uv run python scripts/reflow_check.py $(if $(ALL),--all,)
-
-gates: ## every M5 gate, in the order a failure is cheapest to read
-	@$(MAKE) --no-print-directory axe
-	@$(MAKE) --no-print-directory a11y
-	@$(MAKE) --no-print-directory console
-	@$(MAKE) --no-print-directory reflow
-	@$(MAKE) --no-print-directory perf
 
 clean: ## remove build output
-	rm -rf site site.building screenshots .pytest_cache .ruff_cache .coverage
+	rm -rf site site.building .pytest_cache .ruff_cache .coverage

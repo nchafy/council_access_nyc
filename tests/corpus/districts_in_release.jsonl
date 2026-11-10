@@ -1,0 +1,12 @@
+{"in": "<p><strong>District 35 &#8211; Council Member Hudson</strong></p>", "out": [35], "note": "the heading form the FY2026 and FY2027 releases use, with an encoded en dash"}
+{"in": "<p>District 35 - Council Member Hudson</p>", "out": [35], "note": "the same heading with a plain hyphen"}
+{"in": "P.S. 011 kitchen $310,000 and 7 new tree guards", "out": [], "note": "school, dollar and count figures are not districts: only a number after 'District' counts"}
+{"in": "<p>District 52 and District 0 and District 99</p>", "out": [], "note": "out of range: there are 51 council districts"}
+{"in": "<p>District 7</p><p>District 7</p><p>District 7</p>", "out": [7], "note": "a district repeated counts once"}
+{"in": "<p>District 9</p><p>District 3</p>", "out": [3, 9], "note": "output is sorted, not source order"}
+{"in": "<script>var d = 'District 44';</script><p>District 3</p>", "out": [3], "note": "script contents are dropped before the text is read"}
+{"in": "<style>.district-44 { color: red }</style><p>District 3</p>", "out": [3], "note": "style contents are dropped too"}
+{"in": "the district 7 project", "out": [], "note": "lower case is not matched: 'council district 7 office' is prose, not a roster entry"}
+{"in": "District  7", "out": [7], "note": "runs of whitespace between the word and the number are allowed"}
+{"in": "", "out": [], "note": "nothing in, nothing out"}
+{"in": "<p>District 1</p> almost $25 million across 22 Council Districts", "out": [1], "note": "the stated count sentence does not itself add a district"}

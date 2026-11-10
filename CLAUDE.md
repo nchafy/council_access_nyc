@@ -1,28 +1,33 @@
-# council_access_nyc — Show Up NYC
+# council_access_nyc — Show Up NYC, the data behind it
 
-A static site that tells a New Yorker the specific, dated things they can still
-do about their city government this week: which City Council hearings are
-happening, where the room is, how to get in, that they can walk in without
-registering, and how many hours are left to file written testimony.
+The ETL that tells a New Yorker the specific, dated things they can still do about their
+city government this week: which City Council hearings are happening, where the room is,
+how to get in, that they can walk in without registering, and how many hours are left to
+file written testimony.
+
+**This project renders nothing.** It scrapes the City's open data and writes eight JSON
+artifacts. The front end that used to read them — a Windows XP desktop with a map, the 51
+council districts, the 59 community boards and a read-me — moved to the `webxp` repository
+on 2026-11-09, by the owner's decision that webxp should be the site people open. Eighteen
+scripts that drove a browser, 23 test files and a Content-Security-Policy went with it.
+
+What that repository expects from this one is eight files. `scripts/refresh_showup.py` over
+there copies them out of `site/` and `--check` reports when its copy is behind; its
+`scripts/check_showup.py` asserts they carry the 51 districts and 59 boards its programs
+index by. `tests/integration/test_artifacts.py` here is the other side of that contract.
 
 ## The development loop
 
 ```bash
 make fetch    # refresh the upstream cache (~9 min cold; skips anything fresh)
-make verify   # build + lint + ~9,200 tests + 482 live-response assertions. The gate.
-make serve    # look at it: http://127.0.0.1:8000, with the real headers applied
-make shot     # screenshots to screenshots/ — layout bugs are invisible to HTTP checks
-make browser  # every browser gate in one pytest run (~100 s)
-make gates    # the same five gates as operator tools, with readable output
+make build    # write the eight JSON artifacts into site/
+make check    # lint + ~11,700 tests at 100% coverage. The gate.
 ```
 
-`make gates` is `axe` (WCAG 2.2 AA over all 115 pages), `a11y` (real `Tab` keypresses and
-the accessibility tree), `console` (any console error or CSP violation), `reflow`
-(WCAG 1.4.10 at 320 px and 390 px) and `perf` (page weight, and cold-load p95 on
-throttled 3G). They are deliberately **not** part of `make verify`:
-together they are about two minutes of real browser time, and the fast gate has to
-stay fast to keep being used. CI runs them as a separate job, and fails loudly rather than
-skipping if the runner has no Chrome.
+There is no `make serve`, `make shot`, `make browser` or `make gates`, and no `make
+verify`. Nothing here is served, so there is nothing to screenshot, no console to watch and
+no response header to assert. The accessibility, reflow, console and performance gates were
+about rendered pages and belong wherever those pages now live.
 
 Fetch and build are separate stages on purpose: the build never touches the
 network, so it is reproducible and a flaky download cannot half-write a site. A
@@ -30,9 +35,7 @@ download is validated against a size floor **and** a body invariant before it
 replaces a cache entry — these hosts return HTTP 200 carrying error pages, so a
 status check is not enough.
 
-Never serve with `python -m http.server`: it sends no CSP, so policy violations
-would surface for the first time at deploy. `scripts/serve.py` applies the real
-`_headers`. Skills: `verify-site`, `add-source-adapter`, `refresh-data`.
+Skills: `add-source-adapter`, `refresh-data`, `fuzz-and-corpus`.
 
 `district-3` is the deliberate degraded-state page — vacant-seat handling, the
 source-conflict notice, missing committees, designed empty states. Check it after
@@ -67,6 +70,7 @@ preference.
 | Document | Governs |
 |---|---|
 | `docs/voice.md` | every user-facing string: no imperatives, no second person, no advice, headings name a thing, provenance lives on `/references/` |
+| `docs/design.md` | the visual system (XP chrome, satnav map), the map's interaction model, and what `style-src 'self'` leaves available |
 | `docs/commits.md` | commit size and message; one commit, one claim |
 | `docs/pull-requests.md` | the review loop; distrust the description and re-derive the number |
 | `docs/dependencies.md` | open-source dependencies allowed; no install-time code execution, no browser dependency |
@@ -74,11 +78,13 @@ preference.
 | `docs/phase-1-scope.md` | scope, the §4 threat model, the §6 exit criteria |
 | `docs/OBSERVATIONS.md` | the dated evidence log. Append to it; never rewrite an entry |
 
-`make verify` passing is **necessary and not sufficient** — it excludes the four browser
-gates. `make gates` runs those.
+`make check` passing means the artifacts are right, which is all this repository can
+claim. Whether a reader can *use* them is a question about the site that renders them, and
+that gate lives in the `webxp` repository now.
 
-Building a gate? **Serve behind the real `_headers`, always.** `scripts/serve.py` has
-`background_server()` for this. The CSP already broke a shipped feature silently once:
+Building a gate for whatever renders this data? **Serve behind the real policy, always** —
+a lesson this project paid for and no longer has the code to apply. The CSP broke a shipped
+feature silently once:
 `connect-src` omitted `'self'`, so the address box's local index could not be fetched
 and every query fell through to the geocoder — the opposite of what the privacy design
 promises. It was invisible because the only browser test used a bare file server that
@@ -108,13 +114,22 @@ took imperatives 16 to 0 and second-person uses 38 to 0, and the next one should
 zero. Freshness is `docs/refresh.md`: one source has a 12-hour window and no scheduled
 refresh yet, so the footer states the fetch time rather than judging it.
 
+**Design: the control explains itself, and a heading stays stable over time.**
+`docs/design.md` is binding on every rendered surface — the Windows XP chrome and the
+early-2000s satnav map palette, the bounded zoom window, why the map is its own route, and the
+two things `style-src 'self'` and `img-src 'self'` take away (no inline `style` attribute, so a
+runtime width is an SVG geometry attribute; no `data:` URI, which is how MapLibre's own zoom
+buttons shipped blank and logged nothing). A period colour is measured before it ships: Luna's
+palette failed WCAG 1.4.3 twice.
+
 **Security is the owner's stated top priority.** The threat model is in
 `docs/phase-1-scope.md` §4. The short version, because it is easy to get wrong:
 this product has no accounts, so the primary risk is **injection through scraped
 upstream content** — committee names, meeting topics and bill titles are
 third-party text we render. Never `innerHTML`; strip tags at ingest; allowlist
 upstream URLs by host and scheme; `default-src 'none'` CSP with no
-`unsafe-inline`; zero third parties; the typed address goes only to the geocoder
+`unsafe-inline`; exactly two external hosts, each a recorded decision (the geocoder and
+the tile host); the typed address goes only to the geocoder
 with `private=true` and never into a URL, storage or log.
 
 ## The bar for starting work
@@ -207,13 +222,14 @@ get re-argued.
   carries the checklist. Two things still hold: **no install-time code execution**
   (Playwright downloads and runs its own browser build — that, not dependency
   aversion, is why `scripts/cdp.py` exists), and **no browser dependency**, because
-  "zero third parties" is a promise to readers that the CSP enforces.
+  The CSP enforces an explicit two-host allowlist. "Zero third parties" was the promise
+  until 2026-10-22, when a basemap was chosen over it (`product-brief.md` §5).
 - **MapLibre GL JS + OpenFreeMap, self-hosted vendor bundle.** No Google Maps,
   no Mapbox, no analytics, no tag manager, no third-party fonts. The model site
   `spatialequity.nyc` ships gtag and Mapbox; we borrow its metric-registry
   schema and its refusal to composite, and reject its telemetry.
 - **Cloudflare Pages, not GitHub Pages** — only a CSP with an explicit
-  `connect-src` allowlist makes "zero third parties" browser-enforced against a
+  `connect-src` allowlist makes the two-host limit browser-enforced against a
   future commit, and GitHub Pages cannot set response headers.
 - **The typed address never leaves the browser except to the geocoder**, and
   never enters a URL, storage, cookie, or log. Shareable URLs carry
@@ -286,6 +302,22 @@ get re-argued.
   office email is. The harm is the name-to-mailbox pairing, not the address —
   11 boards publish only the district manager's work email and withholding it
   would leave them uncontactable. R30 in the outline carries the measurement.
+- **Two council-district geometries, for two jobs.** What ships is `mkqi-d8x3`, water
+  areas included: the shoreline-clipped file traced every Jamaica Bay marsh island as its
+  own ring (28 on district 42) against a basemap that does not draw them as land. Over
+  land it is the same boundary, so hit-testing is unchanged. `872g-cjhh` is kept as a
+  **build-only** source, never shipped and never drawn, purely as the denominator for
+  board shares — computing those against a water-inflated area halves every coastal one.
+- **Participatory budgeting participation is per cycle, and lives in two places.** No
+  dataset carries it: `wwhr-5ven`, `qm5f-frjb` and `wa6b-r9jh` stop at 2017-2019 on
+  pre-redistricting district numbers, and `council.nyc.gov/pb/` names no districts (and on
+  2026-10-27 was a year stale). The open cycle comes from the Council's idea map at
+  `rnd.council.nyc.gov/ideamap/`, which states **no year** — so no cycle label may be
+  derived from it. Completed cycles come from the **press site's own** WordPress REST API
+  (`council.nyc.gov/press/wp-json/...`; the main site has no press post type), where a
+  results release enumerates its districts *and* states how many, giving the parse a
+  checksum. **Match that count or quarantine the release** — a dropped district renders as
+  "not taking part". The two rosters disagree, so neither is "whether the district has PB".
 - **Two facts residents most want are published nowhere official:** the
   registration cut-off before a hearing, and the per-speaker time limit. These
   render as explicit refusal strings pointing at

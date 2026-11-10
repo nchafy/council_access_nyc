@@ -15,17 +15,34 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from .model import BOARD_COUNT, DISTRICT_COUNT
+from .sources.board_kinds import LoadError, LoadRequest, kind_for, urls_of
+from .sources.board_meetings import BOARD_FEED_FLOOR
+from .sources.board_registry import install
 from .sources.boards import JOINT_INTEREST_AREAS
+from .sources.participatory_budgeting import (
+    IDEA_MAP_URL,
+    ParticipatoryBudgetingError,
+    is_results_release,
+    participation_from_payload,
+)
 
 __all__ = ["SOURCES", "FetchError", "cache_path", "fetch_all", "fetch_one", "manifest_key"]
 
+#: Says who we are and how to be asked to stop, which is what a UA is for. It does **not**
+#: claim to be a browser: that was tried and turned out to be unnecessary.
+#:
+#: The contact is written `repo nchafy/council_access_nyc` rather than as a URL because
+#: **the literal string `github.com` in a User-Agent makes nyc.gov return HTTP 403**.
+#: Bisected 2026-10-31 on a board calendar page: `showup-nyc/0.1 (civic data ETL for a
+#: public-interest site)` gets 200, `showup-nyc/0.1 (github.com)` gets 403, and the
+#: hostname is the only token that matters — not the length, not "ETL", not the
+#: parentheses. Verified afterwards against every host this project fetches.
 USER_AGENT = (
-    "showup-nyc/0.1 (civic data ETL for a public-interest site; "
-    "contact via github.com/nchafy/council_access_nyc)"
+    "showup-nyc/0.1 (civic data ETL for a public-interest site; repo nchafy/council_access_nyc)"
 )
 
 #: Seconds between requests to the same host; 2 s where the host publishes no robots.txt.
@@ -33,6 +50,7 @@ CRAWL_DELAY = {
     "council.nyc.gov": 10.0,
     "data.cityofnewyork.us": 1.0,
     "nyc.legistar.com": 2.0,
+    "rnd.council.nyc.gov": 2.0,
 }
 DEFAULT_DELAY = 2.0
 
@@ -312,6 +330,165 @@ def _geospatial(dataset: str) -> Callable[..., bytes]:
     return fetch
 
 
+#: Where every board's schedule comes from, discovered by measurement and committed in
+#: `crosswalks/board_schedule_sources.json`. All 59 boards are listed, including the ones
+#: nothing can be read from; only the ones marked `fetched` are requested here.
+BOARD_SOURCES_PATH = (
+    Path(__file__).resolve().parents[2] / "crosswalks" / "board_schedule_sources.json"
+)
+
+#: The Events Calendar caps a page at 50 however much you ask for, so this is the real
+#: ceiling rather than an aspiration. A board page shows a handful.
+TRIBE_PAGE = 50
+
+
+def _fetch_board_meetings(log: Callable[[str], None]) -> bytes:
+    """Every board feed we hold, stored raw so the build parses offline.
+
+    One failing board is recorded as a failure and the rest continue: these are 23
+    independent third-party sites, several of which were already dead or behind Cloudflare
+    when the list was made, so insisting on all of them would mean never refreshing any.
+    """
+    install()
+    registry = json.loads(BOARD_SOURCES_PATH.read_text(encoding="utf-8"))
+    feeds = {
+        code: entry
+        for code, entry in (registry.get("boards") or {}).items()
+        if entry.get("fetched") and entry.get("url")
+    }
+    out: dict[str, dict] = {}
+    answered = 0
+
+    for code, entry in sorted(feeds.items()):
+        kind = str(entry.get("kind") or "")
+        urls = urls_of(entry.get("url"))
+        handler = kind_for(kind)
+        # Stamped per board, not once per run: a board whose load fails keeps the time of
+        # its last success, which is the only way to tell "we have not looked lately" from
+        # "we looked and it was empty". Recorded here, in the one loop that visits every
+        # kind, so no kind has to know about staleness.
+        recorded: dict = {
+            "kind": kind,
+            "url": urls[0] if urls else None,
+            # Offset-aware: this stamp is published and read in a browser. See
+            # `build._mtime` for what a naive one costs.
+            "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
+        if len(urls) > 1:
+            recorded["other_urls"] = list(urls[1:])
+
+        if handler is None:
+            # A kind nobody handles is a crosswalk mistake, not a dead website, and it
+            # must not look like one. `test_board_kinds.py` catches it before a fetch does.
+            log(f"    board {code}: no loader for kind {kind!r}")
+            out[code] = {**recorded, "body": None, "error": f"no loader for kind {kind!r}"}
+            continue
+
+        try:
+            body = handler.load(
+                LoadRequest(code=code, urls=urls, get=_get, log=log, today=date.today())
+            )
+        except (FetchError, LoadError, ValueError) as error:
+            # `ValueError` covers `http.client.InvalidURL`: a board can link an href that
+            # is not a requestable URL, and that is its problem, not the fetch's.
+            log(f"    board {code} ({kind}) failed: {error}")
+            out[code] = {**recorded, "body": None, "error": str(error)[:200]}
+            continue
+        out[code] = {**recorded, "body": body}
+        answered += 1
+
+    log(f"    {answered} of {len(feeds)} board feeds answered")
+    stamp = datetime.now().isoformat(timespec="seconds")
+    return json.dumps({"fetched_at": stamp, "feeds": out}).encode()
+
+
+def _board_meetings(body: bytes) -> str | None:
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        return f"not valid JSON ({error})"
+    if not isinstance(payload, dict):
+        return f"expected a JSON object, got {type(payload).__name__}"
+    feeds = payload.get("feeds")
+    if not isinstance(feeds, dict):
+        return "no feeds in the payload"
+    answered = sum(1 for entry in feeds.values() if isinstance(entry, dict) and entry.get("body"))
+    if answered < BOARD_FEED_FLOOR:
+        return f"{answered} of {len(feeds)} board feeds answered, floor is {BOARD_FEED_FLOOR}"
+    return None
+
+
+PRESS_API = "https://council.nyc.gov/press/wp-json/wp/v2/posts"
+
+
+def _fetch_participatory_budgeting(log: Callable[[str], None]) -> bytes:
+    """Both PB rosters: the cycle the idea map is running, and the newest results release.
+
+    The release is located through the press index, never by a URL pattern — press slugs
+    are bare post ids, so no address is derivable from a cycle (docs/OBSERVATIONS.md,
+    2026-10-27). Note the press site is a *second* WordPress install: the main site's API
+    has no press post type, which is why a main-site search suggests PB coverage stopped
+    in 2019.
+    """
+    query = urllib.parse.urlencode(
+        {
+            "search": "participatory budgeting",
+            "per_page": 100,
+            "_fields": "id,date,link,title",
+        }
+    )
+    index = json.loads(_get(f"{PRESS_API}?{query}"))
+    if not isinstance(index, list):
+        raise FetchError(f"press index: expected a JSON array, got {type(index).__name__}")
+
+    releases = [
+        post
+        for post in index
+        if isinstance(post, dict)
+        and is_results_release(str((post.get("title") or {}).get("rendered") or ""))
+    ]
+    if not releases:
+        raise FetchError(
+            f"press index: none of {len(index)} posts is a participatory budgeting "
+            "results release. Keeping the previous cache."
+        )
+    newest = max(releases, key=lambda post: str(post.get("date") or ""))
+    log(f"    {len(releases)} results release(s); newest is post {newest.get('id')}")
+
+    release = json.loads(_get(f"{PRESS_API}/{newest.get('id')}?_fields=id,date,title,content"))
+    idea_map = _get(IDEA_MAP_URL).decode("utf-8", errors="replace")
+
+    return json.dumps(
+        {
+            "idea_map_url": IDEA_MAP_URL,
+            "idea_map_html": idea_map,
+            "release_url": str(newest.get("link") or ""),
+            "release": release,
+        }
+    ).encode()
+
+
+def _participatory_budgeting(body: bytes) -> str | None:
+    """Refuse a payload either roster cannot be read from.
+
+    Both are parsed here rather than only counted, because the release's own stated
+    district count is the only check on the parse and it lives inside the body.
+    """
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        return f"not valid JSON ({error})"
+    if not isinstance(payload, dict):
+        return f"expected a JSON object, got {type(payload).__name__}"
+    try:
+        participation = participation_from_payload(payload)
+    except ParticipatoryBudgetingError as error:
+        return str(error)
+    if participation.results is None:
+        return "no results release in the payload"
+    return None
+
+
 @dataclass(frozen=True)
 class Source:
     name: str
@@ -399,12 +576,26 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="council-geometry",
         filename="districts.geojson",
+        fetch=_geospatial("mkqi-d8x3"),
+        invariant=_geojson_features(DISTRICT_COUNT),
+        # 862 KB against the shoreline-clipped file's 3.8 MB: the difference is the
+        # thousands of vertices that traced every marsh island.
+        min_bytes=500_000,
+        max_age_hours=24 * 365,
+        why="address lookup and the board crosswalk",
+        label="Council district boundaries, water areas included",
+        dataset="mkqi-d8x3",
+        url="https://data.cityofnewyork.us/d/mkqi-d8x3",
+    ),
+    Source(
+        name="council-geometry-land",
+        filename="districts_land.geojson",
         fetch=_geospatial("872g-cjhh"),
         invariant=_geojson_features(DISTRICT_COUNT),
         min_bytes=1_000_000,
         max_age_hours=24 * 365,
-        why="address lookup and the board crosswalk",
-        label="Council district boundaries",
+        why="the denominator for board shares; never shipped, and never drawn",
+        label="Council district boundaries, shoreline-clipped",
         dataset="872g-cjhh",
         url="https://data.cityofnewyork.us/d/872g-cjhh",
     ),
@@ -432,6 +623,30 @@ SOURCES: tuple[Source, ...] = (
         label="ZIP code boundaries",
         dataset="pri4-ifjk",
         url="https://data.cityofnewyork.us/d/pri4-ifjk",
+    ),
+    Source(
+        name="board-meetings",
+        filename="board_meetings.json",
+        fetch=_fetch_board_meetings,
+        invariant=_board_meetings,
+        min_bytes=100_000,
+        max_age_hours=24,
+        why="the boards' own calendars; the City publishes no board meeting calendar",
+        label="Community board calendars",
+        dataset="23 board websites: Google Calendar, The Events Calendar, two bespoke",
+        url="https://www.nyc.gov/site/cau/community-boards/community-boards.page",
+    ),
+    Source(
+        name="participatory-budgeting",
+        filename="participatory_budgeting.json",
+        fetch=_fetch_participatory_budgeting,
+        invariant=_participatory_budgeting,
+        min_bytes=200_000,
+        max_age_hours=24 * 7,
+        why="the only two sources naming which districts run participatory budgeting",
+        label="Participatory budgeting rosters",
+        dataset="rnd.council.nyc.gov/ideamap/ + the press results release",
+        url="https://council.nyc.gov/pb/",
     ),
 )
 

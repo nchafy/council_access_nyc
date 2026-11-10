@@ -40,13 +40,16 @@ def repo(tmp_path, monkeypatch, write_cache):
 
 
 class TestBuild:
-    def test_reports_both_page_counts(self, repo, capsys):
+    def test_reports_both_coverage_counts(self, repo, capsys):
         """The regression this file exists for: the board count silently vanished
-        from the report because a patch to the print statement did not apply."""
+        from the report because a patch to the print statement did not apply.
+
+        "Pages" became "districts and boards" when the 110 pages became four programs: the
+        build writes one document, and the counts are what the programs can answer about.
+        """
         assert main(["build"]) == 0
         out = capsys.readouterr().out
-        assert "51 district pages" in out
-        assert "59 board pages" in out
+        assert "covering 51 districts and 59 community boards" in out
 
     def test_reports_the_figures_a_human_watches_for_drift(self, repo, capsys):
         main(["build"])
